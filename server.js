@@ -142,7 +142,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
       tasks,
       summary: summarize(tasks),
       filters: {
-        projects: uniqueSorted(tasks.map((t) => t.dept || t.project)),
+        projects: uniqueSorted(tasks.map((t) => t.project)),
         owners: uniqueSorted(tasks.flatMap((t) => t.owners)),
         priorities: uniqueSorted(tasks.map((t) => t.priority)),
         statuses: sheets.STATUSES,

@@ -101,7 +101,7 @@ function countForTime(key) { return state.tasks.filter((t) => matchTime(t, key))
 
 function applyFilters() {
   let list = state.tasks.filter((t) => matchTime(t, state.time));
-  if (state.project) list = list.filter((t) => (t.dept || t.project) === state.project);
+  if (state.project) list = list.filter((t) => t.project === state.project);
   if (state.owner) list = list.filter((t) => t.owners.includes(state.owner));
   if (state.priority) list = list.filter((t) => t.priority === state.priority);
   if (state.status) list = list.filter((t) => t.status === state.status);
@@ -118,7 +118,8 @@ function sortList(list) {
   const val = (t) => {
     if (key === 'deadline') return t.deadlineIso || '9999-99-99';
     if (key === 'priority') return ({ 'حرجة': 0, 'عالية': 1, 'متوسطة': 2 })[t.priority] ?? 9;
-    if (key === 'project') return t.dept || t.project || '';
+    if (key === 'project') return t.project || '';
+    if (key === 'file') return t.file || '';
     if (key === 'owner') return t.owner || '';
     if (key === 'status') return t.status || '';
     return '';
@@ -184,7 +185,8 @@ function renderTable() {
     const dlCls = t.isOverdue ? 'overdue' : t.isSoon3 ? 'soon' : '';
     const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
     return `<tr class="${rowCls}" data-id="${t.id}">
-      <td>${esc(t.dept || t.project)}${t.file ? `<div style="font-size:12px;color:var(--muted)">${esc(t.file)}</div>` : ''}</td>
+      <td>${esc(t.project)}</td>
+      <td>${esc(t.file)}</td>
       <td class="cell-owner">${esc(t.owner)}</td>
       <td><div class="deliv">${esc(t.deliverable)}</div></td>
       <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
@@ -192,7 +194,8 @@ function renderTable() {
       <td><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></td></tr>`;
   }).join('');
   $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>
-      <th data-sort="project">المشروع / الملف ${arrow('project')}</th>
+      <th data-sort="project">المشروع ${arrow('project')}</th>
+      <th data-sort="file">الملف ${arrow('file')}</th>
       <th data-sort="owner">المسؤول ${arrow('owner')}</th>
       <th>المخرج المطلوب</th>
       <th data-sort="deadline">الموعد ${arrow('deadline')}</th>
@@ -214,7 +217,7 @@ function renderKanban() {
   const card = (t) => {
     const dlCls = t.isOverdue ? 'overdue' : t.isSoon3 ? 'soon' : '';
     return `<div class="kcard pri-${esc(t.priority)}" data-id="${t.id}">
-      <div class="kp">${esc(t.dept || t.project)}</div>
+      <div class="kp">${esc(t.project)}</div>
       <div style="font-size:12.5px;color:var(--text);margin-bottom:6px">${esc((t.deliverable || '').slice(0, 90))}${(t.deliverable || '').length > 90 ? '…' : ''}</div>
       <div class="km"><span>${esc(t.owner.split('\n')[0])}</span><span class="kdl ${dlCls}">${t.deadlineIso || esc(t.deadlineRaw || '—')}</span></div></div>`;
   };
@@ -272,7 +275,7 @@ function renderCalendar() {
     const tasks = byDay[d] || [];
     const tHtml = tasks.map((t) => {
       const cls = t.priority === 'حرجة' ? 'crit' : t.priority === 'عالية' ? 'high' : '';
-      return `<div class="cal-task ${cls}" data-id="${t.id}" title="${esc(t.deliverable)}">${esc(t.dept || t.project)}</div>`;
+      return `<div class="cal-task ${cls}" data-id="${t.id}" title="${esc(t.deliverable)}">${esc(t.project)}</div>`;
     }).join('');
     cells += `<div class="cal-cell ${iso === todayStr ? 'today' : ''} ${dow === 6 ? 'fri' : ''}"><div class="d">${d}</div>${tHtml}</div>`;
   }
@@ -289,10 +292,10 @@ function renderCalendar() {
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
-  $('mTitle').textContent = `${t.dept || t.project}${t.file ? ' — ' + t.file : ''}`;
+  $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
   const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
   $('mBody').innerHTML =
-    F('المشروع / القسم / الشركة', t.dept || t.project) + F('الملف', t.file) + F('المسؤول المعني', t.owner) +
+    F('المشروع', t.project) + F('القسم / الشركة / المشروع', t.dept) + F('الملف', t.file) + F('المسؤول المعني', t.owner) +
     F('المخرج المطلوب', t.deliverable) +
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
@@ -318,7 +321,8 @@ function openEdit(t) {
   t = t || { project: '', dept: '', file: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '' };
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
-    <div class="form-row">${field('المشروع / القسم / الشركة', 'dept', t.dept || t.project)}${field('الملف', 'file', t.file)}</div>
+    <div class="form-row">${field('المشروع', 'project', t.project)}${field('القسم / الشركة / المشروع', 'dept', t.dept)}</div>
+    ${field('الملف', 'file', t.file)}
     ${field('المسؤول المعني (افصل بسطر لكل شخص)', 'owner', t.owner)}
     ${textarea('المخرج المطلوب', 'deliverable', t.deliverable)}
     <div class="form-row">${field('الموعد / الدورية', 'deadlineRaw', t.deadlineRaw)}${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}</div>
@@ -367,7 +371,7 @@ function renderBell() {
     ? items.map((t) => {
         const cls = t.isOverdue ? 'overdue' : 'today';
         return `<div class="bp-item ${cls}" data-id="${t.id}">
-          <div class="bp-t">${esc(t.dept || t.project)}</div>
+          <div class="bp-t">${esc(t.project)}</div>
           <div class="bp-m"><span>${esc(t.owner.split('\n')[0])}</span><span>${relText(t)}</span></div></div>`;
       }).join('')
     : '<div class="bp-empty">لا توجد مهام مستحقّة أو متأخرة 🎉</div>';
