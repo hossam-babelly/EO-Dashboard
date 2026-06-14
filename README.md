@@ -10,6 +10,8 @@
 - 🗓️ **تقويم** شهري RTL يبدأ السبت مع إبراز اليوم.
 - ✏️ **تعديل وإضافة** المهام مباشرةً (يُكتب إلى الشيت).
 - 🔄 **مزامنة شبه لحظية** (سحب دوري + زر تحديث).
+- 🔐 **حسابات متعددة** بأدوار (مدير/محرّر/مشاهد).
+- 🔔 **تنبيهات**: جرس داخل المنصة + ملخص بريد يومي + إشعارات متصفح (Web Push).
 
 ## 🚀 التشغيل محلياً
 ```bash
@@ -37,6 +39,15 @@ EO-Dashboard/
 └── .env.example
 ```
 
+## 🔐 الحسابات والأدوار
+- ولّد مستخدماً: `node scripts/hash-user.js <email> <password> <admin|editor|viewer> <name>`
+- اجمع المخرجات داخل مصفوفة JSON واحدة في `USERS_JSON`.
+
+## 🔔 التنبيهات
+- **بريد يومي:** اضبط `SMTP_*` و`NOTIFY_EMAIL` (واختيارياً `OWNER_EMAILS`).
+- **Web Push:** ولّد المفاتيح `node scripts/gen-vapid.js` واضبط `VAPID_*`.
+- **الجدولة:** يستدعي [GitHub Actions](.github/workflows/daily-digest.yml) نقطة `/api/cron/daily-digest` يومياً (يحتاج سرّي `APP_URL` و`CRON_SECRET` في المستودع).
+
 ## ☁️ النشر على Render
-- نوع الخدمة: Web Service، الأمر: `npm start`.
-- اضبط متغيّرات البيئة (خصوصاً `GOOGLE_SERVICE_ACCOUNT_JSON` و`SHEET_ID`).
+- استخدم [`render.yaml`](render.yaml) أو أنشئ Web Service يدوياً: `buildCommand: npm install`، `startCommand: npm start`.
+- اضبط متغيّرات البيئة (خصوصاً `GOOGLE_SERVICE_ACCOUNT_JSON`, `SHEET_ID`, `SESSION_SECRET`, `USERS_JSON`).

@@ -17,8 +17,15 @@
   </div>
   <div class="header-actions">
     <span class="sync" id="sync">—</span>
+    <div class="bell-wrap">
+      <button class="btn btn-ghost bell" id="bellBtn">🔔<span class="bell-count" id="bellCount" style="display:none">0</span></button>
+      <div class="bell-panel" id="bellPanel"></div>
+    </div>
     <button class="btn btn-ghost" id="addBtn" style="display:none">➕ مهمة جديدة</button>
     <button class="btn btn-gold" id="refreshBtn">🔄 تحديث</button>
+    <button class="btn btn-ghost" id="pushBtn" title="تفعيل إشعارات المتصفح" style="display:none">🔕</button>
+    <span class="user-chip" id="userChip" style="display:none"></span>
+    <button class="btn btn-ghost" id="logoutBtn" style="display:none">خروج</button>
   </div>
 </header>
 

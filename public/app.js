@@ -5,6 +5,7 @@ const state = {
   summary: {},
   filters: {},
   meta: {},
+  me: null,
   view: 'table',
   time: 'all',
   project: '',
@@ -33,6 +34,30 @@ const TIME_CHIPS = [
 ];
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ===== Auth =====
+function canEdit() {
+  return !!state.meta.canWrite && !!state.me && (state.me.role === 'admin' || state.me.role === 'editor');
+}
+async function fetchMe() {
+  const res = await fetch('/api/me');
+  if (res.status === 401) { location.href = '/login.html'; throw new Error('redirect'); }
+  const data = await res.json();
+  state.me = data.user;
+}
+function renderUser() {
+  if (!state.me) return;
+  const roleAr = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' }[state.me.role] || '';
+  $('userChip').innerHTML = `${esc(state.me.name)}<span class="role">${roleAr}</span>`;
+  $('userChip').style.display = '';
+  $('logoutBtn').style.display = state.me && !state.meta.authDisabled ? '' : 'none';
+  const pb = $('pushBtn');
+  if ('PushManager' in window) {
+    pb.style.display = '';
+    const granted = window.Notification && Notification.permission === 'granted';
+    pb.textContent = granted ? '🔔' : '🔕';
+  }
+}
 
 // ===== Data =====
 async function fetchTasks(refresh = false) {
@@ -183,7 +208,7 @@ function renderTable() {
 // ===== Kanban view =====
 function renderKanban() {
   const list = applyFilters();
-  $('countLine').textContent = `عرض ${list.length} من ${state.tasks.length} مهمة` + (state.meta.canWrite ? ' — اسحب البطاقة لتغيير الحالة' : '');
+  $('countLine').textContent = `عرض ${list.length} من ${state.tasks.length} مهمة` + (canEdit() ? ' — اسحب البطاقة لتغيير الحالة' : '');
   const byStatus = Object.fromEntries(STATUSES.map((s) => [s, []]));
   list.forEach((t) => { (byStatus[t.status] || (byStatus[t.status] = [])).push(t); });
   const card = (t) => {
@@ -195,11 +220,11 @@ function renderKanban() {
   };
   $('viewArea').innerHTML = `<div class="kanban">${STATUSES.map((s) => `
     <div class="kcol"><div class="kcol-head"><span>${s}</span><span class="c">${byStatus[s].length}</span></div>
-    <div class="kbody ${state.meta.canWrite ? '' : 'disabled'}" data-status="${s}">${byStatus[s].map(card).join('')}</div></div>`).join('')}</div>`;
+    <div class="kbody ${canEdit() ? '' : 'disabled'}" data-status="${s}">${byStatus[s].map(card).join('')}</div></div>`).join('')}</div>`;
 
   $('viewArea').querySelectorAll('.kcard').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
 
-  if (state.meta.canWrite && window.Sortable) {
+  if (canEdit() && window.Sortable) {
     $('viewArea').querySelectorAll('.kbody').forEach((col) => {
       Sortable.create(col, {
         group: 'kanban', animation: 150, ghostClass: 'sortable-ghost',
@@ -273,8 +298,8 @@ function openModal(id) {
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
     F('نتائج المتابعة اليومية', t.followup) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes);
-  $('mFoot').innerHTML = state.meta.canWrite ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
-  if (state.meta.canWrite) $('mEdit').onclick = () => openEdit(t);
+  $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
+  if (canEdit()) $('mEdit').onclick = () => openEdit(t);
   $('modalBack').classList.add('open');
 }
 
@@ -326,10 +351,37 @@ async function saveTask(id) {
 
 function closeModal() { $('modalBack').classList.remove('open'); }
 
+// ===== Notification bell (in-app) =====
+function renderBell() {
+  // المتأخرة (غير المنجزة) + مهام اليوم
+  const items = state.tasks
+    .filter((t) => (t.isOverdue || t.isToday) && !t.isDone)
+    .sort((a, b) => (a.diffDays ?? 0) - (b.diffDays ?? 0));
+  const cnt = items.length;
+  const badge = $('bellCount');
+  badge.textContent = cnt;
+  badge.style.display = cnt ? '' : 'none';
+
+  const head = `<div class="bp-head">التنبيهات (${cnt})</div>`;
+  const body = cnt
+    ? items.map((t) => {
+        const cls = t.isOverdue ? 'overdue' : 'today';
+        return `<div class="bp-item ${cls}" data-id="${t.id}">
+          <div class="bp-t">${esc(t.dept || t.project)}</div>
+          <div class="bp-m"><span>${esc(t.owner.split('\n')[0])}</span><span>${relText(t)}</span></div></div>`;
+      }).join('')
+    : '<div class="bp-empty">لا توجد مهام مستحقّة أو متأخرة 🎉</div>';
+  $('bellPanel').innerHTML = head + body;
+  $('bellPanel').querySelectorAll('.bp-item').forEach((el) => {
+    el.onclick = () => { $('bellPanel').classList.remove('open'); openModal(Number(el.dataset.id)); };
+  });
+}
+
 // ===== Render dispatch =====
 function render() {
-  renderKpis(); renderChips(); renderFilters();
-  $('addBtn').style.display = state.meta.canWrite ? '' : 'none';
+  renderUser();
+  renderKpis(); renderChips(); renderFilters(); renderBell();
+  $('addBtn').style.display = canEdit() ? '' : 'none';
   if (state.view === 'kanban') renderKanban();
   else if (state.view === 'calendar') renderCalendar();
   else renderTable();
@@ -337,10 +389,13 @@ function render() {
 
 async function load(refresh = false) {
   try {
+    if (!state.me) await fetchMe();
     await fetchTasks(refresh);
     $('sync').textContent = fmtSync(state.meta.fetchedAt);
     render();
+    if (window.Notification && Notification.permission === 'granted') setupPush(false);
   } catch (e) {
+    if (e.message === 'redirect') return;
     $('viewArea').innerHTML = `<div class="table-wrap"><div class="empty">تعذّر تحميل المهام: ${esc(e.message)}</div></div>`;
   }
 }
@@ -348,6 +403,40 @@ async function load(refresh = false) {
 // ===== Events =====
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
+$('bellBtn').onclick = (e) => { e.stopPropagation(); $('bellPanel').classList.toggle('open'); };
+$('logoutBtn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; };
+
+// ===== Web Push =====
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function setupPush(interactive) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (interactive) toast('متصفحك لا يدعم إشعارات Push', true);
+    return;
+  }
+  try {
+    const keyRes = await (await fetch('/api/push/key')).json();
+    if (!keyRes.key) { if (interactive) toast('إشعارات المتصفح غير مُهيّأة على الخادم', true); return; }
+    if (interactive && Notification.permission === 'default') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('لم تُمنح صلاحية الإشعارات', true); return; }
+    }
+    if (Notification.permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const sub = await reg.pushManager.getSubscription() ||
+      await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(keyRes.key) });
+    await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
+    $('pushBtn').textContent = '🔔';
+    $('pushBtn').title = 'إشعارات المتصفح مُفعّلة';
+    if (interactive) toast('تم تفعيل إشعارات المتصفح ✓');
+  } catch (e) { if (interactive) toast('تعذّر تفعيل الإشعارات: ' + e.message, true); }
+}
+$('pushBtn').onclick = () => setupPush(true);
+document.addEventListener('click', (e) => { if (!e.target.closest('.bell-wrap')) $('bellPanel').classList.remove('open'); });
 document.querySelectorAll('.view-tab').forEach((tab) => {
   tab.onclick = () => {
     document.querySelectorAll('.view-tab').forEach((x) => x.classList.remove('active'));
