@@ -3,117 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>النماذج المستلمة</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --primary: #1a3a5c; --primary-light: #2563a8;
-    --accent: #c8a84b; --bg: #f0f4f8;
-    --surface: #fff; --border: #d1dbe8;
-    --text: #1a2535; --muted: #6b7a8d;
-    --success: #16a34a; --danger: #dc2626;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Cairo', sans-serif; background: var(--bg); color: var(--text); direction: rtl; min-height: 100vh; }
-  header { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; padding: 22px 32px; display: flex; align-items: center; gap: 14px; box-shadow: 0 4px 20px rgba(26,58,92,.3); }
-  .logo { width:50px;height:50px;background:var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:var(--primary); }
-  h1 { font-size:20px;font-weight:900; }
-  header p { font-size:13px;opacity:.75;margin-top:2px; }
-  .container { max-width:1000px;margin:0 auto;padding:28px 20px; }
-  .stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px; }
-  .stat-card { background:var(--surface);border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(26,58,92,.07);text-align:center; }
-  .stat-card .n { font-size:28px;font-weight:900;color:var(--primary); }
-  .stat-card .l { font-size:12px;color:var(--muted);margin-top:4px; }
-  .card { background:var(--surface);border-radius:14px;box-shadow:0 2px 12px rgba(26,58,92,.08);overflow:hidden;margin-bottom:14px; }
-  .card-header { background:var(--primary);color:white;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px; }
-  .card-id { font-size:11px;opacity:.6;font-family:monospace; }
-  .card-idea { font-size:14px;font-weight:700;flex:1; }
-  .card-date { font-size:12px;opacity:.7;white-space:nowrap; }
-  .card-body { padding:16px 20px; }
-  .summary-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px; }
-  .sum-item { background:#f5f8fc;border-radius:8px;padding:10px 14px; }
-  .sum-item .sl { font-size:11px;color:var(--muted);margin-bottom:3px; }
-  .sum-item .sv { font-size:15px;font-weight:700;color:var(--primary); }
-  .actions { display:flex;gap:8px;flex-wrap:wrap;margin-top:12px; }
-  .btn { padding:8px 18px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:all .2s; }
-  .btn-excel { background:#16a34a;color:white; }
-  .btn-excel:hover { background:#15803d; }
-  .btn-word  { background:#2563a8;color:white; }
-  .btn-word:hover  { background:#1a3a5c; }
-  .btn-del   { background:#fef2f2;color:var(--danger);border:1.5px solid #fecaca; }
-  .btn-del:hover   { background:var(--danger);color:white; }
-  .empty { text-align:center;padding:60px 20px;color:var(--muted); }
-  .empty .icon { font-size:48px;margin-bottom:12px; }
-  .empty a { color:var(--primary-light);font-weight:700;text-decoration:none; }
-  #loading { text-align:center;padding:40px;color:var(--muted);font-size:15px; }
-</style>
+<title>EO-Dashboard — المكتب التنفيذي | سنكري القابضة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 <header>
-  <div class="logo">م</div>
-  <div>
-    <h1>النماذج المُستلمة</h1>
-    <p>لوحة إدارة دراسات المشاريع</p>
+  <div class="logo">EO</div>
+  <div class="title">
+    <h1>لوحة المكتب التنفيذي</h1>
+    <p>مجموعة سنكري القابضة — متابعة المهام والمخرجات</p>
   </div>
-  <a href="/" style="margin-right:auto;color:var(--accent);font-weight:700;text-decoration:none;font-size:13px">← العودة للفورم</a>
+  <div class="header-actions">
+    <span class="sync" id="sync">—</span>
+    <button class="btn btn-ghost" id="addBtn" style="display:none">➕ مهمة جديدة</button>
+    <button class="btn btn-gold" id="refreshBtn">🔄 تحديث</button>
+  </div>
 </header>
 
-<div class="container">
-  <div class="stats" id="statsBar">
-    <div class="stat-card"><div class="n" id="totalCount">—</div><div class="l">إجمالي النماذج</div></div>
+<main>
+  <section class="kpis" id="kpis"></section>
+
+  <div class="toolbar">
+    <div class="chips" id="timeChips"></div>
+    <div class="filters">
+      <select id="fProject"><option value="">كل المشاريع/الأقسام</option></select>
+      <select id="fOwner"><option value="">كل المسؤولين</option></select>
+      <select id="fPriority"><option value="">كل الأولويات</option></select>
+      <select id="fStatus"><option value="">كل الحالات</option></select>
+      <input class="search" id="fSearch" type="text" placeholder="🔍 بحث في المهام...">
+      <button class="btn btn-ghost reset" id="resetBtn" style="background:#eef0f3;color:var(--navy)">مسح الفلاتر</button>
+    </div>
   </div>
-  <div id="loading">⏳ جاري التحميل...</div>
-  <div id="list"></div>
+
+  <div class="views">
+    <button class="view-tab active" data-view="table">📋 جدول</button>
+    <button class="view-tab" data-view="kanban">🗂️ كانبان</button>
+    <button class="view-tab" data-view="calendar">🗓️ تقويم</button>
+  </div>
+
+  <div class="count-line" id="countLine"></div>
+
+  <div id="viewArea">
+    <div class="spinner">جارٍ تحميل المهام…</div>
+  </div>
+</main>
+
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="mTitle">تفاصيل المهمة</h3>
+      <button class="modal-close" id="mClose">✕</button>
+    </div>
+    <div class="modal-body" id="mBody"></div>
+    <div class="modal-foot" id="mFoot"></div>
+  </div>
 </div>
 
-<script>
-async function load() {
-  const res = await fetch('/api/submissions');
-  const data = await res.json();
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('totalCount').textContent = data.submissions?.length || 0;
-
-  const list = document.getElementById('list');
-  if (!data.submissions?.length) {
-    list.innerHTML = `<div class="empty"><div class="icon">📭</div><p>لا يوجد نماذج مستلمة بعد.</p><br><a href="/">إرسال أول نموذج →</a></div>`;
-    return;
-  }
-
-  list.innerHTML = data.submissions.map(s => `
-    <div class="card" id="card_${s.id}">
-      <div class="card-header">
-        <div class="card-idea">${s.projectIdea || '—'}</div>
-        <div class="card-date">${new Date(s.submittedAt).toLocaleDateString('ar-SA', {year:'numeric',month:'short',day:'numeric'})}</div>
-      </div>
-      <div class="card-body">
-        <div class="card-id">رقم الطلب: ${s.id}</div>
-        <div class="summary-grid" style="margin-top:10px">
-          <div class="sum-item"><div class="sl">التكاليف التأسيسية</div><div class="sv">${s.summary?.foundingTotal||'$0'}</div></div>
-          <div class="sum-item"><div class="sl">الإيرادات السنوية</div><div class="sv">${s.summary?.revenueAnnual||'$0'}</div></div>
-          <div class="sum-item"><div class="sl">التكاليف التشغيلية</div><div class="sv">${s.summary?.opsAnnual||'$0'}</div></div>
-          <div class="sum-item"><div class="sl">الربح الصافي</div><div class="sv">${s.summary?.netProfit||'$0'}</div></div>
-          <div class="sum-item"><div class="sl">عدد الموظفين</div><div class="sv">${s.summary?.employees||'0'}</div></div>
-        </div>
-        <div class="actions">
-          <a class="btn btn-excel" href="/api/download/${s.id}/excel" download>📊 تحميل Excel</a>
-          <a class="btn btn-word"  href="/api/download/${s.id}/word"  download>📄 تحميل Word</a>
-          <button class="btn btn-del" onclick="del('${s.id}')">🗑 حذف</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-async function del(id) {
-  if (!confirm('هل تريد حذف هذا النموذج نهائياً؟')) return;
-  await fetch('/api/submissions/' + id, { method:'DELETE' });
-  document.getElementById('card_'+id)?.remove();
-  const n = document.querySelectorAll('[id^="card_"]').length;
-  document.getElementById('totalCount').textContent = n;
-  if (!n) load();
-}
-
-load();
-</script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

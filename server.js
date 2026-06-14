@@ -1,136 +1,145 @@
-# نموذج طرح دراسة مشروع 📋
+'use strict';
 
-نظام متكامل (Frontend + Backend) لاستقبال وحفظ بيانات دراسات المشاريع.
+require('dotenv').config();
 
----
+const path = require('path');
+const express = require('express');
+const sheets = require('./lib/sheets');
 
-## 📁 هيكل المشروع
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-```
-project-form/
-├── public/
-│   └── index.html        ← الفورم الكامل (HTML + CSS + JS)
-├── data/                 ← يتم إنشاؤه تلقائياً عند أول إرسال
-│   ├── index.json        ← فهرس جميع الطلبات
-│   └── XXXX.json         ← بيانات كل طلب منفصلاً
-├── server.js             ← الـ Backend (Express)
-├── package.json
-└── README.md
-```
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
----
+// ذاكرة تخزين مؤقتة قصيرة لتقليل طلبات Google API مع إبقاء التحديث شبه لحظي
+let cache = { at: 0, tasks: [] };
+const CACHE_MS = Number(process.env.CACHE_MS || 8000);
 
-## 🚀 التثبيت والتشغيل
-
-### المتطلبات
-- Node.js v16 أو أحدث
-- npm
-
-### الخطوات
-
-```bash
-# 1. انتقل إلى مجلد المشروع
-cd project-form
-
-# 2. ثبّت المكتبات
-npm install
-
-# 3. شغّل الخادم
-npm start
-```
-
-افتح المتصفح على: **http://localhost:3000**
-
-### للتطوير (مع إعادة تشغيل تلقائية)
-```bash
-npm run dev
-```
-
----
-
-## 🌐 API Endpoints
-
-| الطريقة | المسار | الوصف |
-|---------|--------|-------|
-| `GET` | `/` | عرض الفورم |
-| `POST` | `/api/submit` | إرسال بيانات مشروع جديد |
-| `GET` | `/api/submissions` | قائمة جميع الطلبات |
-| `GET` | `/api/submissions/:id` | تفاصيل طلب محدد |
-| `DELETE` | `/api/submissions/:id` | حذف طلب |
-| `GET` | `/api/export/:id` | تصدير طلب كـ JSON |
-
-### مثال: إرسال عبر fetch
-```javascript
-const response = await fetch('/api/submit', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ projectIdea: '...', ... })
-});
-const result = await response.json();
-// { success: true, id: 'LXYZ-ABC123' }
-```
-
----
-
-## 🌍 النشر على السيرفر
-
-### متغيرات البيئة
-```bash
-PORT=3000   # المنفذ (افتراضي 3000)
-```
-
-### مع PM2 (موصى به للإنتاج)
-```bash
-npm install -g pm2
-pm2 start server.js --name "project-form"
-pm2 save
-pm2 startup
-```
-
-### مع Nginx (Reverse Proxy)
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
+async function loadTasks(force = false) {
+  const now = Date.now();
+  if (!force && now - cache.at < CACHE_MS && cache.tasks.length) return cache.tasks;
+  const tasks = await sheets.getTasks();
+  cache = { at: now, tasks };
+  return tasks;
 }
-```
 
----
+function invalidateCache() { cache = { at: 0, tasks: [] }; }
 
-## 📊 ميزات الفورم
+// حارس الكتابة: يمنع التعديل عند غياب صلاحية الكتابة (مفتاح قراءة فقط)
+function requireWrite(req, res, next) {
+  if (!sheets.canWrite) {
+    return res.status(403).json({ ok: false, error: 'الكتابة معطّلة — لم يُضبط حساب الخدمة (Service Account).' });
+  }
+  next();
+}
 
-- **8 خطوات** منظمة: فكرة المشروع ← التكاليف التأسيسية ← المنتجات ← الإيرادات ← التكاليف التشغيلية ← التكاليف الثابتة ← الاهتلاك ← الموارد البشرية
-- **ملخص ديناميكي** يتحدث تلقائياً
-- **حسابات تلقائية**: الإجماليات، الأرباح، الاهتلاك
-- **جداول ديناميكية**: إضافة/حذف أسطر
-- **هيكل تنظيمي** يُرسم تلقائياً
-- **قوائم منسدلة** قابلة للتوسيع بإضافة خيارات جديدة
-- **تنسيق العملة** تلقائي بصيغة $12,200
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+}
 
----
+function summarize(tasks) {
+  const s = {
+    total: tasks.length,
+    today: 0,
+    overdue: 0,
+    soon3: 0,
+    thisWeek: 0,
+    undated: 0,
+    recurring: 0,
+    done: 0,
+    byPriority: {},
+    byStatus: {},
+  };
+  for (const t of tasks) {
+    if (t.isToday) s.today++;
+    if (t.isOverdue) s.overdue++;
+    if (t.isSoon3) s.soon3++;
+    if (t.isThisWeek) s.thisWeek++;
+    if (t.isUndated) s.undated++;
+    if (t.isRecurring) s.recurring++;
+    if (t.isDone) s.done++;
+    s.byPriority[t.priority] = (s.byPriority[t.priority] || 0) + 1;
+    s.byStatus[t.status] = (s.byStatus[t.status] || 0) + 1;
+  }
+  s.completion = s.total ? Math.round((s.done / s.total) * 100) : 0;
+  return s;
+}
 
-## 🔒 الأمان (للإنتاج)
+// كل المهام + ملخص + خيارات الفلاتر
+app.get('/api/tasks', async (req, res) => {
+  try {
+    const tasks = await loadTasks(req.query.refresh === '1');
+    res.json({
+      ok: true,
+      tasks,
+      summary: summarize(tasks),
+      filters: {
+        projects: uniqueSorted(tasks.map((t) => t.dept || t.project)),
+        owners: uniqueSorted(tasks.flatMap((t) => t.owners)),
+        priorities: uniqueSorted(tasks.map((t) => t.priority)),
+        statuses: sheets.STATUSES,
+        files: uniqueSorted(tasks.map((t) => t.file)),
+      },
+      meta: { canWrite: sheets.canWrite, fetchedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.error('GET /api/tasks', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
-يُنصح بإضافة:
-1. **المصادقة** (JWT أو Session)
-2. **Rate Limiting**: `npm install express-rate-limit`
-3. **Helmet**: `npm install helmet`
-4. **التحقق من البيانات**: `npm install joi`
+// تعديل مهمة قائمة (حقول متعددة)
+app.patch('/api/tasks/:row', requireWrite, async (req, res) => {
+  try {
+    const task = await sheets.updateTask(req.params.row, req.body || {});
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) {
+    console.error('PATCH /api/tasks', err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
 
-مثال سريع:
-```javascript
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+// تغيير حالة مهمة (للوحة كانبان)
+app.post('/api/tasks/:row/status', requireWrite, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!sheets.STATUSES.includes(status)) {
+      return res.status(400).json({ ok: false, error: 'حالة غير صالحة' });
+    }
+    const task = await sheets.updateTask(req.params.row, { status });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
 
-app.use(helmet());
-app.use('/api/', rateLimit({ windowMs: 15*60*1000, max: 100 }));
-```
+// إضافة مهمة جديدة
+app.post('/api/tasks', requireWrite, async (req, res) => {
+  try {
+    await sheets.addTask(req.body || {});
+    invalidateCache();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/tasks', err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, canWrite: sheets.canWrite, tz: require('./lib/dates').TZ });
+});
+
+app.listen(PORT, async () => {
+  console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
+  if (sheets.canWrite) {
+    try {
+      await sheets.ensureStatusColumn();
+      console.log('تم التأكد من عمود «الحالة».');
+    } catch (e) {
+      console.warn('تعذّر إنشاء عمود الحالة:', e.message);
+    }
+  }
+});
