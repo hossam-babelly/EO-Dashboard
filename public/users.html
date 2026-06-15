@@ -28,8 +28,11 @@
     <h2>➕ إضافة مستخدم</h2>
     <form class="u-form" id="addForm">
       <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
-      <div class="fld"><label>الاسم</label><input type="text" name="name" placeholder="الاسم الكامل"></div>
-      <div class="fld"><label>كلمة المرور</label><input type="text" name="password" required placeholder="••••••"></div>
+      <div class="fld"><label>الاسم الأول</label><input type="text" name="firstName" required placeholder="مثال: حسام"></div>
+      <div class="fld"><label>الاسم الأخير</label><input type="text" name="lastName" placeholder="مثال: بابللي"></div>
+      <div class="fld"><label>كلمة المرور</label>
+        <div class="pw-wrap"><input type="password" name="password" id="addPw" required placeholder="••••••"><button type="button" class="pw-eye" data-target="addPw" aria-label="إظهار كلمة المرور">👁</button></div>
+      </div>
       <div class="fld"><label>الدور</label><select name="role"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
       <button class="btn btn-save" type="submit">حفظ</button>
     </form>
@@ -99,6 +102,11 @@ $('#addForm').onsubmit = async (e) => {
   const data = await res.json();
   if (data.ok) { notice('تمت إضافة المستخدم ✓'); e.target.reset(); loadUsers(); } else notice('خطأ: ' + data.error, true);
 };
+
+document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
+  const t = document.getElementById(b.dataset.target);
+  if (t) { t.type = t.type === 'password' ? 'text' : 'password'; b.textContent = t.type === 'password' ? '👁' : '🙈'; }
+});
 
 loadUsers();
 </script>

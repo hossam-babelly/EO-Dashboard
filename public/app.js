@@ -167,6 +167,73 @@ function typeCell(type) {
   if (!type) return '<span style="color:var(--muted)">—</span>';
   return `<span class="type-tag">${TYPE_ICON[type] || '🏷️'} ${esc(type)}</span>`;
 }
+
+// ===== سجلّ المتابعة اليومية =====
+// كل حدث سطر: «[YYYY-MM-DD HH:MM — الاسم] النص». الأسطر القديمة بلا وسم تُعرض كـ«إدخال سابق».
+const FU_RE = /^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*(.*)$/;
+function parseFollowup(raw) {
+  const text = String(raw || '');
+  if (!text.trim()) return [];
+  const events = [];
+  let cur = null;
+  for (const ln of text.split(/\r?\n/)) {
+    const m = ln.match(FU_RE);
+    if (m) { cur = { date: m[1], time: m[2], author: m[3].trim(), text: m[4].trim(), legacy: false }; events.push(cur); }
+    else if (ln.trim()) {
+      if (cur) cur.text += (cur.text ? ' ' : '') + ln.trim();
+      else if (events.length && events[events.length - 1].legacy) events[events.length - 1].text += ' / ' + ln.trim();
+      else events.push({ legacy: true, text: ln.trim() });
+    }
+  }
+  return events;
+}
+function fuShort(date, time) {
+  if (!date) return '';
+  const p = date.split('-');
+  return `${p[2]}/${p[1]}${time ? ' ' + time : ''}`;
+}
+function followupCell(t) {
+  const evs = parseFollowup(t.followup);
+  if (!evs.length) return '<span style="color:var(--muted)">—</span>';
+  const last = evs[evs.length - 1];
+  const more = evs.length > 1 ? `<span class="fu-more">+${evs.length - 1}</span>` : '';
+  const meta = last.legacy
+    ? `<div class="fu-meta"><span class="fu-leg">إدخال سابق</span>${more}</div>`
+    : `<div class="fu-meta"><b>${esc(last.author)}</b> · ${esc(fuShort(last.date, last.time))} ${more}</div>`;
+  const txt = (last.text || '');
+  return `<div class="fu-cell">${meta}<div class="fu-text">${esc(txt.slice(0, 90))}${txt.length > 90 ? '…' : ''}</div></div>`;
+}
+function followupSection(t) {
+  const evs = parseFollowup(t.followup).slice().reverse(); // الأحدث أولاً
+  const items = evs.length ? evs.map((e) => `
+    <div class="fu-item ${e.legacy ? 'legacy' : ''}">
+      <div class="fu-ihead">${e.legacy ? '<span class="fu-leg">إدخال سابق</span>' : `<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span>`}</div>
+      <div class="fu-ibody">${esc(e.text)}</div></div>`).join('') : '<div class="fu-empty">لا توجد متابعة بعد.</div>';
+  const add = canEdit() ? `
+    <div class="fu-add">
+      <textarea id="fuInput" rows="2" placeholder="أضف تحديث متابعة جديد… (يُسجَّل باسمك ووقته تلقائياً)"></textarea>
+      <button class="btn btn-save" id="fuAdd" type="button">➕ إضافة حدث</button>
+    </div>` : '';
+  return `<div class="field"><label>سجلّ المتابعة اليومية</label><div class="fu-log">${items}</div>${add}</div>`;
+}
+async function addFollowup(id) {
+  const inp = $('fuInput');
+  const text = inp ? inp.value.trim() : '';
+  if (!text) { toast('اكتب نصّ التحديث أولاً', true); return; }
+  const btn = $('fuAdd'); if (btn) { btn.disabled = true; btn.textContent = '... إضافة'; }
+  try {
+    const res = await fetch(`/api/tasks/${id}/followup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تمت إضافة الحدث ✓');
+    openModal(id);
+    render();
+  } catch (e) {
+    toast('تعذّر: ' + e.message, true);
+    if (btn) { btn.disabled = false; btn.textContent = '➕ إضافة حدث'; }
+  }
+}
 function relText(t) {
   if (t.diffDays == null) return t.recurrence ? 'دورية' : 'بلا موعد';
   if (t.diffDays < 0) return `متأخرة ${Math.abs(t.diffDays)} يوم`;
@@ -268,7 +335,8 @@ function renderTable() {
       <td><div class="deliv">${esc(t.deliverable)}</div></td>
       <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
       <td><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></td>
-      <td><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></td></tr>`;
+      <td><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></td>
+      <td class="fu-col">${followupCell(t)}</td></tr>`;
   }).join('');
   $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>
       <th data-sort="project">المشروع ${arrow('project')}</th>
@@ -279,6 +347,7 @@ function renderTable() {
       <th data-sort="deadline">الموعد ${arrow('deadline')}</th>
       <th data-sort="priority">الأولوية ${arrow('priority')}</th>
       <th data-sort="status">الحالة ${arrow('status')}</th>
+      <th>المتابعة</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   $('viewArea').querySelectorAll('th[data-sort]').forEach((th) => {
     th.onclick = () => { const k = th.dataset.sort; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } renderTable(); };
@@ -440,10 +509,12 @@ function openModal(id) {
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
     meetingField +
-    F('نتائج المتابعة اليومية', t.followup) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes) +
+    followupSection(t) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes) +
     reminderSection(t);
   $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
   if (canEdit()) $('mEdit').onclick = () => openEdit(t);
+  const fuAdd = $('fuAdd');
+  if (fuAdd) fuAdd.onclick = () => addFollowup(t.id);
   bindReminderSection(t);
   $('modalBack').classList.add('open');
 }

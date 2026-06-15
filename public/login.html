@@ -37,11 +37,15 @@
     <label for="email">البريد الإلكتروني</label>
     <input id="email" type="email" autocomplete="username" required>
     <label for="password">كلمة المرور</label>
-    <input id="password" type="password" autocomplete="current-password" required>
+    <div class="pw-wrap" style="margin-bottom:16px"><input id="password" type="password" autocomplete="current-password" required style="margin-bottom:0"><button type="button" class="pw-eye" data-target="password" aria-label="إظهار كلمة المرور">👁</button></div>
     <button type="submit" id="btn">دخول</button>
   </div>
 </form>
 <script>
+document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
+  const t = document.getElementById(b.dataset.target);
+  if (t) { t.type = t.type === 'password' ? 'text' : 'password'; b.textContent = t.type === 'password' ? '👁' : '🙈'; }
+});
 const form = document.getElementById('loginForm');
 form.onsubmit = async (e) => {
   e.preventDefault();

@@ -10,6 +10,15 @@ const auth = require('./lib/auth');
 const notify = require('./lib/notify');
 const store = require('./lib/store');
 const calendar = require('./lib/calendar');
+const { TZ } = require('./lib/dates');
+
+// طابع زمني «YYYY-MM-DD HH:MM» بتوقيت دمشق (أرقام لاتينية)
+function nowStamp() {
+  const d = new Date();
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  return `${date} ${time}`;
+}
 
 const ROLES = ['viewer', 'editor', 'admin'];
 const REMINDER_METHODS = ['email', 'push', 'calendar'];
@@ -98,11 +107,11 @@ app.get('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) 
 app.post('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
-    const { email, name, password, role } = req.body || {};
+    const { email, name, firstName, lastName, password, role } = req.body || {};
     if (!email || !password) return res.status(400).json({ ok: false, error: 'البريد وكلمة المرور مطلوبان' });
     if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' });
     const hash = await auth.hashPassword(password);
-    await store.addUser({ email: String(email).trim().toLowerCase(), name, role, hash });
+    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash });
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -111,8 +120,10 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
     const patch = {};
-    const { name, role, active, password } = req.body || {};
+    const { name, firstName, lastName, role, active, password } = req.body || {};
     if (name != null) patch.name = name;
+    if (firstName != null) patch.firstName = firstName;
+    if (lastName != null) patch.lastName = lastName;
     if (role != null) { if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' }); patch.role = role; }
     if (active != null) patch.active = !!active;
     if (password) patch.hash = await auth.hashPassword(password);
@@ -230,6 +241,27 @@ app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWr
     invalidateCache();
     res.json({ ok: true, task });
   } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// إضافة حدث إلى سجل «نتائج المتابعة اليومية» (يُلحق سطراً مؤرّخاً باسم المستخدم)
+app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const prev = t ? (t.followup || '') : '';
+    const u = req.session && req.session.user;
+    const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
+    const line = `[${nowStamp()} — ${author}] ${text.replace(/\s*\n\s*/g, ' / ')}`;
+    const next = prev.trim() ? `${prev}\n${line}` : line;
+    const task = await sheets.updateTask(req.params.row, { followup: next });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) {
+    console.error('POST followup', err.message);
     res.status(400).json({ ok: false, error: err.message });
   }
 });
