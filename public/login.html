@@ -4,38 +4,42 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>تسجيل الدخول — EO-Dashboard</title>
+<link rel="icon" type="image/png" href="/assets/logo-mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 <style>
-  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #2b2823, #4a443c); }
-  .login-card { background: #fff; border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.3); width: 100%; max-width: 380px; padding: 34px 30px; }
-  .login-logo { width: 88px; height: 58px; margin: 0 auto 14px; display: block; }
-  .login-card h1 { text-align: center; font-size: 20px; color: var(--navy); margin-bottom: 4px; }
-  .login-card p { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #211d1a 0%, #322c26 100%); padding: 20px; }
+  .login-card { background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(0,0,0,.4); width: 100%; max-width: 390px; overflow: hidden; }
+  .login-top { background: linear-gradient(135deg, #211d1a, #322c26); border-bottom: 3px solid var(--copper); padding: 30px 30px 24px; text-align: center; }
+  .login-logo { width: 116px; height: auto; margin: 0 auto 14px; display: block; }
+  .login-top h1 { font-size: 20px; color: #fff; margin-bottom: 4px; font-weight: 800; }
+  .login-top p { color: var(--champagne); font-size: 13px; font-weight: 600; }
+  .login-body { padding: 28px 30px 32px; }
   .login-card label { display: block; font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
-  .login-card input { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; font-family: inherit; font-size: 14px; margin-bottom: 16px; }
-  .login-card button { width: 100%; padding: 12px; background: var(--navy); color: #fff; border: none; border-radius: 10px; font-family: inherit; font-size: 15px; font-weight: 800; cursor: pointer; transition: .15s; }
-  .login-card button:hover { background: var(--navy-light); }
+  .login-card input { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; font-family: inherit; font-size: 14px; margin-bottom: 16px; color: var(--text); }
+  .login-card input:focus { outline: none; border-color: var(--copper); box-shadow: 0 0 0 3px rgba(189,106,67,.14); }
+  .login-card button { width: 100%; padding: 12px; background: var(--copper); color: #fff; border: none; border-radius: 10px; font-family: inherit; font-size: 15px; font-weight: 800; cursor: pointer; transition: .15s; }
+  .login-card button:hover { background: var(--gold-light); }
   .login-err { background: var(--red-bg); color: var(--red); padding: 10px; border-radius: 9px; font-size: 13px; font-weight: 700; text-align: center; margin-bottom: 16px; display: none; }
 </style>
 </head>
 <body>
 <form class="login-card" id="loginForm">
-  <svg class="login-logo" viewBox="0 0 100 64" fill="none" stroke="#c4ad90" stroke-width="6" stroke-linecap="square">
-    <polyline points="6,6 50,50 94,6"/>
-    <polyline points="20,6 50,38 80,6"/>
-    <polyline points="34,6 50,26 66,6"/>
-    <polyline points="46,6 50,14 54,6"/>
-  </svg>
-  <h1>لوحة المكتب التنفيذي</h1>
-  <p>مجموعة سنكري القابضة</p>
-  <div class="login-err" id="err"></div>
-  <label for="email">البريد الإلكتروني</label>
-  <input id="email" type="email" autocomplete="username" required>
-  <label for="password">كلمة المرور</label>
-  <input id="password" type="password" autocomplete="current-password" required>
-  <button type="submit" id="btn">دخول</button>
+  <div class="login-top">
+    <img class="login-logo" src="/assets/logo-mark.png" alt="سنكري القابضة — SANKARI HOLDING">
+    <h1>لوحة المكتب التنفيذي</h1>
+    <p>مجموعة سنكري القابضة</p>
+  </div>
+  <div class="login-body">
+    <div class="login-err" id="err"></div>
+    <label for="email">البريد الإلكتروني</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">كلمة المرور</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="btn">دخول</button>
+  </div>
 </form>
 <script>
 const form = document.getElementById('loginForm');

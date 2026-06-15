@@ -26,7 +26,7 @@ const $ = (id) => document.getElementById(id);
 const TIME_CHIPS = [
   { key: 'all', label: 'الكل' },
   { key: 'today', label: 'اليوم' },
-  { key: 'soon3', label: 'خلال ٣ أيام' },
+  { key: 'soon3', label: 'خلال 3 أيام' },
   { key: 'week', label: 'هذا الأسبوع' },
   { key: 'overdue', label: 'متأخر' },
   { key: 'undated', label: 'بلا موعد' },
@@ -73,7 +73,7 @@ async function fetchTasks(refresh = false) {
 
 function fmtSync(iso) {
   try {
-    return 'آخر مزامنة: ' + new Date(iso).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' });
+    return 'آخر مزامنة: ' + new Date(iso).toLocaleTimeString('ar-SY-u-nu-latn', { hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
 }
 
@@ -86,7 +86,7 @@ const REMINDER_METHODS = [
 const REMINDER_OFFSETS = [
   { key: 'morning', label: 'صباح يوم المهمة' },
   { key: '1d', label: 'قبل يوم' },
-  { key: '3d', label: 'قبل ٣ أيام' },
+  { key: '3d', label: 'قبل 3 أيام' },
   { key: '7d', label: 'قبل أسبوع' },
 ];
 async function fetchReminders() {
@@ -165,7 +165,7 @@ function renderKpis() {
     { key: 'all', cls: '', num: s.total, lbl: 'إجمالي المهام' },
     { key: 'today', cls: 'orange', num: s.today, lbl: 'مهام اليوم' },
     { key: 'overdue', cls: 'red', num: s.overdue, lbl: 'متأخرة' },
-    { key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال ٣ أيام' },
+    { key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال 3 أيام' },
     { key: 'week', cls: '', num: s.thisWeek, lbl: 'هذا الأسبوع' },
     { key: 'undated', cls: '', num: s.undated, lbl: 'بلا موعد' },
     { key: 'recurring', cls: '', num: s.recurring, lbl: 'دورية' },
@@ -278,7 +278,7 @@ function renderCalendar() {
   const list = applyFilters().filter((t) => t.deadlineIso);
   if (state.calY == null) { const d = new Date(); state.calY = d.getFullYear(); state.calM = d.getMonth(); }
   const y = state.calY, m = state.calM;
-  const monthName = new Date(y, m, 1).toLocaleDateString('ar-SY', { month: 'long', year: 'numeric' });
+  const monthName = new Date(y, m, 1).toLocaleDateString('ar-SY-u-nu-latn', { month: 'long', year: 'numeric' });
   const first = new Date(y, m, 1);
   const startDow = (first.getDay() + 1) % 7; // السبت=0
   const daysInMonth = new Date(y, m + 1, 0).getDate();
