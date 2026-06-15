@@ -200,17 +200,40 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .fu-more { background: var(--copper); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 10.5px; font-weight: 800; }
 .fu-leg { color: var(--muted); font-weight: 700; }
 .fu-log { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--section-bg); padding: 4px; }
-.fu-item { padding: 9px 11px; border-bottom: 1px solid var(--border-2); }
-.fu-item:last-child { border-bottom: none; }
-.fu-item.legacy { background: #fbf7f0; }
-.fu-ihead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.fu-item { padding: 10px 12px; border-bottom: 1px solid var(--border-2); border-inline-start: 3px solid var(--copper); background: #fff; border-radius: 0 8px 8px 0; margin-bottom: 6px; }
+.fu-item:last-child { margin-bottom: 0; }
+.fu-item.plain { border-inline-start-color: var(--champagne); }
+.fu-ihead { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.fu-av { width: 24px; height: 24px; border-radius: 50%; background: var(--copper); color: #fff; font-weight: 800; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .fu-au { font-weight: 800; color: var(--navy); }
-.fu-tm { color: var(--muted); font-size: 11.5px; }
-.fu-ibody { font-size: 13.5px; margin-top: 4px; line-height: 1.7; white-space: pre-line; }
+.fu-tm { color: var(--muted); font-size: 11.5px; margin-inline-start: auto; }
+.fu-ibody { font-size: 13.5px; margin-top: 5px; line-height: 1.7; white-space: pre-line; color: var(--text); }
 .fu-empty { color: var(--muted); padding: 14px; text-align: center; font-size: 13px; }
 .fu-add { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .fu-add textarea { width: 100%; font-family: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; resize: vertical; }
 .fu-add .btn-save { align-self: flex-start; }
+
+/* ===== العرض الموسّع (إظهار كامل محتوى الصفوف) ===== */
+.view-tab.toggle.active { background: var(--copper); color: #fff; border-color: var(--copper); }
+.expanded tbody td { white-space: normal; vertical-align: top; }
+.expanded .deliv { -webkit-line-clamp: unset; display: block; max-width: 460px; overflow: visible; }
+.expanded .cell-owner { white-space: pre-line; }
+.expanded .fu-col { max-width: 360px; }
+.expanded .fu-text { -webkit-line-clamp: unset; display: block; overflow: visible; }
+
+/* ===== فلترة متعددة الاختيار ===== */
+.ms { position: relative; }
+.ms-btn { font-family: inherit; font-size: 13.5px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 10px; min-width: 130px; justify-content: space-between; }
+.ms-btn.has { border-color: var(--copper); color: var(--copper-deep); font-weight: 700; }
+.ms-btn .ms-ar { color: var(--muted); font-size: 11px; }
+.ms.open .ms-btn { border-color: var(--copper); box-shadow: 0 0 0 3px rgba(189,106,67,.12); }
+.ms-panel { display: none; position: absolute; top: calc(100% + 4px); inset-inline-start: 0; min-width: 210px; max-height: 290px; overflow-y: auto; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(33,29,26,.2); z-index: 60; padding: 6px; }
+.ms.open .ms-panel { display: block; }
+.ms-opt { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 7px; font-size: 13.5px; cursor: pointer; }
+.ms-opt:hover { background: var(--surface-2); }
+.ms-opt input { width: 16px; height: 16px; accent-color: var(--copper); flex-shrink: 0; }
+.ms-empty { padding: 10px; color: var(--muted); font-size: 13px; text-align: center; }
+.filters .reset { background: var(--surface-2); color: var(--navy); border: 1px solid var(--border); }
 
 /* ===== كشف كلمة المرور ===== */
 .pw-wrap { position: relative; }

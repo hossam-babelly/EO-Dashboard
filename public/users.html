@@ -48,9 +48,29 @@
   </div>
 </div>
 
+<div class="modal-back" id="uModalBack">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head"><h3>تعديل المستخدم</h3><button class="modal-close" id="umClose">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>البريد (اسم الدخول)</label><input id="umEmail" type="email"></div>
+      <div class="form-row">
+        <div class="field"><label>الاسم الأول</label><input id="umFirst" type="text"></div>
+        <div class="field"><label>الاسم الأخير</label><input id="umLast" type="text"></div>
+      </div>
+      <div class="field"><label>الدور</label><select id="umRole"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
+      <div class="field"><label>كلمة المرور (اتركها فارغة لعدم التغيير)</label>
+        <div class="pw-wrap"><input id="umPw" type="password" placeholder="••••••"><button type="button" class="pw-eye" data-target="umPw" aria-label="إظهار كلمة المرور">👁</button></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-save" id="umSave">💾 حفظ</button><button class="btn btn-cancel" id="umCancel">إلغاء</button></div>
+  </div>
+</div>
+
 <script>
 const $ = (s) => document.querySelector(s);
 const ROLES = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' };
+let USERS = [];
+let editingEmail = null;
 function notice(msg, err) { $('#notice').innerHTML = `<div class="card" style="border-inline-start:4px solid ${err ? 'var(--red)' : 'var(--green)'}">${msg}</div>`; setTimeout(() => $('#notice').innerHTML = '', 4000); }
 
 async function loadUsers() {
@@ -59,35 +79,38 @@ async function loadUsers() {
   if (res.status === 403) { document.body.innerHTML = '<div class="page-wrap"><div class="card">هذه الصفحة للمديرين فقط. <a href="/">رجوع</a></div></div>'; return; }
   const data = await res.json();
   if (!data.storeEnabled) notice('⚠️ التخزين الدائم غير مفعّل (DATA_SHEET_ID). الإضافة/التعديل معطّلان — المستخدمون من USERS_JSON فقط.', true);
-  const rows = (data.users || []).map((u) => `<tr>
+  USERS = data.users || [];
+  const rows = USERS.map((u) => `<tr>
     <td>${u.email}</td><td>${u.name || ''}</td>
     <td><span class="role-badge role-${u.role}">${ROLES[u.role] || u.role}</span></td>
     <td>${u.active === false ? '🚫 معطّل' : '✅ مفعّل'}</td>
     <td>
-      <select data-email="${u.email}" data-act="role" style="padding:5px;border-radius:7px">
-        <option value="">تغيير الدور…</option>
-        <option value="admin">مدير</option><option value="editor">محرّر</option><option value="viewer">مشاهد</option>
-      </select>
-      <button class="btn btn-cancel" data-email="${u.email}" data-act="toggle" data-active="${u.active === false ? 1 : 0}" style="padding:5px 10px">${u.active === false ? 'تفعيل' : 'تعطيل'}</button>
-      <button class="btn btn-cancel" data-email="${u.email}" data-act="pw" style="padding:5px 10px">كلمة مرور</button>
+      <button class="btn btn-edit" data-act="edit" data-email="${u.email}" style="padding:6px 12px">✏️ تعديل</button>
+      <button class="btn btn-cancel" data-act="toggle" data-email="${u.email}" data-active="${u.active === false ? 1 : 0}" style="padding:6px 12px">${u.active === false ? 'تمكين' : 'تعطيل'}</button>
     </td></tr>`).join('');
   $('#usersBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا مستخدمون</td></tr>';
   bindActions();
 }
 
 function bindActions() {
-  document.querySelectorAll('[data-act="role"]').forEach((el) => el.onchange = async () => {
-    if (!el.value) return;
-    await patchUser(el.dataset.email, { role: el.value });
-  });
   document.querySelectorAll('[data-act="toggle"]').forEach((el) => el.onclick = async () => {
     await patchUser(el.dataset.email, { active: el.dataset.active === '1' });
   });
-  document.querySelectorAll('[data-act="pw"]').forEach((el) => el.onclick = async () => {
-    const pw = prompt('كلمة المرور الجديدة:');
-    if (pw) await patchUser(el.dataset.email, { password: pw });
-  });
+  document.querySelectorAll('[data-act="edit"]').forEach((el) => el.onclick = () => openEditUser(el.dataset.email));
 }
+
+function openEditUser(email) {
+  const u = USERS.find((x) => x.email === email);
+  if (!u) return;
+  editingEmail = email;
+  $('#umEmail').value = u.email;
+  $('#umFirst').value = u.firstName || '';
+  $('#umLast').value = u.lastName || '';
+  $('#umRole').value = u.role || 'viewer';
+  $('#umPw').value = '';
+  $('#uModalBack').classList.add('open');
+}
+function closeEditUser() { $('#uModalBack').classList.remove('open'); editingEmail = null; }
 
 async function patchUser(email, patch) {
   const res = await fetch('/api/admin/users/' + encodeURIComponent(email), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
@@ -107,6 +130,22 @@ document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
   const t = document.getElementById(b.dataset.target);
   if (t) { t.type = t.type === 'password' ? 'text' : 'password'; b.textContent = t.type === 'password' ? '👁' : '🙈'; }
 });
+
+$('#umClose').onclick = closeEditUser;
+$('#umCancel').onclick = closeEditUser;
+$('#uModalBack').onclick = (e) => { if (e.target === $('#uModalBack')) closeEditUser(); };
+$('#umSave').onclick = async () => {
+  if (!editingEmail) return;
+  const body = { email: $('#umEmail').value.trim(), firstName: $('#umFirst').value.trim(), lastName: $('#umLast').value.trim(), role: $('#umRole').value };
+  const pw = $('#umPw').value;
+  if (pw) body.password = pw;
+  const btn = $('#umSave'); btn.disabled = true; btn.textContent = '... حفظ';
+  const res = await fetch('/api/admin/users/' + encodeURIComponent(editingEmail), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  btn.disabled = false; btn.textContent = '💾 حفظ';
+  if (data.ok) { notice('تم تحديث المستخدم ✓'); closeEditUser(); loadUsers(); }
+  else notice('خطأ: ' + (data.error || ''), true);
+};
 
 loadUsers();
 </script>

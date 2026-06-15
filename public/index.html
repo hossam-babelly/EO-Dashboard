@@ -40,13 +40,13 @@
   <div class="toolbar">
     <div class="chips" id="timeChips"></div>
     <div class="filters">
-      <select id="fProject"><option value="">كل المشاريع</option></select>
-      <select id="fOwner"><option value="">كل المسؤولين</option></select>
-      <select id="fType"><option value="">كل الأنواع</option></select>
-      <select id="fPriority"><option value="">كل الأولويات</option></select>
-      <select id="fStatus"><option value="">كل الحالات</option></select>
+      <div class="ms" id="msProject" data-all="المشاريع"></div>
+      <div class="ms" id="msOwner" data-all="المسؤولين"></div>
+      <div class="ms" id="msType" data-all="الأنواع"></div>
+      <div class="ms" id="msPriority" data-all="الأولويات"></div>
+      <div class="ms" id="msStatus" data-all="الحالات"></div>
       <input class="search" id="fSearch" type="text" placeholder="🔍 بحث في المهام...">
-      <button class="btn btn-ghost reset" id="resetBtn" style="background:#eef0f3;color:var(--navy)">مسح الفلاتر</button>
+      <button class="btn reset" id="resetBtn">مسح الفلاتر</button>
     </div>
   </div>
 
@@ -55,6 +55,7 @@
     <button class="view-tab" data-view="kanban">🗂️ كانبان</button>
     <button class="view-tab" data-view="calendar">🗓️ تقويم</button>
     <button class="view-tab" data-view="meetings">🤝 الاجتماعات</button>
+    <button class="view-tab toggle" id="expandBtn" type="button" style="margin-inline-start:auto">↕ عرض موسّع</button>
   </div>
 
   <div class="count-line" id="countLine"></div>

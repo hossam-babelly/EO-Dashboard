@@ -8,14 +8,15 @@ const state = {
   me: null,
   view: 'table',
   time: 'all',
-  project: '',
-  owner: '',
-  priority: '',
-  status: '',
-  type: '',
+  projects: [],
+  owners: [],
+  priorities: [],
+  statuses: [],
+  types: [],
   search: '',
   sortKey: 'deadline',
   sortDir: 'asc',
+  expanded: false,
   calY: null,
   calM: null, // 0-based
 };
@@ -128,11 +129,11 @@ function countForTime(key) { return state.tasks.filter((t) => matchTime(t, key))
 
 function applyFilters() {
   let list = state.tasks.filter((t) => matchTime(t, state.time));
-  if (state.project) list = list.filter((t) => t.project === state.project);
-  if (state.owner) list = list.filter((t) => t.owners.includes(state.owner));
-  if (state.priority) list = list.filter((t) => t.priority === state.priority);
-  if (state.status) list = list.filter((t) => t.status === state.status);
-  if (state.type) list = list.filter((t) => (t.type || '') === (state.type === '__none__' ? '' : state.type));
+  if (state.projects.length) list = list.filter((t) => state.projects.includes(t.project));
+  if (state.owners.length) list = list.filter((t) => t.owners.some((o) => state.owners.includes(o)));
+  if (state.priorities.length) list = list.filter((t) => state.priorities.includes(t.priority));
+  if (state.statuses.length) list = list.filter((t) => state.statuses.includes(t.status));
+  if (state.types.length) list = list.filter((t) => state.types.includes(t.type || '__none__'));
   if (state.search) {
     const q = state.search.trim();
     list = list.filter((t) => [t.project, t.dept, t.file, t.owner, t.deliverable, t.notes, t.followup, t.source].join(' ').includes(q));
@@ -169,36 +170,34 @@ function typeCell(type) {
 }
 
 // ===== سجلّ المتابعة اليومية =====
-// كل حدث سطر: «[YYYY-MM-DD HH:MM — الاسم] النص». الأسطر القديمة بلا وسم تُعرض كـ«إدخال سابق».
-const FU_RE = /^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*(.*)$/;
+// كل حدث = كتلة مفصولة بسطر فارغ. أحداث الرابط تبدأ بوسم «[YYYY-MM-DD HH:MM — الاسم]».
+// الكتل بلا وسم (المُدخلة يدوياً) تُعرض كنصّ بسيط دون ترويسة.
+const FU_RE = /^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*([\s\S]*)$/;
 function parseFollowup(raw) {
-  const text = String(raw || '');
+  const text = String(raw || '').replace(/\r/g, '');
   if (!text.trim()) return [];
-  const events = [];
-  let cur = null;
-  for (const ln of text.split(/\r?\n/)) {
-    const m = ln.match(FU_RE);
-    if (m) { cur = { date: m[1], time: m[2], author: m[3].trim(), text: m[4].trim(), legacy: false }; events.push(cur); }
-    else if (ln.trim()) {
-      if (cur) cur.text += (cur.text ? ' ' : '') + ln.trim();
-      else if (events.length && events[events.length - 1].legacy) events[events.length - 1].text += ' / ' + ln.trim();
-      else events.push({ legacy: true, text: ln.trim() });
-    }
-  }
-  return events;
+  return text.split(/\n\s*\n+/).map((b) => b.trim()).filter(Boolean).map((b) => {
+    const m = b.match(FU_RE);
+    if (m) return { date: m[1], time: m[2], author: m[3].trim(), text: m[4].trim(), plain: false };
+    return { text: b, plain: true };
+  });
 }
 function fuShort(date, time) {
   if (!date) return '';
   const p = date.split('-');
   return `${p[2]}/${p[1]}${time ? ' ' + time : ''}`;
 }
+function fuAvatar(author) {
+  const ch = (author || '؟').trim().charAt(0) || '؟';
+  return `<span class="fu-av">${esc(ch)}</span>`;
+}
 function followupCell(t) {
   const evs = parseFollowup(t.followup);
   if (!evs.length) return '<span style="color:var(--muted)">—</span>';
   const last = evs[evs.length - 1];
   const more = evs.length > 1 ? `<span class="fu-more">+${evs.length - 1}</span>` : '';
-  const meta = last.legacy
-    ? `<div class="fu-meta"><span class="fu-leg">إدخال سابق</span>${more}</div>`
+  const meta = last.plain
+    ? `<div class="fu-meta"><span class="fu-leg">متابعة</span>${more}</div>`
     : `<div class="fu-meta"><b>${esc(last.author)}</b> · ${esc(fuShort(last.date, last.time))} ${more}</div>`;
   const txt = (last.text || '');
   return `<div class="fu-cell">${meta}<div class="fu-text">${esc(txt.slice(0, 90))}${txt.length > 90 ? '…' : ''}</div></div>`;
@@ -206,8 +205,8 @@ function followupCell(t) {
 function followupSection(t) {
   const evs = parseFollowup(t.followup).slice().reverse(); // الأحدث أولاً
   const items = evs.length ? evs.map((e) => `
-    <div class="fu-item ${e.legacy ? 'legacy' : ''}">
-      <div class="fu-ihead">${e.legacy ? '<span class="fu-leg">إدخال سابق</span>' : `<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span>`}</div>
+    <div class="fu-item ${e.plain ? 'plain' : ''}">
+      ${e.plain ? '' : `<div class="fu-ihead">${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span></div>`}
       <div class="fu-ibody">${esc(e.text)}</div></div>`).join('') : '<div class="fu-empty">لا توجد متابعة بعد.</div>';
   const add = canEdit() ? `
     <div class="fu-add">
@@ -244,7 +243,7 @@ function relText(t) {
 
 // ===== KPIs / chips / filters =====
 function syncViewTabs() {
-  document.querySelectorAll('.view-tab').forEach((x) => x.classList.toggle('active', x.dataset.view === state.view));
+  document.querySelectorAll('.view-tab[data-view]').forEach((x) => x.classList.toggle('active', x.dataset.view === state.view));
 }
 
 function renderKpis() {
@@ -277,7 +276,7 @@ function renderKpis() {
 
   const isActive = (c) =>
     (c.kind === 'time' && state.view !== 'meetings' && state.time === c.key) ||
-    (c.kind === 'type' && state.type === c.key) ||
+    (c.kind === 'type' && state.types.includes(c.key)) ||
     (c.kind === 'meet' && state.view === 'meetings');
 
   $('kpis').innerHTML = cards.map((c) => `
@@ -288,7 +287,7 @@ function renderKpis() {
     el.onclick = () => {
       const { kind, key } = el.dataset;
       if (kind === 'time') { if (key === '_done') return; if (state.view === 'meetings') state.view = 'table'; state.time = state.time === key ? 'all' : key; }
-      else if (kind === 'type') { if (state.view === 'meetings') state.view = 'table'; state.type = state.type === key ? '' : key; }
+      else if (kind === 'type') { if (state.view === 'meetings') state.view = 'table'; const i = state.types.indexOf(key); if (i > -1) state.types.splice(i, 1); else state.types.push(key); }
       else if (kind === 'meet') { state.view = 'meetings'; }
       render();
     };
@@ -303,18 +302,37 @@ function fillSelect(id, values, current) {
   const el = $(id); const first = el.querySelector('option').outerHTML;
   el.innerHTML = first + values.map((v) => `<option value="${esc(v)}" ${v === current ? 'selected' : ''}>${esc(v)}</option>`).join('');
 }
+// مكوّن اختيار متعدّد (قائمة مربّعات): يحدّث state[stateKey] (مصفوفة) عند التغيير
+function buildMS(id, stateKey, values) {
+  const el = $(id); if (!el) return;
+  const sel = state[stateKey];
+  const all = el.dataset.all || '';
+  const label = sel.length === 0 ? `كل ${all}` : (sel.length === 1 ? (sel[0] === '__none__' ? 'بلا نوع' : sel[0]) : `${sel.length} مختار`);
+  el.innerHTML =
+    `<button type="button" class="ms-btn ${sel.length ? 'has' : ''}"><span class="ms-lbl">${esc(label)}</span><span class="ms-ar">▾</span></button>
+     <div class="ms-panel">${values.length ? values.map((v) => `<label class="ms-opt"><input type="checkbox" value="${esc(v.value)}" ${sel.includes(v.value) ? 'checked' : ''}><span>${esc(v.label)}</span></label>`).join('') : '<div class="ms-empty">لا خيارات</div>'}</div>`;
+  el.querySelector('.ms-btn').onclick = (e) => {
+    e.stopPropagation();
+    const open = el.classList.contains('open');
+    document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open'));
+    if (!open) el.classList.add('open');
+  };
+  el.querySelectorAll('.ms-opt input').forEach((inp) => inp.onchange = () => {
+    const i = sel.indexOf(inp.value);
+    if (inp.checked && i === -1) sel.push(inp.value);
+    else if (!inp.checked && i > -1) sel.splice(i, 1);
+    render();
+  });
+}
 function renderFilters() {
-  fillSelect('fProject', state.filters.projects || [], state.project);
-  fillSelect('fOwner', state.filters.owners || [], state.owner);
-  fillSelect('fPriority', state.filters.priorities || [], state.priority);
-  fillSelect('fStatus', state.filters.statuses || [], state.status);
-  const ft = $('fType');
-  if (ft) {
-    const first = ft.querySelector('option').outerHTML;
-    let opts = (state.filters.types || []).map((v) => `<option value="${esc(v)}" ${v === state.type ? 'selected' : ''}>${esc(v)}</option>`).join('');
-    if (state.summary && state.summary.byType && state.summary.byType['']) opts += `<option value="__none__" ${state.type === '__none__' ? 'selected' : ''}>بلا نوع</option>`;
-    ft.innerHTML = first + opts;
-  }
+  const opts = (arr) => (arr || []).map((v) => ({ value: v, label: v }));
+  buildMS('msProject', 'projects', opts(state.filters.projects));
+  buildMS('msOwner', 'owners', opts(state.filters.owners));
+  buildMS('msPriority', 'priorities', opts(state.filters.priorities));
+  buildMS('msStatus', 'statuses', opts(state.filters.statuses));
+  const typeVals = opts(state.filters.types);
+  if (state.summary && state.summary.byType && state.summary.byType['']) typeVals.push({ value: '__none__', label: 'بلا نوع' });
+  buildMS('msType', 'types', typeVals);
 }
 
 // ===== Table view =====
@@ -438,9 +456,9 @@ function renderCalendar() {
 // ===== Meetings view (قائمة الاجتماعات) =====
 function renderMeetings() {
   let list = state.tasks.filter((t) => t.isMeeting);
-  if (state.project) list = list.filter((t) => t.project === state.project);
-  if (state.owner) list = list.filter((t) => t.owners.includes(state.owner));
-  if (state.type) list = list.filter((t) => (t.type || '') === (state.type === '__none__' ? '' : state.type));
+  if (state.projects.length) list = list.filter((t) => state.projects.includes(t.project));
+  if (state.owners.length) list = list.filter((t) => t.owners.some((o) => state.owners.includes(o)));
+  if (state.types.length) list = list.filter((t) => state.types.includes(t.type || '__none__'));
   if (state.search) {
     const q = state.search.trim();
     list = list.filter((t) => [t.project, t.dept, t.file, t.owner, t.deliverable, t.notes, t.followup, t.source].join(' ').includes(q));
@@ -660,6 +678,7 @@ function render() {
   else if (state.view === 'calendar') renderCalendar();
   else if (state.view === 'meetings') renderMeetings();
   else renderTable();
+  $('viewArea').classList.toggle('expanded', state.expanded);
 }
 
 async function load(refresh = false) {
@@ -678,6 +697,13 @@ async function load(refresh = false) {
 // ===== Events =====
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
+state.expanded = localStorage.getItem('eo_expanded') === '1';
+(function () {
+  const eb = $('expandBtn');
+  const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.textContent = state.expanded ? '↕ عرض مضغوط' : '↕ عرض موسّع'; } };
+  if (eb) eb.onclick = () => { state.expanded = !state.expanded; localStorage.setItem('eo_expanded', state.expanded ? '1' : '0'); sync(); render(); };
+  sync();
+})();
 $('bellBtn').onclick = (e) => { e.stopPropagation(); $('bellPanel').classList.toggle('open'); };
 $('logoutBtn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; };
 
@@ -712,20 +738,16 @@ async function setupPush(interactive) {
 }
 $('pushBtn').onclick = () => setupPush(true);
 document.addEventListener('click', (e) => { if (!e.target.closest('.bell-wrap')) $('bellPanel').classList.remove('open'); });
-document.querySelectorAll('.view-tab').forEach((tab) => {
+document.querySelectorAll('.view-tab[data-view]').forEach((tab) => {
   tab.onclick = () => {
-    document.querySelectorAll('.view-tab').forEach((x) => x.classList.remove('active'));
+    document.querySelectorAll('.view-tab[data-view]').forEach((x) => x.classList.remove('active'));
     tab.classList.add('active'); state.view = tab.dataset.view; render();
   };
 });
-$('fProject').onchange = (e) => { state.project = e.target.value; render(); };
-$('fOwner').onchange = (e) => { state.owner = e.target.value; render(); };
-$('fPriority').onchange = (e) => { state.priority = e.target.value; render(); };
-$('fStatus').onchange = (e) => { state.status = e.target.value; render(); };
-{ const ft = $('fType'); if (ft) ft.onchange = (e) => { state.type = e.target.value; render(); }; }
+document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); });
 let searchTimer;
 $('fSearch').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value; render(); }, 200); };
-$('resetBtn').onclick = () => { Object.assign(state, { time: 'all', project: '', owner: '', priority: '', status: '', type: '', search: '' }); $('fSearch').value = ''; render(); };
+$('resetBtn').onclick = () => { Object.assign(state, { time: 'all', projects: [], owners: [], priorities: [], statuses: [], types: [], search: '' }); $('fSearch').value = ''; render(); };
 $('mClose').onclick = closeModal;
 $('modalBack').onclick = (e) => { if (e.target === $('modalBack')) closeModal(); };
 

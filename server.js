@@ -120,13 +120,19 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
     const patch = {};
-    const { name, firstName, lastName, role, active, password } = req.body || {};
+    const { name, firstName, lastName, role, active, password, email: newEmail } = req.body || {};
     if (name != null) patch.name = name;
     if (firstName != null) patch.firstName = firstName;
     if (lastName != null) patch.lastName = lastName;
     if (role != null) { if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' }); patch.role = role; }
     if (active != null) patch.active = !!active;
     if (password) patch.hash = await auth.hashPassword(password);
+    if (newEmail != null && String(newEmail).trim() && String(newEmail).trim().toLowerCase() !== String(req.params.email).toLowerCase()) {
+      const ne = String(newEmail).trim().toLowerCase();
+      const all = (await store.getUsersFull()) || [];
+      if (all.some((u) => u.email.toLowerCase() === ne)) return res.status(400).json({ ok: false, error: 'البريد الجديد مستخدم مسبقاً' });
+      patch.email = ne;
+    }
     await store.updateUser(String(req.params.email).toLowerCase(), patch);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
@@ -256,7 +262,7 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
     const u = req.session && req.session.user;
     const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
     const line = `[${nowStamp()} — ${author}] ${text.replace(/\s*\n\s*/g, ' / ')}`;
-    const next = prev.trim() ? `${prev}\n${line}` : line;
+    const next = prev.trim() ? `${prev.trim()}\n\n${line}` : line;
     const task = await sheets.updateTask(req.params.row, { followup: next });
     invalidateCache();
     res.json({ ok: true, task });
