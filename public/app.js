@@ -148,6 +148,7 @@ function sortList(list) {
     if (key === 'priority') return ({ 'حرجة': 0, 'عالية': 1, 'متوسطة': 2 })[t.priority] ?? 9;
     if (key === 'project') return t.project || '';
     if (key === 'file') return t.file || '';
+    if (key === 'type') return t.type || '';
     if (key === 'owner') return t.owner || '';
     if (key === 'status') return t.status || '';
     return '';
@@ -162,6 +163,10 @@ function sortList(list) {
 // ===== Helpers =====
 function priClass(p) { return PRIORITIES.includes(p) ? 'p-' + p : 'p-غير'; }
 function stClass(s) { return s === 'منجزة' ? 'st-منجزة' : s === 'قيد التنفيذ' ? 'st-قيد' : s === 'متوقفة' ? 'st-متوقفة' : ''; }
+function typeCell(type) {
+  if (!type) return '<span style="color:var(--muted)">—</span>';
+  return `<span class="type-tag">${TYPE_ICON[type] || '🏷️'} ${esc(type)}</span>`;
+}
 function relText(t) {
   if (t.diffDays == null) return t.recurrence ? 'دورية' : 'بلا موعد';
   if (t.diffDays < 0) return `متأخرة ${Math.abs(t.diffDays)} يوم`;
@@ -258,6 +263,7 @@ function renderTable() {
     return `<tr class="${rowCls}" data-id="${t.id}">
       <td>${esc(t.project)}</td>
       <td>${esc(t.file)}</td>
+      <td>${typeCell(t.type)}</td>
       <td class="cell-owner">${esc(t.owner)}</td>
       <td><div class="deliv">${esc(t.deliverable)}</div></td>
       <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
@@ -267,6 +273,7 @@ function renderTable() {
   $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>
       <th data-sort="project">المشروع ${arrow('project')}</th>
       <th data-sort="file">الملف ${arrow('file')}</th>
+      <th data-sort="type">النوع ${arrow('type')}</th>
       <th data-sort="owner">المسؤول ${arrow('owner')}</th>
       <th>المخرج المطلوب</th>
       <th data-sort="deadline">الموعد ${arrow('deadline')}</th>
