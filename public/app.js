@@ -12,6 +12,7 @@ const state = {
   owner: '',
   priority: '',
   status: '',
+  type: '',
   search: '',
   sortKey: 'deadline',
   sortDir: 'asc',
@@ -21,6 +22,12 @@ const state = {
 
 const STATUSES = ['لم تبدأ', 'قيد التنفيذ', 'منجزة', 'متوقفة'];
 const PRIORITIES = ['حرجة', 'عالية', 'متوسطة'];
+const TYPES = ['E-mail', 'مجلس الإدارة', 'مكتب تنفيذي'];
+const MEETING_SCHEDULED = 'تم جدولته';
+const MEETING_UNSCHEDULED = 'غير مجدول';
+const MEETING_STATUSES = [MEETING_UNSCHEDULED, MEETING_SCHEDULED];
+// أيقونة مختصرة لكل نوع (للبطاقات)
+const TYPE_ICON = { 'E-mail': '✉️', 'مجلس الإدارة': '🏛️', 'مكتب تنفيذي': '🏢' };
 const $ = (id) => document.getElementById(id);
 
 const TIME_CHIPS = [
@@ -125,6 +132,7 @@ function applyFilters() {
   if (state.owner) list = list.filter((t) => t.owners.includes(state.owner));
   if (state.priority) list = list.filter((t) => t.priority === state.priority);
   if (state.status) list = list.filter((t) => t.status === state.status);
+  if (state.type) list = list.filter((t) => (t.type || '') === (state.type === '__none__' ? '' : state.type));
   if (state.search) {
     const q = state.search.trim();
     list = list.filter((t) => [t.project, t.dept, t.file, t.owner, t.deliverable, t.notes, t.followup, t.source].join(' ').includes(q));
@@ -144,7 +152,11 @@ function sortList(list) {
     if (key === 'status') return t.status || '';
     return '';
   };
-  return [...list].sort((a, b) => { const x = val(a), y = val(b); return x < y ? -dir : x > y ? dir : 0; });
+  return [...list].sort((a, b) => {
+    if (a.isDone !== b.isDone) return a.isDone ? 1 : -1; // المنجزة دائماً في الأسفل
+    const x = val(a), y = val(b);
+    return x < y ? -dir : x > y ? dir : 0;
+  });
 }
 
 // ===== Helpers =====
@@ -159,23 +171,55 @@ function relText(t) {
 }
 
 // ===== KPIs / chips / filters =====
+function syncViewTabs() {
+  document.querySelectorAll('.view-tab').forEach((x) => x.classList.toggle('active', x.dataset.view === state.view));
+}
+
 function renderKpis() {
   const s = state.summary;
+  const byType = s.byType || {};
+  const meet = s.meetings || { total: 0, scheduled: 0, unscheduled: 0 };
+
+  // البطاقات الزمنية الأساسية
   const cards = [
-    { key: 'all', cls: '', num: s.total, lbl: 'إجمالي المهام' },
-    { key: 'today', cls: 'orange', num: s.today, lbl: 'مهام اليوم' },
-    { key: 'overdue', cls: 'red', num: s.overdue, lbl: 'متأخرة' },
-    { key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال 3 أيام' },
-    { key: 'week', cls: '', num: s.thisWeek, lbl: 'هذا الأسبوع' },
-    { key: 'undated', cls: '', num: s.undated, lbl: 'بلا موعد' },
-    { key: 'recurring', cls: '', num: s.recurring, lbl: 'دورية' },
-    { key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: 'نسبة الإنجاز' },
+    { kind: 'time', key: 'all', cls: '', num: s.total, lbl: 'إجمالي المهام' },
+    { kind: 'time', key: 'today', cls: 'orange', num: s.today, lbl: 'مهام اليوم' },
+    { kind: 'time', key: 'overdue', cls: 'red', num: s.overdue, lbl: 'متأخرة' },
+    { kind: 'time', key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال 3 أيام' },
+    { kind: 'time', key: 'week', cls: '', num: s.thisWeek, lbl: 'هذا الأسبوع' },
+    { kind: 'time', key: 'undated', cls: '', num: s.undated, lbl: 'بلا موعد' },
+    { kind: 'time', key: 'recurring', cls: '', num: s.recurring, lbl: 'دورية' },
+    { kind: 'time', key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: 'نسبة الإنجاز' },
   ];
+
+  // بطاقة لكل نوع (المعروفة أولاً ثم أي نوع آخر موجود)
+  const presentTypes = [
+    ...TYPES.filter((t) => byType[t]),
+    ...Object.keys(byType).filter((k) => k && !TYPES.includes(k)),
+  ];
+  presentTypes.forEach((t) => cards.push({ kind: 'type', key: t, cls: 'kpi-type', num: byType[t] || 0, lbl: `${TYPE_ICON[t] || '🏷️'} ${t}` }));
+  if (byType['']) cards.push({ kind: 'type', key: '__none__', cls: 'kpi-type', num: byType[''], lbl: '🏷️ بلا نوع' });
+
+  // بطاقة الاجتماعات (التركيز على غير المجدولة)
+  if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.unscheduled, lbl: '🤝 اجتماعات غير مجدولة' });
+
+  const isActive = (c) =>
+    (c.kind === 'time' && state.view !== 'meetings' && state.time === c.key) ||
+    (c.kind === 'type' && state.type === c.key) ||
+    (c.kind === 'meet' && state.view === 'meetings');
+
   $('kpis').innerHTML = cards.map((c) => `
-    <div class="kpi ${c.cls} ${state.time === c.key ? 'active' : ''}" data-time="${c.key}">
+    <div class="kpi ${c.cls || ''} ${isActive(c) ? 'active' : ''}" data-kind="${c.kind}" data-key="${esc(c.key)}">
       <div class="num">${c.num}</div><div class="lbl">${c.lbl}</div></div>`).join('');
+
   $('kpis').querySelectorAll('.kpi').forEach((el) => {
-    el.onclick = () => { const t = el.dataset.time; if (t === '_done') return; state.time = state.time === t ? 'all' : t; render(); };
+    el.onclick = () => {
+      const { kind, key } = el.dataset;
+      if (kind === 'time') { if (key === '_done') return; if (state.view === 'meetings') state.view = 'table'; state.time = state.time === key ? 'all' : key; }
+      else if (kind === 'type') { if (state.view === 'meetings') state.view = 'table'; state.type = state.type === key ? '' : key; }
+      else if (kind === 'meet') { state.view = 'meetings'; }
+      render();
+    };
   });
 }
 function renderChips() {
@@ -192,6 +236,13 @@ function renderFilters() {
   fillSelect('fOwner', state.filters.owners || [], state.owner);
   fillSelect('fPriority', state.filters.priorities || [], state.priority);
   fillSelect('fStatus', state.filters.statuses || [], state.status);
+  const ft = $('fType');
+  if (ft) {
+    const first = ft.querySelector('option').outerHTML;
+    let opts = (state.filters.types || []).map((v) => `<option value="${esc(v)}" ${v === state.type ? 'selected' : ''}>${esc(v)}</option>`).join('');
+    if (state.summary && state.summary.byType && state.summary.byType['']) opts += `<option value="__none__" ${state.type === '__none__' ? 'selected' : ''}>بلا نوع</option>`;
+    ft.innerHTML = first + opts;
+  }
 }
 
 // ===== Table view =====
@@ -308,18 +359,80 @@ function renderCalendar() {
   $('viewArea').querySelectorAll('.cal-task').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
 }
 
+// ===== Meetings view (قائمة الاجتماعات) =====
+function renderMeetings() {
+  let list = state.tasks.filter((t) => t.isMeeting);
+  if (state.project) list = list.filter((t) => t.project === state.project);
+  if (state.owner) list = list.filter((t) => t.owners.includes(state.owner));
+  if (state.type) list = list.filter((t) => (t.type || '') === (state.type === '__none__' ? '' : state.type));
+  if (state.search) {
+    const q = state.search.trim();
+    list = list.filter((t) => [t.project, t.dept, t.file, t.owner, t.deliverable, t.notes, t.followup, t.source].join(' ').includes(q));
+  }
+  // غير المجدول أولاً (للتركيز عليه) ثم المجدول في الأسفل؛ وداخل كل مجموعة حسب الموعد
+  list = [...list].sort((a, b) => {
+    if (a.meetingScheduled !== b.meetingScheduled) return a.meetingScheduled ? 1 : -1;
+    const x = a.deadlineIso || '9999-99-99', y = b.deadlineIso || '9999-99-99';
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  const unsched = list.filter((t) => !t.meetingScheduled).length;
+  $('countLine').textContent = `${list.length} اجتماع — ${unsched} غير مجدول · ${list.length - unsched} مجدول`
+    + (canEdit() ? ' (انقر زرّ الحالة للتبديل)' : '');
+  if (!list.length) { $('viewArea').innerHTML = '<div class="table-wrap"><div class="empty">لا توجد اجتماعات. فعّل مربّع «اجتماع» لأي مهمة لتظهر هنا.</div></div>'; return; }
+
+  const rows = list.map((t) => {
+    const sch = t.meetingScheduled;
+    const dlCls = !sch && t.isOverdue ? 'overdue' : !sch && t.isSoon3 ? 'soon' : '';
+    const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
+    const btn = canEdit()
+      ? `<button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-next="${sch ? MEETING_UNSCHEDULED : MEETING_SCHEDULED}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button>`
+      : '';
+    return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">
+      <td>${esc(t.project)}</td>
+      <td class="cell-owner">${esc(t.owner)}</td>
+      <td><div class="deliv">${esc(t.deliverable)}</div></td>
+      <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
+      <td><span class="badge ${sch ? 'mt-sched' : 'mt-unsched'}">${sch ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span></td>
+      <td>${btn}</td></tr>`;
+  }).join('');
+  $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>
+      <th>المشروع</th><th>المسؤول</th><th>موضوع الاجتماع / المخرج</th><th>الموعد</th><th>حالة الاجتماع</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  $('viewArea').querySelectorAll('tbody tr').forEach((tr) => {
+    tr.onclick = (e) => { if (e.target.closest('.mt-toggle')) return; openModal(Number(tr.dataset.id)); };
+  });
+  $('viewArea').querySelectorAll('.mt-toggle').forEach((b) => {
+    b.onclick = async (e) => { e.stopPropagation(); await setMeetingStatus(Number(b.dataset.id), b.dataset.next); };
+  });
+}
+
+async function setMeetingStatus(id, status) {
+  try {
+    const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meetingStatus: status }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تم تحديث حالة الاجتماع ✓');
+    render();
+  } catch (e) { toast('تعذّر التحديث: ' + e.message, true); load(true); }
+}
+
 // ===== Modal: view + edit =====
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
   $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
   const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
+  const meetingField = t.isMeeting
+    ? `<div class="field"><label>الاجتماع</label><div class="val"><span class="badge ${t.meetingScheduled ? 'mt-sched' : 'mt-unsched'}">${esc(t.meetingStatus)}</span></div></div>`
+    : '';
   $('mBody').innerHTML =
-    F('المشروع', t.project) + F('القسم / الشركة / المشروع', t.dept) + F('الملف', t.file) + F('المسؤول المعني', t.owner) +
+    F('المشروع', t.project) + F('القسم / الشركة / المشروع', t.dept) + F('الملف', t.file) + F('النوع', t.type) + F('المسؤول المعني', t.owner) +
     F('المخرج المطلوب', t.deliverable) +
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
+    meetingField +
     F('نتائج المتابعة اليومية', t.followup) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes) +
     reminderSection(t);
   $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
@@ -383,18 +496,24 @@ function selectField(label, name, options, value) {
 
 function openEdit(t) {
   const isNew = !t;
-  t = t || { project: '', dept: '', file: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '' };
+  t = t || { project: '', dept: '', file: '', type: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '', isMeeting: false, meetingStatus: '' };
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
     <div class="form-row">${field('المشروع', 'project', t.project)}${field('القسم / الشركة / المشروع', 'dept', t.dept)}</div>
-    ${field('الملف', 'file', t.file)}
+    <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
     ${field('المسؤول المعني (افصل بسطر لكل شخص)', 'owner', t.owner)}
     ${textarea('المخرج المطلوب', 'deliverable', t.deliverable)}
     <div class="form-row">${field('الموعد / الدورية', 'deadlineRaw', t.deadlineRaw)}${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}</div>
     ${selectField('الحالة', 'status', STATUSES, t.status)}
+    <div class="rem-box" style="margin:0 0 16px">
+      <label class="rem-opt" style="font-weight:800;color:var(--navy)"><input type="checkbox" name="meeting" id="mtgChk" ${t.isMeeting ? 'checked' : ''}> 🤝 يوجد اجتماع مرتبط بهذه المهمة</label>
+      <div id="mtgStatusWrap" style="margin-top:10px;${t.isMeeting ? '' : 'display:none'}">${selectField('حالة الاجتماع', 'meetingStatus', MEETING_STATUSES, t.meetingStatus || MEETING_UNSCHEDULED)}</div>
+    </div>
     ${textarea('نتائج المتابعة اليومية', 'followup', t.followup)}
     <div class="form-row">${field('مصدر المهمة', 'source', t.source)}${field('ملاحظات', 'notes', t.notes)}</div>
   </form>`;
+  const mtgChk = $('mtgChk');
+  if (mtgChk) mtgChk.onchange = () => { const w = $('mtgStatusWrap'); if (w) w.style.display = mtgChk.checked ? '' : 'none'; };
   $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
   $('mSave').onclick = () => saveTask(isNew ? null : t.id);
   $('mCancel').onclick = () => (isNew ? closeModal() : openModal(t.id));
@@ -405,6 +524,9 @@ async function saveTask(id) {
   const form = $('taskForm');
   const payload = {};
   new FormData(form).forEach((v, k) => { payload[k] = v; });
+  // مربّع الاختيار: FormData يحذفه عند عدم التفعيل — نضبطه صراحةً
+  const mc = form.querySelector('[name="meeting"]');
+  if (mc) { payload.meeting = mc.checked; if (!mc.checked) payload.meetingStatus = ''; }
   const btn = $('mSave'); btn.disabled = true; btn.textContent = '... جارٍ الحفظ';
   try {
     const url = id ? `/api/tasks/${id}` : '/api/tasks';
@@ -451,8 +573,10 @@ function render() {
   renderUser();
   renderKpis(); renderChips(); renderFilters(); renderBell();
   $('addBtn').style.display = canEdit() ? '' : 'none';
+  syncViewTabs();
   if (state.view === 'kanban') renderKanban();
   else if (state.view === 'calendar') renderCalendar();
+  else if (state.view === 'meetings') renderMeetings();
   else renderTable();
 }
 
@@ -516,9 +640,10 @@ $('fProject').onchange = (e) => { state.project = e.target.value; render(); };
 $('fOwner').onchange = (e) => { state.owner = e.target.value; render(); };
 $('fPriority').onchange = (e) => { state.priority = e.target.value; render(); };
 $('fStatus').onchange = (e) => { state.status = e.target.value; render(); };
+{ const ft = $('fType'); if (ft) ft.onchange = (e) => { state.type = e.target.value; render(); }; }
 let searchTimer;
 $('fSearch').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value; render(); }, 200); };
-$('resetBtn').onclick = () => { Object.assign(state, { time: 'all', project: '', owner: '', priority: '', status: '', search: '' }); $('fSearch').value = ''; render(); };
+$('resetBtn').onclick = () => { Object.assign(state, { time: 'all', project: '', owner: '', priority: '', status: '', type: '', search: '' }); $('fSearch').value = ''; render(); };
 $('mClose').onclick = closeModal;
 $('modalBack').onclick = (e) => { if (e.target === $('modalBack')) closeModal(); };
 

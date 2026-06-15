@@ -113,6 +113,8 @@ main { padding: 22px 28px 60px; max-width: 1500px; margin: 0 auto; }
 .kpi.orange { border-top-color: var(--orange); } .kpi.orange .num { color: var(--orange); }
 .kpi.green { border-top-color: var(--green); } .kpi.green .num { color: var(--green); }
 .kpi.gold { border-top-color: var(--copper); } .kpi.gold .num { color: var(--copper); }
+.kpi.kpi-type { border-top-color: var(--blue); } .kpi.kpi-type .num { color: var(--blue); }
+.kpi.kpi-meet { border-top-color: var(--copper); } .kpi.kpi-meet .num { color: var(--copper); }
 
 /* ===== Toolbar / Filters ===== */
 .toolbar {
@@ -185,6 +187,9 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .st-قيد { background: var(--blue-bg); color: var(--blue); border-color: #e1d2b9; }
 .st-منجزة { background: var(--green-bg); color: var(--green); border-color: #cfe0c4; }
 .st-متوقفة { background: var(--red-bg); color: var(--red); border-color: #f0d3d0; }
+.mt-sched { background: var(--green-bg); color: var(--green); }
+.mt-unsched { background: var(--orange-bg); color: var(--orange); }
+.mt-toggle { padding: 6px 12px; font-size: 12.5px; white-space: nowrap; }
 
 .deadline-cell .iso { font-weight: 700; }
 .deadline-cell .rel { font-size: 11.5px; color: var(--muted); display: block; }

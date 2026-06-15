@@ -159,6 +159,8 @@ function summarize(tasks) {
     done: 0,
     byPriority: {},
     byStatus: {},
+    byType: {},
+    meetings: { total: 0, scheduled: 0, unscheduled: 0 },
   };
   for (const t of tasks) {
     if (t.isToday) s.today++;
@@ -170,6 +172,12 @@ function summarize(tasks) {
     if (t.isDone) s.done++;
     s.byPriority[t.priority] = (s.byPriority[t.priority] || 0) + 1;
     s.byStatus[t.status] = (s.byStatus[t.status] || 0) + 1;
+    const tk = t.type || '';
+    s.byType[tk] = (s.byType[tk] || 0) + 1;
+    if (t.isMeeting) {
+      s.meetings.total++;
+      if (t.meetingScheduled) s.meetings.scheduled++; else s.meetings.unscheduled++;
+    }
   }
   s.completion = s.total ? Math.round((s.done / s.total) * 100) : 0;
   return s;
@@ -189,6 +197,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         priorities: uniqueSorted(tasks.map((t) => t.priority)),
         statuses: sheets.STATUSES,
         files: uniqueSorted(tasks.map((t) => t.file)),
+        types: uniqueSorted(tasks.map((t) => t.type)),
       },
       meta: { canWrite: sheets.canWrite, fetchedAt: new Date().toISOString() },
     });
@@ -322,10 +331,10 @@ app.listen(PORT, async () => {
   console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
   if (sheets.canWrite) {
     try {
-      await sheets.ensureStatusColumn();
-      console.log('تم التأكد من عمود «الحالة».');
+      await sheets.ensureColumns();
+      console.log('تم التأكد من عمودَي «الحالة» و«حالة الاجتماع».');
     } catch (e) {
-      console.warn('تعذّر إنشاء عمود الحالة:', e.message);
+      console.warn('تعذّر إنشاء الأعمدة المُدارة:', e.message);
     }
   }
   console.log(`التخزين الدائم (المستخدمون/التذكيرات): ${store.enabled ? 'مفعّل' : 'معطّل — USERS_JSON فقط'}`);
