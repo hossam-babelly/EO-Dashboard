@@ -170,16 +170,18 @@ function typeCell(type) {
 }
 
 // ===== سجلّ المتابعة اليومية =====
-// كل حدث = كتلة مفصولة بسطر فارغ. أحداث الرابط تبدأ بوسم «[YYYY-MM-DD HH:MM — الاسم]».
-// الكتل بلا وسم (المُدخلة يدوياً) تُعرض كنصّ بسيط دون ترويسة.
-const FU_RE = /^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*([\s\S]*)$/;
-function parseFollowup(raw) {
-  const text = String(raw || '').replace(/\r/g, '');
-  if (!text.trim()) return [];
-  return text.split(/\n\s*\n+/).map((b) => b.trim()).filter(Boolean).map((b) => {
-    const m = b.match(FU_RE);
-    if (m) return { date: m[1], time: m[2], author: m[3].trim(), text: m[4].trim(), plain: false };
-    return { text: b, plain: true };
+// عمودان متوازيان: «المتابعة» (نصّ الحدث) و«السجل» (الاسم·التاريخ·الوقت بصيغة [..])، كتلة لكل حدث مفصولة بسطر فارغ.
+// الحدث i في «المتابعة» يقابل السجل i في «السجل». الأحداث اليدوية سجلّها «----------» (بلا بيانات).
+const FU_RE = /^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*$/;
+function fuBlocks(s) {
+  return String(s == null ? '' : s).replace(/\r/g, '').split(/\n[ \t]*\n+/).map((b) => b.replace(/^\s+|\s+$/g, '')).filter((b) => b !== '');
+}
+function parseFollowup(followup, log) {
+  const F = fuBlocks(followup), L = fuBlocks(log);
+  return F.map((text, i) => {
+    const m = (L[i] || '').match(FU_RE);
+    if (m) return { text, date: m[1], time: m[2], author: m[3].trim(), manual: false };
+    return { text, manual: true };
   });
 }
 function fuShort(date, time) {
@@ -191,22 +193,27 @@ function fuAvatar(author) {
   const ch = (author || '؟').trim().charAt(0) || '؟';
   return `<span class="fu-av">${esc(ch)}</span>`;
 }
+function fuMini(e) {
+  const meta = e.manual ? '<span class="fu-leg">متابعة</span>' : `<b>${esc(e.author)}</b> · ${esc(fuShort(e.date, e.time))}`;
+  return `<div class="fu-mini"><div class="fu-meta">${meta}</div><div class="fu-mtext">${esc(e.text)}</div></div>`;
+}
 function followupCell(t) {
-  const evs = parseFollowup(t.followup);
+  const evs = parseFollowup(t.followup, t.log);
   if (!evs.length) return '<span style="color:var(--muted)">—</span>';
+  if (state.expanded) return `<div class="fu-cell-full">${evs.slice().reverse().map(fuMini).join('')}</div>`;
   const last = evs[evs.length - 1];
   const more = evs.length > 1 ? `<span class="fu-more">+${evs.length - 1}</span>` : '';
-  const meta = last.plain
+  const meta = last.manual
     ? `<div class="fu-meta"><span class="fu-leg">متابعة</span>${more}</div>`
     : `<div class="fu-meta"><b>${esc(last.author)}</b> · ${esc(fuShort(last.date, last.time))} ${more}</div>`;
   const txt = (last.text || '');
   return `<div class="fu-cell">${meta}<div class="fu-text">${esc(txt.slice(0, 90))}${txt.length > 90 ? '…' : ''}</div></div>`;
 }
 function followupSection(t) {
-  const evs = parseFollowup(t.followup).slice().reverse(); // الأحدث أولاً
+  const evs = parseFollowup(t.followup, t.log).slice().reverse(); // الأحدث أولاً
   const items = evs.length ? evs.map((e) => `
-    <div class="fu-item ${e.plain ? 'plain' : ''}">
-      ${e.plain ? '' : `<div class="fu-ihead">${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span></div>`}
+    <div class="fu-item ${e.manual ? 'plain' : ''}">
+      ${e.manual ? '' : `<div class="fu-ihead">${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span></div>`}
       <div class="fu-ibody">${esc(e.text)}</div></div>`).join('') : '<div class="fu-empty">لا توجد متابعة بعد.</div>';
   const add = canEdit() ? `
     <div class="fu-add">

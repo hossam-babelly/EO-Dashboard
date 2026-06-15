@@ -254,16 +254,20 @@ app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWr
 // إضافة حدث إلى سجل «نتائج المتابعة اليومية» (يُلحق سطراً مؤرّخاً باسم المستخدم)
 app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    const text = String((req.body && req.body.text) || '').trim();
+    const text = String((req.body && req.body.text) || '').trim().replace(/\s*\n\s*/g, ' / '); // الحدث في سطر واحد
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
     const tasks = await loadTasks(true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
-    const prev = t ? (t.followup || '') : '';
     const u = req.session && req.session.user;
     const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
-    const line = `[${nowStamp()} — ${author}] ${text.replace(/\s*\n\s*/g, ' / ')}`;
-    const next = prev.trim() ? `${prev.trim()}\n\n${line}` : line;
-    const task = await sheets.updateTask(req.params.row, { followup: next });
+    const logLine = `[${nowStamp()} — ${author}]`;
+    // الكتل متوازية: نصّ الحدث في «المتابعة» والسجل في «السجل»، والأحداث اليدوية تأخذ «----------»
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    fB.push(text);
+    lB.push(logLine);
+    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
     invalidateCache();
     res.json({ ok: true, task });
   } catch (err) {
