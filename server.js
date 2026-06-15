@@ -332,7 +332,7 @@ app.listen(PORT, async () => {
   if (sheets.canWrite) {
     try {
       await sheets.ensureColumns();
-      console.log('تم التأكد من عمودَي «الحالة» و«حالة الاجتماع».');
+      console.log('تم التأكد من عمودَي «الحالة» و«تمت جدولة الاجتماع».');
     } catch (e) {
       console.warn('تعذّر إنشاء الأعمدة المُدارة:', e.message);
     }

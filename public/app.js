@@ -385,7 +385,7 @@ function renderMeetings() {
     const dlCls = !sch && t.isOverdue ? 'overdue' : !sch && t.isSoon3 ? 'soon' : '';
     const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
     const btn = canEdit()
-      ? `<button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-next="${sch ? MEETING_UNSCHEDULED : MEETING_SCHEDULED}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button>`
+      ? `<button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-sched="${sch ? 0 : 1}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button>`
       : '';
     return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">
       <td>${esc(t.project)}</td>
@@ -402,17 +402,17 @@ function renderMeetings() {
     tr.onclick = (e) => { if (e.target.closest('.mt-toggle')) return; openModal(Number(tr.dataset.id)); };
   });
   $('viewArea').querySelectorAll('.mt-toggle').forEach((b) => {
-    b.onclick = async (e) => { e.stopPropagation(); await setMeetingStatus(Number(b.dataset.id), b.dataset.next); };
+    b.onclick = async (e) => { e.stopPropagation(); await setMeetingScheduled(Number(b.dataset.id), b.dataset.sched === '1'); };
   });
 }
 
-async function setMeetingStatus(id, status) {
+async function setMeetingScheduled(id, scheduled) {
   try {
-    const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meetingStatus: status }) });
+    const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheduled }) });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تم تحديث حالة الاجتماع ✓');
+    toast('تم تحديث جدولة الاجتماع ✓');
     render();
   } catch (e) { toast('تعذّر التحديث: ' + e.message, true); load(true); }
 }
@@ -507,7 +507,9 @@ function openEdit(t) {
     ${selectField('الحالة', 'status', STATUSES, t.status)}
     <div class="rem-box" style="margin:0 0 16px">
       <label class="rem-opt" style="font-weight:800;color:var(--navy)"><input type="checkbox" name="meeting" id="mtgChk" ${t.isMeeting ? 'checked' : ''}> 🤝 يوجد اجتماع مرتبط بهذه المهمة</label>
-      <div id="mtgStatusWrap" style="margin-top:10px;${t.isMeeting ? '' : 'display:none'}">${selectField('حالة الاجتماع', 'meetingStatus', MEETING_STATUSES, t.meetingStatus || MEETING_UNSCHEDULED)}</div>
+      <div id="mtgStatusWrap" style="margin-top:10px;${t.isMeeting ? '' : 'display:none'}">
+        <label class="rem-opt"><input type="checkbox" name="scheduled" ${t.meetingScheduled ? 'checked' : ''}> ✓ تمت جدولة الاجتماع</label>
+      </div>
     </div>
     ${textarea('نتائج المتابعة اليومية', 'followup', t.followup)}
     <div class="form-row">${field('مصدر المهمة', 'source', t.source)}${field('ملاحظات', 'notes', t.notes)}</div>
@@ -524,9 +526,11 @@ async function saveTask(id) {
   const form = $('taskForm');
   const payload = {};
   new FormData(form).forEach((v, k) => { payload[k] = v; });
-  // مربّع الاختيار: FormData يحذفه عند عدم التفعيل — نضبطه صراحةً
+  // مربّعات الاختيار: FormData يحذفها عند عدم التفعيل — نضبطها صراحةً
   const mc = form.querySelector('[name="meeting"]');
-  if (mc) { payload.meeting = mc.checked; if (!mc.checked) payload.meetingStatus = ''; }
+  const sc = form.querySelector('[name="scheduled"]');
+  if (mc) payload.meeting = mc.checked;
+  payload.scheduled = !!(mc && mc.checked && sc && sc.checked); // الجدولة فقط حين يوجد اجتماع
   const btn = $('mSave'); btn.disabled = true; btn.textContent = '... جارٍ الحفظ';
   try {
     const url = id ? `/api/tasks/${id}` : '/api/tasks';
