@@ -298,7 +298,7 @@ async function runDailyDigest(req, res) {
       const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
       reminders = await notify.sendDueReminders(byRow, await store.getAllReminders(), appUrl, store);
     }
-    res.json({ ok: true, digest, reminders });
+    res.json({ ok: true, mail: { enabled: notify.emailEnabled(), provider: notify.emailProvider() }, digest, reminders });
   } catch (e) {
     console.error('daily-digest', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -308,7 +308,14 @@ app.post('/api/cron/daily-digest', runDailyDigest);
 app.get('/api/cron/daily-digest', runDailyDigest);
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, canWrite: sheets.canWrite, tz: require('./lib/dates').TZ });
+  res.json({
+    ok: true,
+    canWrite: sheets.canWrite,
+    tz: require('./lib/dates').TZ,
+    storeEnabled: store.enabled,
+    mailProvider: notify.emailProvider(),
+    notifyEmailSet: !!process.env.NOTIFY_EMAIL,
+  });
 });
 
 app.listen(PORT, async () => {
