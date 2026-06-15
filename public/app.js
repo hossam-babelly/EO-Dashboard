@@ -180,8 +180,8 @@ function parseFollowup(followup, log) {
   const F = fuBlocks(followup), L = fuBlocks(log);
   return F.map((text, i) => {
     const m = (L[i] || '').match(FU_RE);
-    if (m) return { text, date: m[1], time: m[2], author: m[3].trim(), manual: false };
-    return { text, manual: true };
+    if (m) return { idx: i, text, date: m[1], time: m[2], author: m[3].trim(), manual: false };
+    return { idx: i, text, manual: true };
   });
 }
 function fuShort(date, time) {
@@ -211,9 +211,11 @@ function followupCell(t) {
 }
 function followupSection(t) {
   const evs = parseFollowup(t.followup, t.log).slice().reverse(); // الأحدث أولاً
+  const ed = canEdit();
+  const acts = (e) => ed ? `<span class="fu-acts"><button class="fu-ico fu-ed" type="button" data-idx="${e.idx}" title="تعديل">✏️</button><button class="fu-ico fu-del" type="button" data-idx="${e.idx}" title="حذف">🗑</button></span>` : '';
   const items = evs.length ? evs.map((e) => `
-    <div class="fu-item ${e.manual ? 'plain' : ''}">
-      ${e.manual ? '' : `<div class="fu-ihead">${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span></div>`}
+    <div class="fu-item ${e.manual ? 'plain' : ''}" data-idx="${e.idx}">
+      <div class="fu-ihead">${e.manual ? '<span class="fu-leg">متابعة (يدوي)</span>' : `${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span>`}${acts(e)}</div>
       <div class="fu-ibody">${esc(e.text)}</div></div>`).join('') : '<div class="fu-empty">لا توجد متابعة بعد.</div>';
   const add = canEdit() ? `
     <div class="fu-add">
@@ -239,6 +241,37 @@ async function addFollowup(id) {
     toast('تعذّر: ' + e.message, true);
     if (btn) { btn.disabled = false; btn.textContent = '➕ إضافة حدث'; }
   }
+}
+function startEditEvent(id, idx, btn) {
+  const item = btn.closest('.fu-item');
+  const body = item.querySelector('.fu-ibody');
+  const cur = body.textContent;
+  body.innerHTML = `<textarea class="fu-eta" rows="2"></textarea>
+    <div class="fu-eacts"><button class="btn btn-save fu-savebtn" type="button">حفظ</button><button class="btn btn-cancel fu-cancelbtn" type="button">إلغاء</button></div>`;
+  const ta = body.querySelector('.fu-eta');
+  ta.value = cur; ta.focus();
+  body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, ta.value.trim());
+  body.querySelector('.fu-cancelbtn').onclick = () => openModal(id);
+}
+async function saveEvent(id, idx, text) {
+  if (!text) { toast('نصّ الحدث فارغ', true); return; }
+  try {
+    const res = await fetch(`/api/tasks/${id}/followup/${idx}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تم تعديل الحدث ✓'); openModal(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
+}
+async function deleteEvent(id, idx) {
+  if (!confirm('حذف هذا الحدث وسجلّه نهائياً؟')) return;
+  try {
+    const res = await fetch(`/api/tasks/${id}/followup/${idx}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تم حذف الحدث ✓'); openModal(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 function relText(t) {
   if (t.diffDays == null) return t.recurrence ? 'دورية' : 'بلا موعد';
@@ -540,6 +573,8 @@ function openModal(id) {
   if (canEdit()) $('mEdit').onclick = () => openEdit(t);
   const fuAdd = $('fuAdd');
   if (fuAdd) fuAdd.onclick = () => addFollowup(t.id);
+  $('mBody').querySelectorAll('.fu-ed').forEach((b) => b.onclick = () => startEditEvent(t.id, Number(b.dataset.idx), b));
+  $('mBody').querySelectorAll('.fu-del').forEach((b) => b.onclick = () => deleteEvent(t.id, Number(b.dataset.idx)));
   bindReminderSection(t);
   $('modalBack').classList.add('open');
 }
@@ -614,7 +649,7 @@ function openEdit(t) {
         <label class="rem-opt"><input type="checkbox" name="scheduled" ${t.meetingScheduled ? 'checked' : ''}> ✓ تمت جدولة الاجتماع</label>
       </div>
     </div>
-    ${textarea('نتائج المتابعة اليومية', 'followup', t.followup)}
+    <div class="field"><label>سجلّ المتابعة اليومية</label><div class="val" style="color:var(--muted);font-size:13px">تُدار المتابعة (إضافة/تعديل/حذف الأحداث) من نافذة عرض المهمة — ليبقى السجلّ متوازياً.</div></div>
     <div class="form-row">${field('مصدر المهمة', 'source', t.source)}${field('ملاحظات', 'notes', t.notes)}</div>
   </form>`;
   const mtgChk = $('mtgChk');

@@ -213,6 +213,12 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .fu-au { font-weight: 800; color: var(--navy); }
 .fu-tm { color: var(--muted); font-size: 11.5px; margin-inline-start: auto; }
 .fu-ibody { font-size: 13.5px; margin-top: 5px; line-height: 1.7; white-space: pre-line; color: var(--text); }
+.fu-acts { margin-inline-start: auto; display: inline-flex; gap: 2px; }
+.fu-ico { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 6px; line-height: 1; }
+.fu-ico:hover { background: var(--surface-2); }
+.fu-eta { width: 100%; font-family: inherit; font-size: 13.5px; padding: 8px 10px; border: 1px solid var(--copper); border-radius: 8px; resize: vertical; }
+.fu-eacts { display: flex; gap: 8px; margin-top: 6px; }
+.fu-eacts .btn { padding: 6px 12px; font-size: 12.5px; }
 .fu-empty { color: var(--muted); padding: 14px; text-align: center; font-size: 13px; }
 .fu-add { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .fu-add textarea { width: 100%; font-family: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; resize: vertical; }

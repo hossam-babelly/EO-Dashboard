@@ -276,6 +276,46 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
   }
 });
 
+// تعديل حدث متابعة بالموضع — يحدّث نصّه في «المتابعة» وسجلّه في «السجل» (بوقت التعديل واسم المعدِّل)
+app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim().replace(/\s*\n\s*/g, ' / ');
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
+    const u = req.session && req.session.user;
+    const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
+    fB[idx] = text;
+    lB[idx] = `[${nowStamp()} — ${author}]`;
+    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { console.error('PATCH followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// حذف حدث متابعة بالموضع — يحذف نصّه وسجلّه معاً
+app.delete('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
+    fB.splice(idx, 1);
+    lB.splice(idx, 1);
+    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { console.error('DELETE followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
 // إضافة مهمة جديدة
 app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
