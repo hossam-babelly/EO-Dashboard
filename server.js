@@ -8,6 +8,12 @@ const session = require('express-session');
 const sheets = require('./lib/sheets');
 const auth = require('./lib/auth');
 const notify = require('./lib/notify');
+const store = require('./lib/store');
+const calendar = require('./lib/calendar');
+
+const ROLES = ['viewer', 'editor', 'admin'];
+const REMINDER_METHODS = ['email', 'push', 'calendar'];
+const REMINDER_OFFSETS = ['morning', '1d', '3d', '7d'];
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,14 +75,50 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get('/api/me', (req, res) => {
-  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true });
-  if (req.session && req.session.user) return res.json({ ok: true, user: req.session.user });
-  res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
+app.get('/api/me', async (req, res) => {
+  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled });
+  if (!(req.session && req.session.user)) return res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
+  const user = { ...req.session.user };
+  // رمز التقويم الشخصي (للاشتراك في تغذية ICS)
+  if (store.enabled) {
+    try {
+      const full = (await store.getUsersFull()).find((u) => u.email.toLowerCase() === user.email.toLowerCase());
+      if (full) user.calToken = full.token;
+    } catch { /* تجاهل */ }
+  }
+  res.json({ ok: true, user, storeEnabled: store.enabled });
 });
 
-app.get('/api/admin/users', requireAuth, requireRole('admin'), (req, res) => {
-  res.json({ ok: true, users: auth.listUsers() });
+// ===== إدارة المستخدمين (مدير) =====
+app.get('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
+  try { res.json({ ok: true, users: await auth.listUsers(), storeEnabled: store.enabled }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const { email, name, password, role } = req.body || {};
+    if (!email || !password) return res.status(400).json({ ok: false, error: 'البريد وكلمة المرور مطلوبان' });
+    if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' });
+    const hash = await auth.hashPassword(password);
+    await store.addUser({ email: String(email).trim().toLowerCase(), name, role, hash });
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const patch = {};
+    const { name, role, active, password } = req.body || {};
+    if (name != null) patch.name = name;
+    if (role != null) { if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' }); patch.role = role; }
+    if (active != null) patch.active = !!active;
+    if (password) patch.hash = await auth.hashPassword(password);
+    await store.updateUser(String(req.params.email).toLowerCase(), patch);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
 // ذاكرة تخزين مؤقتة قصيرة لتقليل طلبات Google API مع إبقاء التحديث شبه لحظي
@@ -200,9 +242,44 @@ app.get('/api/push/key', requireAuth, (req, res) => {
   res.json({ ok: true, key: process.env.VAPID_PUBLIC_KEY || null });
 });
 
-app.post('/api/push/subscribe', requireAuth, (req, res) => {
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
   notify.addSubscription(req.body);
+  try { if (store.enabled && req.session.user) await store.savePush(req.session.user.email, req.body); } catch (e) { console.warn('savePush', e.message); }
   res.json({ ok: true });
+});
+
+// ===== التذكيرات (لكل مستخدم/مهمة) =====
+app.get('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    const email = req.session?.user?.email;
+    if (!store.enabled || !email) return res.json({ ok: true, reminders: {}, storeEnabled: store.enabled });
+    res.json({ ok: true, reminders: await store.getReminders(email), methods: REMINDER_METHODS, offsets: REMINDER_OFFSETS });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const email = req.session.user.email;
+    const methods = (req.body.methods || []).filter((m) => REMINDER_METHODS.includes(m));
+    const offsets = (req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
+    await store.setReminder(email, req.params.row, methods, offsets);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// ===== تغذية التقويم (ICS) — اشتراك دائم برمز شخصي =====
+app.get('/api/calendar/:token.ics', async (req, res) => {
+  try {
+    const user = await store.getUserByToken(req.params.token);
+    if (!user) return res.status(404).send('NOT FOUND');
+    const tasks = await loadTasks();
+    const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
+    const reminders = await store.getReminders(user.email);
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Content-Disposition', 'inline; filename="eo-dashboard.ics"');
+    res.send(calendar.buildICS(byRow, reminders));
+  } catch (e) { res.status(500).send('ERROR: ' + e.message); }
 });
 
 // المهمة المجدولة: ملخص يومي عبر البريد و Push (يستدعيها GitHub Actions)
@@ -214,8 +291,14 @@ async function runDailyDigest(req, res) {
   try {
     const tasks = await loadTasks(true);
     const appUrl = process.env.APP_URL || '';
-    const result = await notify.sendDailyDigest(tasks, appUrl);
-    res.json({ ok: true, result });
+    const digest = await notify.sendDailyDigest(tasks, appUrl);
+    // تذكيرات لكل مستخدم/مهمة حسب تفضيلاتهم
+    let reminders = { emails: 0, push: 0 };
+    if (store.enabled) {
+      const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
+      reminders = await notify.sendDueReminders(byRow, await store.getAllReminders(), appUrl, store);
+    }
+    res.json({ ok: true, digest, reminders });
   } catch (e) {
     console.error('daily-digest', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -238,4 +321,5 @@ app.listen(PORT, async () => {
       console.warn('تعذّر إنشاء عمود الحالة:', e.message);
     }
   }
+  console.log(`التخزين الدائم (المستخدمون/التذكيرات): ${store.enabled ? 'مفعّل' : 'معطّل — USERS_JSON فقط'}`);
 });

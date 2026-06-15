@@ -30,7 +30,7 @@ const TIME_CHIPS = [
   { key: 'week', label: 'هذا الأسبوع' },
   { key: 'overdue', label: 'متأخر' },
   { key: 'undated', label: 'بلا موعد' },
-  { key: 'recurring', label: 'متكررة' },
+  { key: 'recurring', label: 'دورية' },
 ];
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -51,6 +51,7 @@ function renderUser() {
   $('userChip').innerHTML = `${esc(state.me.name)}<span class="role">${roleAr}</span>`;
   $('userChip').style.display = '';
   $('logoutBtn').style.display = state.me && !state.meta.authDisabled ? '' : 'none';
+  const ub = $('usersBtn'); if (ub) ub.style.display = state.me.role === 'admin' ? '' : 'none';
   const pb = $('pushBtn');
   if ('PushManager' in window) {
     pb.style.display = '';
@@ -74,6 +75,25 @@ function fmtSync(iso) {
   try {
     return 'آخر مزامنة: ' + new Date(iso).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
+}
+
+// ===== التذكيرات =====
+const REMINDER_METHODS = [
+  { key: 'email', label: '📧 بريد إلكتروني' },
+  { key: 'push', label: '🔔 إشعار متصفح/حاسوب' },
+  { key: 'calendar', label: '🗓️ تقويم الحاسوب' },
+];
+const REMINDER_OFFSETS = [
+  { key: 'morning', label: 'صباح يوم المهمة' },
+  { key: '1d', label: 'قبل يوم' },
+  { key: '3d', label: 'قبل ٣ أيام' },
+  { key: '7d', label: 'قبل أسبوع' },
+];
+async function fetchReminders() {
+  try {
+    const data = await (await fetch('/api/reminders')).json();
+    if (data.ok) { state.reminders = data.reminders || {}; state.storeEnabled = data.storeEnabled !== false; }
+  } catch { /* تجاهل */ }
 }
 
 function toast(msg, isErr = false) {
@@ -131,7 +151,7 @@ function sortList(list) {
 function priClass(p) { return PRIORITIES.includes(p) ? 'p-' + p : 'p-غير'; }
 function stClass(s) { return s === 'منجزة' ? 'st-منجزة' : s === 'قيد التنفيذ' ? 'st-قيد' : s === 'متوقفة' ? 'st-متوقفة' : ''; }
 function relText(t) {
-  if (t.diffDays == null) return t.recurrence ? 'متكررة' : 'بلا موعد';
+  if (t.diffDays == null) return t.recurrence ? 'دورية' : 'بلا موعد';
   if (t.diffDays < 0) return `متأخرة ${Math.abs(t.diffDays)} يوم`;
   if (t.diffDays === 0) return 'اليوم';
   if (t.diffDays === 1) return 'غداً';
@@ -148,7 +168,7 @@ function renderKpis() {
     { key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال ٣ أيام' },
     { key: 'week', cls: '', num: s.thisWeek, lbl: 'هذا الأسبوع' },
     { key: 'undated', cls: '', num: s.undated, lbl: 'بلا موعد' },
-    { key: 'recurring', cls: '', num: s.recurring, lbl: 'متكررة' },
+    { key: 'recurring', cls: '', num: s.recurring, lbl: 'دورية' },
     { key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: 'نسبة الإنجاز' },
   ];
   $('kpis').innerHTML = cards.map((c) => `
@@ -300,10 +320,55 @@ function openModal(id) {
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
-    F('نتائج المتابعة اليومية', t.followup) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes);
+    F('نتائج المتابعة اليومية', t.followup) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes) +
+    reminderSection(t);
   $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
   if (canEdit()) $('mEdit').onclick = () => openEdit(t);
+  bindReminderSection(t);
   $('modalBack').classList.add('open');
+}
+
+// قسم «تذكيراتي» داخل نافذة المهمة (لكل مستخدم)
+function reminderSection(t) {
+  if (!state.storeEnabled) {
+    return `<div class="rem-box"><label class="rem-title">🔔 تذكيراتي</label>
+      <div style="color:var(--muted);font-size:13px">ميزة التذكيرات تتطلب تفعيل التخزين الدائم (DATA_SHEET_ID).</div></div>`;
+  }
+  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [] };
+  const chk = (arr, item) => arr.includes(item.key) ? 'checked' : '';
+  const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
+  const offsets = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="offset" value="${o.key}" ${chk(pref.offsets, o)}> ${o.label}</label>`).join('');
+  const calUrl = state.me && state.me.calToken ? `${location.origin}/api/calendar/${state.me.calToken}.ics` : '';
+  const calHint = calUrl
+    ? `<div class="rem-cal">لإضافة مهامك إلى تقويم حاسوبك، اشترك بهذا الرابط مرة واحدة:
+        <div class="rem-cal-row"><input id="calUrl" readonly value="${esc(calUrl)}"><button class="btn btn-cancel" id="calCopy" type="button">نسخ</button></div></div>`
+    : '';
+  return `<div class="rem-box">
+    <label class="rem-title">🔔 تذكيراتي لهذه المهمة</label>
+    <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
+    <div class="rem-group"><span class="rem-sub">توقيت التذكير:</span>${offsets}</div>
+    <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">💾 حفظ التذكير</button>
+    ${calHint}
+  </div>`;
+}
+
+function bindReminderSection(t) {
+  if (!state.storeEnabled) return;
+  const save = $('remSave');
+  if (save) save.onclick = async () => {
+    const methods = [...document.querySelectorAll('[data-rem="method"]:checked')].map((x) => x.value);
+    const offsets = [...document.querySelectorAll('[data-rem="offset"]:checked')].map((x) => x.value);
+    save.disabled = true; save.textContent = '... حفظ';
+    try {
+      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets }) });
+      const data = await res.json(); if (!data.ok) throw new Error(data.error);
+      state.reminders[String(t.id)] = { methods, offsets };
+      toast('تم حفظ التذكير ✓');
+    } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
+    save.disabled = false; save.textContent = '💾 حفظ التذكير';
+  };
+  const copy = $('calCopy');
+  if (copy) copy.onclick = () => { const i = $('calUrl'); i.select(); document.execCommand('copy'); toast('تم نسخ رابط التقويم ✓'); };
 }
 
 function field(label, name, value, type = 'text') {
@@ -393,7 +458,7 @@ function render() {
 
 async function load(refresh = false) {
   try {
-    if (!state.me) await fetchMe();
+    if (!state.me) { await fetchMe(); await fetchReminders(); }
     await fetchTasks(refresh);
     $('sync').textContent = fmtSync(state.meta.fetchedAt);
     render();

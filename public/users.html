@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة المستخدمين — EO-Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+  <div class="logo" aria-label="سنكري القابضة">
+    <svg viewBox="0 0 100 64" fill="none" stroke="#c4ad90" stroke-width="6" stroke-linecap="square">
+      <polyline points="6,6 50,50 94,6"/><polyline points="20,6 50,38 80,6"/>
+      <polyline points="34,6 50,26 66,6"/><polyline points="46,6 50,14 54,6"/>
+    </svg>
+  </div>
+  <div class="title"><h1>إدارة المستخدمين</h1><p>مجموعة سنكري القابضة</p></div>
+  <div class="header-actions">
+    <a class="btn btn-gold" href="/">← رجوع للوحة</a>
+  </div>
+</header>
+
+<div class="page-wrap">
+  <div id="notice"></div>
+
+  <div class="card">
+    <h2>➕ إضافة مستخدم</h2>
+    <form class="u-form" id="addForm">
+      <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
+      <div class="fld"><label>الاسم</label><input type="text" name="name" placeholder="الاسم الكامل"></div>
+      <div class="fld"><label>كلمة المرور</label><input type="text" name="password" required placeholder="••••••"></div>
+      <div class="fld"><label>الدور</label><select name="role"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
+      <button class="btn btn-save" type="submit">حفظ</button>
+    </form>
+    <p style="color:var(--muted);font-size:12.5px;margin-top:10px">البريد هو اسم الدخول، وإليه تُرسل تنبيهات المهام. الأدوار: <b>مدير</b> (كل شيء + إدارة المستخدمين) • <b>محرّر</b> (تعديل المهام) • <b>مشاهد</b> (عرض + تذكيرات شخصية).</p>
+  </div>
+
+  <div class="card">
+    <h2>👥 المستخدمون</h2>
+    <table class="users-table">
+      <thead><tr><th>البريد</th><th>الاسم</th><th>الدور</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+      <tbody id="usersBody"><tr><td colspan="5" style="text-align:center;color:var(--muted)">جارٍ التحميل…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const ROLES = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' };
+function notice(msg, err) { $('#notice').innerHTML = `<div class="card" style="border-inline-start:4px solid ${err ? 'var(--red)' : 'var(--green)'}">${msg}</div>`; setTimeout(() => $('#notice').innerHTML = '', 4000); }
+
+async function loadUsers() {
+  const res = await fetch('/api/admin/users');
+  if (res.status === 401) { location.href = '/login.html'; return; }
+  if (res.status === 403) { document.body.innerHTML = '<div class="page-wrap"><div class="card">هذه الصفحة للمديرين فقط. <a href="/">رجوع</a></div></div>'; return; }
+  const data = await res.json();
+  if (!data.storeEnabled) notice('⚠️ التخزين الدائم غير مفعّل (DATA_SHEET_ID). الإضافة/التعديل معطّلان — المستخدمون من USERS_JSON فقط.', true);
+  const rows = (data.users || []).map((u) => `<tr>
+    <td>${u.email}</td><td>${u.name || ''}</td>
+    <td><span class="role-badge role-${u.role}">${ROLES[u.role] || u.role}</span></td>
+    <td>${u.active === false ? '🚫 معطّل' : '✅ مفعّل'}</td>
+    <td>
+      <select data-email="${u.email}" data-act="role" style="padding:5px;border-radius:7px">
+        <option value="">تغيير الدور…</option>
+        <option value="admin">مدير</option><option value="editor">محرّر</option><option value="viewer">مشاهد</option>
+      </select>
+      <button class="btn btn-cancel" data-email="${u.email}" data-act="toggle" data-active="${u.active === false ? 1 : 0}" style="padding:5px 10px">${u.active === false ? 'تفعيل' : 'تعطيل'}</button>
+      <button class="btn btn-cancel" data-email="${u.email}" data-act="pw" style="padding:5px 10px">كلمة مرور</button>
+    </td></tr>`).join('');
+  $('#usersBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا مستخدمون</td></tr>';
+  bindActions();
+}
+
+function bindActions() {
+  document.querySelectorAll('[data-act="role"]').forEach((el) => el.onchange = async () => {
+    if (!el.value) return;
+    await patchUser(el.dataset.email, { role: el.value });
+  });
+  document.querySelectorAll('[data-act="toggle"]').forEach((el) => el.onclick = async () => {
+    await patchUser(el.dataset.email, { active: el.dataset.active === '1' });
+  });
+  document.querySelectorAll('[data-act="pw"]').forEach((el) => el.onclick = async () => {
+    const pw = prompt('كلمة المرور الجديدة:');
+    if (pw) await patchUser(el.dataset.email, { password: pw });
+  });
+}
+
+async function patchUser(email, patch) {
+  const res = await fetch('/api/admin/users/' + encodeURIComponent(email), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+  const data = await res.json();
+  if (data.ok) { notice('تم التحديث ✓'); loadUsers(); } else notice('خطأ: ' + data.error, true);
+}
+
+$('#addForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target); const body = {}; fd.forEach((v, k) => body[k] = v);
+  const res = await fetch('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (data.ok) { notice('تمت إضافة المستخدم ✓'); e.target.reset(); loadUsers(); } else notice('خطأ: ' + data.error, true);
+};
+
+loadUsers();
+</script>
+</body>
+</html>

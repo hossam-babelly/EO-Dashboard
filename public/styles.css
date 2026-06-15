@@ -262,3 +262,30 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
   main { padding: 16px 14px 40px; }
   .deliv { max-width: 160px; }
 }
+
+/* ===== Reminder section ===== */
+.rem-box { margin-top: 18px; padding: 14px 16px; background: var(--section-bg); border: 1px solid var(--border); border-radius: 12px; }
+.rem-title { display: block; font-weight: 800; color: var(--navy); margin-bottom: 10px; font-size: 14.5px; }
+.rem-group { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }
+.rem-sub { font-size: 13px; color: var(--muted); font-weight: 700; min-width: 96px; }
+.rem-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 13.5px; cursor: pointer; }
+.rem-opt input { width: 16px; height: 16px; accent-color: var(--gold); }
+.rem-cal { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.rem-cal-row { display: flex; gap: 8px; margin-top: 6px; }
+.rem-cal-row input { flex: 1; font-family: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+
+/* ===== Users admin page ===== */
+.page-wrap { max-width: 980px; margin: 24px auto; padding: 0 20px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 18px; }
+.card h2 { font-size: 17px; color: var(--navy); margin-bottom: 14px; }
+.users-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.users-table th, .users-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border); }
+.users-table th { background: var(--section-bg); color: var(--navy); font-weight: 800; }
+.u-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+.u-form .fld label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; font-weight: 700; }
+.u-form input, .u-form select { width: 100%; font-family: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; }
+.role-badge { padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 800; }
+.role-admin { background: var(--red-bg); color: var(--red); }
+.role-editor { background: #eaf2fb; color: var(--blue); }
+.role-viewer { background: var(--green-bg); color: var(--green); }
+@media (max-width: 760px) { .u-form { grid-template-columns: 1fr 1fr; } }
