@@ -11,9 +11,14 @@ jobs:
     steps:
       - name: استدعاء الملخص اليومي
         run: |
-          curl -fsS -X POST "$APP_URL/api/cron/daily-digest" \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -w "\nHTTP %{http_code}\n"
+          echo "URL: $APP_URL/api/cron/daily-digest"
+          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$APP_URL/api/cron/daily-digest" \
+            -H "x-cron-secret: $CRON_SECRET")
+          echo "=== HTTP $code ==="
+          echo "=== Response ==="
+          cat /tmp/resp.txt; echo
+          test "$code" = "200"
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
