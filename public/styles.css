@@ -221,6 +221,21 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .fu-eacts { display: flex; gap: 8px; margin-top: 6px; }
 .fu-eacts .btn { padding: 6px 12px; font-size: 12.5px; }
 .dv-num { font-weight: 800; color: var(--copper-deep); font-size: 12px; }
+/* تأشير المخرجات */
+.dv-list { display: flex; flex-direction: column; gap: 5px; }
+.dv-toggle { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; padding: 4px 7px; border-radius: 7px; border-inline-start: 3px solid var(--champagne); background: var(--section-bg); transition: .12s; }
+.dv-toggle:hover { background: var(--surface-2); border-inline-start-color: var(--copper); }
+.dv-check { flex-shrink: 0; width: 16px; height: 16px; border: 2px solid var(--copper); border-radius: 4px; margin-top: 1px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; line-height: 1; }
+.dv-toggle.done { border-inline-start-color: var(--green); }
+.dv-toggle.done .dv-check { background: var(--green); border-color: var(--green); }
+.dv-toggle.done .dv-check::after { content: '✓'; }
+.dv-txt { font-size: 12.5px; line-height: 1.5; }
+.dv-toggle.done .dv-txt { color: var(--muted); text-decoration: line-through; }
+.fu-col .dv-txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.expanded .fu-col .dv-txt { -webkit-line-clamp: unset; display: block; overflow: visible; }
+.fu-item.dv-done .fu-ibody { color: var(--muted); text-decoration: line-through; }
+.btn-del-task { background: var(--red); color: #fff; }
+.btn-del-task:hover { background: #9d3a32; }
 .fu-empty { color: var(--muted); padding: 14px; text-align: center; font-size: 13px; }
 .fu-add { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .fu-add textarea { width: 100%; font-family: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; resize: vertical; }

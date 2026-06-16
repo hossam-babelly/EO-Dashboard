@@ -18,6 +18,8 @@ const state = {
   sortDir: 'asc',
   expanded: false,
   tableCols: [],
+  newDv: [],
+  newEv: [],
   calY: null,
   calM: null, // 0-based
 };
@@ -170,13 +172,35 @@ function typeCell(type) {
   return `<span class="type-tag">${TYPE_ICON[type] || '🏷️'} ${esc(type)}</span>`;
 }
 // خلية المخرجات في الجدول: مضغوط = أول مخرج + «+عدد»، موسّع = كل المخرجات مكدّسة
+// المخرجات: كتل مفصولة بسطر فارغ؛ المخرج المنجَز يبدأ بـ«✓»
+function parseDeliverables(raw) {
+  return fuBlocks(raw).map((b, i) => ({ idx: i, done: /^✓/.test(b), text: b.replace(/^✓\s*/, '') }));
+}
+function dvChip(t, e) {
+  return `<div class="dv-toggle ${e.done ? 'done' : ''}" data-id="${t.id}" data-idx="${e.idx}" title="${e.done ? 'إلغاء التأشير' : 'تأشير كمنجز'}"><span class="dv-check"></span><span class="dv-txt">${esc(e.text)}</span></div>`;
+}
 function deliverableCell(t) {
-  const items = fuBlocks(t.deliverable);
+  const items = parseDeliverables(t.deliverable);
   if (!items.length) return '<span style="color:var(--muted)">—</span>';
-  if (state.expanded) return `<div class="fu-cell-full">${items.map((b, i) => `<div class="fu-mini"><div class="fu-meta"><b>مخرج ${i + 1}</b></div><div class="fu-mtext">${esc(b)}</div></div>`).join('')}</div>`;
-  const first = items[0];
-  const more = items.length > 1 ? `<span class="fu-more">+${items.length - 1}</span>` : '';
-  return `<div class="fu-cell"><div class="fu-meta">${more}</div><div class="fu-text">${esc(first.slice(0, 100))}${first.length > 100 ? '…' : ''}</div></div>`;
+  if (state.expanded) return `<div class="dv-list">${items.map((e) => dvChip(t, e)).join('')}</div>`;
+  const more = items.length > 1 ? `<span class="fu-more" style="margin-top:4px;display:inline-block">+${items.length - 1}</span>` : '';
+  return `<div class="dv-list">${dvChip(t, items[0])}${more}</div>`;
+}
+async function toggleDelivApi(id, idx) {
+  const res = await fetch(`/api/tasks/${id}/deliverable/${idx}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error);
+  const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+}
+async function toggleDeliv(id, idx) {
+  try { await toggleDelivApi(id, idx); render(); }
+  catch (e) { toast('تعذّر: ' + e.message, true); load(true); }
+}
+function bindDvToggles(scope) {
+  scope.querySelectorAll('.dv-toggle').forEach((el) => el.onclick = (e) => {
+    e.stopPropagation();
+    if (canEdit()) toggleDeliv(Number(el.dataset.id), Number(el.dataset.idx));
+  });
 }
 
 // ===== سجلّ المتابعة اليومية =====
@@ -455,6 +479,7 @@ function renderTable() {
     th.onclick = () => { const k = th.dataset.sort; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } renderTable(); };
   });
   $('viewArea').querySelectorAll('tbody tr').forEach((tr) => { tr.onclick = () => openModal(Number(tr.dataset.id)); });
+  bindDvToggles($('viewArea'));
 }
 
 // ===== Kanban view =====
@@ -539,13 +564,13 @@ function renderCalendar() {
 
 // ===== المخرجات المطلوبة ككائنات (كتل مفصولة بسطر فارغ) =====
 function deliverableSection(t) {
-  const items = fuBlocks(t.deliverable);
+  const items = parseDeliverables(t.deliverable);
   const ed = canEdit();
-  const acts = (i) => ed ? `<span class="fu-acts"><button class="fu-ico dv-ed" type="button" data-idx="${i}" title="تعديل">✏️</button><button class="fu-ico dv-del" type="button" data-idx="${i}" title="حذف">🗑</button></span>` : '';
-  const list = items.length ? items.map((b, i) => `
-    <div class="fu-item plain" data-idx="${i}">
-      <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span>${acts(i)}</div>
-      <div class="fu-ibody">${esc(b)}</div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
+  const acts = (e) => ed ? `<span class="fu-acts"><button class="fu-ico dv-chk" type="button" data-idx="${e.idx}" title="${e.done ? 'إلغاء التأشير' : 'تأشير منجز'}">${e.done ? '☑' : '☐'}</button><button class="fu-ico dv-ed" type="button" data-idx="${e.idx}" title="تعديل">✏️</button><button class="fu-ico dv-del" type="button" data-idx="${e.idx}" title="حذف">🗑</button></span>` : '';
+  const list = items.length ? items.map((e) => `
+    <div class="fu-item plain ${e.done ? 'dv-done' : ''}" data-idx="${e.idx}">
+      <div class="fu-ihead"><span class="dv-num">مخرج ${e.idx + 1}</span>${acts(e)}</div>
+      <div class="fu-ibody">${esc(e.text)}</div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
   const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="أضف مخرجاً مطلوباً جديداً…"></textarea><button class="btn btn-save" id="dvAdd" type="button">➕ إضافة مخرج</button></div>` : '';
   return `<div id="dvSection" class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>${add}</div>`;
 }
@@ -553,6 +578,7 @@ function bindDeliverable(t) {
   const dvAdd = $('dvAdd');
   if (dvAdd) dvAdd.onclick = () => addDeliverable(t.id);
   const sec = $('dvSection'); if (!sec) return;
+  sec.querySelectorAll('.dv-chk').forEach((b) => b.onclick = async () => { try { await toggleDelivApi(t.id, Number(b.dataset.idx)); refreshDeliverable(t.id); render(); } catch (e) { toast('تعذّر: ' + e.message, true); } });
   sec.querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
   sec.querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
 }
@@ -597,6 +623,51 @@ async function deleteDeliv(id, idx) {
   } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 
+// ===== أقسام محلية للمهمة الجديدة (تُجمَع في الذاكرة ثم تُرسَل عند الحفظ) =====
+function localDeliverableSection() {
+  const list = state.newDv.length ? state.newDv.map((b, i) => `
+    <div class="fu-item plain" data-idx="${i}">
+      <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span><span class="fu-acts"><button class="fu-ico ldv-ed" type="button" data-idx="${i}">✏️</button><button class="fu-ico ldv-del" type="button" data-idx="${i}">🗑</button></span></div>
+      <div class="fu-ibody">${esc(b)}</div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
+  return `<div id="ldvSection" class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>
+    <div class="fu-add"><textarea id="ldvInput" rows="2" placeholder="أضف مخرجاً مطلوباً…"></textarea><button class="btn btn-save" id="ldvAdd" type="button">➕ إضافة مخرج</button></div></div>`;
+}
+function refreshLocalDv() { const el = $('ldvSection'); if (el) { el.outerHTML = localDeliverableSection(); bindLocalDeliverable(); } }
+function bindLocalDeliverable() {
+  const a = $('ldvAdd');
+  if (a) a.onclick = () => { const v = $('ldvInput').value.trim().replace(/\n\s*\n+/g, '\n'); if (!v) { toast('اكتب نصّ المخرج', true); return; } state.newDv.push(v); refreshLocalDv(); };
+  $('ldvSection').querySelectorAll('.ldv-del').forEach((b) => b.onclick = () => { state.newDv.splice(Number(b.dataset.idx), 1); refreshLocalDv(); });
+  $('ldvSection').querySelectorAll('.ldv-ed').forEach((b) => b.onclick = () => {
+    const i = Number(b.dataset.idx), body = b.closest('.fu-item').querySelector('.fu-ibody'), cur = body.textContent;
+    body.innerHTML = `<textarea class="fu-eta" rows="3"></textarea><div class="fu-eacts"><button class="btn btn-save" type="button" id="ldvS">حفظ</button><button class="btn btn-cancel" type="button" id="ldvC">إلغاء</button></div>`;
+    const ta = body.querySelector('.fu-eta'); ta.value = cur; ta.focus();
+    $('ldvS').onclick = () => { const v = ta.value.trim().replace(/\n\s*\n+/g, '\n'); if (v) { state.newDv[i] = v; } refreshLocalDv(); };
+    $('ldvC').onclick = () => refreshLocalDv();
+  });
+}
+function localEventSection() {
+  const me = (state.me && state.me.firstName) ? state.me.firstName : 'أنت';
+  const list = state.newEv.length ? state.newEv.map((b, i) => `
+    <div class="fu-item" data-idx="${i}">
+      <div class="fu-ihead">${fuAvatar(me)}<span class="fu-au">${esc(me)}</span><span class="fu-tm">عند الحفظ</span><span class="fu-acts"><button class="fu-ico lev-ed" type="button" data-idx="${i}">✏️</button><button class="fu-ico lev-del" type="button" data-idx="${i}">🗑</button></span></div>
+      <div class="fu-ibody">${esc(b)}</div></div>`).join('') : '<div class="fu-empty">لا أحداث بعد.</div>';
+  return `<div id="levSection" class="field"><label>سجلّ المتابعة اليومية</label><div class="fu-log">${list}</div>
+    <div class="fu-add"><textarea id="levInput" rows="2" placeholder="أضف حدث متابعة…"></textarea><button class="btn btn-save" id="levAdd" type="button">➕ إضافة حدث</button></div></div>`;
+}
+function refreshLocalEv() { const el = $('levSection'); if (el) { el.outerHTML = localEventSection(); bindLocalEvent(); } }
+function bindLocalEvent() {
+  const a = $('levAdd');
+  if (a) a.onclick = () => { const v = $('levInput').value.replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim(); if (!v) { toast('اكتب نصّ الحدث', true); return; } state.newEv.push(v); refreshLocalEv(); };
+  $('levSection').querySelectorAll('.lev-del').forEach((b) => b.onclick = () => { state.newEv.splice(Number(b.dataset.idx), 1); refreshLocalEv(); });
+  $('levSection').querySelectorAll('.lev-ed').forEach((b) => b.onclick = () => {
+    const i = Number(b.dataset.idx), body = b.closest('.fu-item').querySelector('.fu-ibody'), cur = body.textContent;
+    body.innerHTML = `<textarea class="fu-eta" rows="2"></textarea><div class="fu-eacts"><button class="btn btn-save" type="button" id="levS">حفظ</button><button class="btn btn-cancel" type="button" id="levC">إلغاء</button></div>`;
+    const ta = body.querySelector('.fu-eta'); ta.value = cur; ta.focus();
+    $('levS').onclick = () => { const v = ta.value.replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim(); if (v) { state.newEv[i] = v; } refreshLocalEv(); };
+    $('levC').onclick = () => refreshLocalEv();
+  });
+}
+
 // ===== Meetings view (قائمة الاجتماعات) =====
 function renderMeetings() {
   let list = state.tasks.filter((t) => t.isMeeting);
@@ -628,7 +699,7 @@ function renderMeetings() {
     return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">
       <td>${esc(t.project)}</td>
       <td class="cell-owner">${esc(t.owner)}</td>
-      <td><div class="deliv">${esc(t.deliverable)}</div></td>
+      <td class="fu-col">${deliverableCell(t)}</td>
       <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
       <td><span class="badge ${sch ? 'mt-sched' : 'mt-unsched'}">${sch ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span></td>
       <td>${btn}</td></tr>`;
@@ -642,6 +713,7 @@ function renderMeetings() {
   $('viewArea').querySelectorAll('.mt-toggle').forEach((b) => {
     b.onclick = async (e) => { e.stopPropagation(); await setMeetingScheduled(Number(b.dataset.id), b.dataset.sched === '1'); };
   });
+  bindDvToggles($('viewArea'));
 }
 
 async function setMeetingScheduled(id, scheduled) {
@@ -665,7 +737,7 @@ function openModal(id) {
     ? `<div class="field"><label>الاجتماع</label><div class="val"><span class="badge ${t.meetingScheduled ? 'mt-sched' : 'mt-unsched'}">${esc(t.meetingStatus)}</span></div></div>`
     : '';
   $('mBody').innerHTML =
-    F('المشروع', t.project) + F('الملف', t.file) + F('النوع', t.type) + F('المسؤول المعني', t.owner) +
+    F('المشروع', t.project) + F('الملف', t.file) + F('النوع', t.type) + F('مرتبط بـ', t.linkedTo) + F('المسؤول المعني', t.owner) +
     deliverableSection(t) +
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
@@ -673,8 +745,8 @@ function openModal(id) {
     meetingField +
     followupSection(t) + F('مصدر المهمة', t.source) + F('ملاحظات', t.notes) +
     reminderSection(t);
-  $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
-  if (canEdit()) $('mEdit').onclick = () => openEdit(t);
+  $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button><button class="btn btn-del-task" id="mDel">🗑 حذف المهمة</button>` : '';
+  if (canEdit()) { $('mEdit').onclick = () => openEdit(t); $('mDel').onclick = () => removeTask(t.id); }
   bindFollowup(t);
   bindDeliverable(t);
   bindReminderSection(t);
@@ -782,25 +854,29 @@ function deadlineField(t) {
     </div></div>`;
 }
 
-// حقل المشروع: قائمة منسدلة من المشاريع الموجودة + خيار «إضافة جديد»
-function projectSelectField(value) {
-  const projs = (state.filters.projects || []).slice();
-  if (value && !projs.includes(value)) projs.unshift(value);
-  const opts = projs.map((p) => `<option value="${esc(p)}" ${p === value ? 'selected' : ''}>${esc(p)}</option>`).join('');
-  return `<div class="field"><label>المشروع</label>
-    <select name="project" id="projSel">${opts}<option value="__new__">➕ إضافة مشروع جديد…</option></select>
-    <input name="projectNew" id="projNew" type="text" placeholder="اكتب اسم المشروع الجديد" style="display:none;margin-top:8px"></div>`;
+// حقل قائمة منسدلة من القيم الموجودة + خيار «إضافة جديد» (يصلح للمشروع/المسؤول/مرتبط بـ)
+function pickField(label, name, values, value, multiline) {
+  const list = (values || []).slice();
+  if (value && !list.includes(value)) list.unshift(value);
+  const opts = list.map((p) => `<option value="${esc(p)}" ${p === value ? 'selected' : ''}>${esc(p)}</option>`).join('');
+  const ni = multiline
+    ? `<textarea name="${name}New" id="${name}New" rows="2" placeholder="قيمة جديدة (سطر لكل قيمة)" style="display:none;margin-top:8px"></textarea>`
+    : `<input name="${name}New" id="${name}New" type="text" placeholder="قيمة جديدة" style="display:none;margin-top:8px">`;
+  return `<div class="field"><label>${label}</label>
+    <select name="${name}" id="${name}Sel">${opts}<option value="__new__">➕ إضافة جديد…</option></select>${ni}</div>`;
 }
 
 function openEdit(t) {
   const isNew = !t;
-  t = t || { project: '', dept: '', file: '', type: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '', isMeeting: false, meetingStatus: '' };
+  t = t || { project: '', file: '', type: '', linkedTo: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '', isMeeting: false, meetingStatus: '' };
+  if (isNew) { state.newDv = []; state.newEv = []; }
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
-    ${projectSelectField(t.project)}
+    ${pickField('المشروع', 'project', state.filters.projects, t.project, false)}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
-    ${textarea('المسؤول المعني (سطر لكل مسؤول)', 'owner', t.owner)}
-    ${isNew ? textarea('المخرج المطلوب', 'deliverable', t.deliverable) : deliverableSection(t)}
+    ${pickField('مرتبط بـ', 'linkedTo', state.filters.linked, t.linkedTo, false)}
+    ${pickField('المسؤول المعني', 'owner', state.filters.owners, t.owner, true)}
+    ${isNew ? localDeliverableSection() : deliverableSection(t)}
     ${deadlineField(t)}
     <div class="form-row">${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}${selectField('الحالة', 'status', STATUSES, t.status)}</div>
     <div class="rem-box" style="margin:0 0 16px">
@@ -809,20 +885,22 @@ function openEdit(t) {
         <label class="rem-opt"><input type="checkbox" name="scheduled" ${t.meetingScheduled ? 'checked' : ''}> ✓ تمت جدولة الاجتماع</label>
       </div>
     </div>
-    ${isNew ? '' : followupSection(t)}
+    ${isNew ? localEventSection() : followupSection(t)}
     <div class="form-row">${field('مصدر المهمة', 'source', t.source)}${field('ملاحظات', 'notes', t.notes)}</div>
   </form>`;
   const mtgChk = $('mtgChk');
   if (mtgChk) mtgChk.onchange = () => { const w = $('mtgStatusWrap'); if (w) w.style.display = mtgChk.checked ? '' : 'none'; };
-  const projSel = $('projSel');
-  if (projSel) projSel.onchange = () => { const n = $('projNew'); if (n) { n.style.display = projSel.value === '__new__' ? '' : 'none'; if (projSel.value === '__new__') n.focus(); } };
+  $('mBody').querySelectorAll('select[id$="Sel"]').forEach((sel) => {
+    const ne = document.getElementById(sel.id.replace(/Sel$/, 'New'));
+    if (ne) sel.onchange = () => { ne.style.display = sel.value === '__new__' ? '' : 'none'; if (sel.value === '__new__') ne.focus(); };
+  });
   const dlMode = $('dlMode');
   if (dlMode) {
     dlMode.onchange = () => { $('dlDate').style.display = dlMode.value === 'date' ? '' : 'none'; $('dlRecurWrap').style.display = dlMode.value === 'recur' ? '' : 'none'; };
     const dlRecur = $('dlRecur');
     if (dlRecur) dlRecur.onchange = () => { $('dlMday').style.display = dlRecur.value === 'شهري' ? '' : 'none'; };
   }
-  if (!isNew) { bindDeliverable(t); bindFollowup(t); }
+  if (isNew) { bindLocalDeliverable(); bindLocalEvent(); } else { bindDeliverable(t); bindFollowup(t); }
   $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
   $('mSave').onclick = () => saveTask(isNew ? null : t.id);
   $('mCancel').onclick = () => (isNew ? closeModal() : openModal(t.id));
@@ -838,9 +916,13 @@ async function saveTask(id) {
   const sc = form.querySelector('[name="scheduled"]');
   if (mc) payload.meeting = mc.checked;
   payload.scheduled = !!(mc && mc.checked && sc && sc.checked); // الجدولة فقط حين يوجد اجتماع
-  // المشروع: «إضافة جديد» → استخدم النصّ المُدخَل
-  if (payload.project === '__new__') payload.project = (payload.projectNew || '').trim();
-  delete payload.projectNew;
+  // القوائم المنسدلة: «إضافة جديد» → استخدم النصّ المُدخَل
+  ['project', 'owner', 'linkedTo'].forEach((k) => {
+    if (payload[k] === '__new__') payload[k] = (payload[k + 'New'] || '').trim();
+    delete payload[k + 'New'];
+  });
+  // مهمة جديدة: المخرجات والأحداث من القوائم المحلية
+  if (!id) { payload.deliverable = state.newDv.join('\n\n'); payload.events = state.newEv.slice(); }
   // الموعد: من خيار التاريخ/الدورية/غير محدد
   const dlMode = form.querySelector('#dlMode');
   if (dlMode) {
@@ -859,6 +941,18 @@ async function saveTask(id) {
     closeModal();
     await load(true);
   } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); btn.disabled = false; btn.textContent = '💾 حفظ'; }
+}
+
+async function removeTask(id) {
+  if (!confirm('حذف هذه المهمة نهائياً من الملف؟ لا يمكن التراجع.')) return;
+  try {
+    const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    toast('تم حذف المهمة ✓');
+    closeModal();
+    await load(true);
+  } catch (e) { toast('تعذّر الحذف: ' + e.message, true); }
 }
 
 function closeModal() { $('modalBack').classList.remove('open'); }

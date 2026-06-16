@@ -215,6 +215,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         statuses: sheets.STATUSES,
         files: uniqueSorted(tasks.map((t) => t.file)),
         types: uniqueSorted(tasks.map((t) => t.type)),
+        linked: uniqueSorted(tasks.map((t) => t.linkedTo)),
       },
       meta: { canWrite: sheets.canWrite, fetchedAt: new Date().toISOString() },
     });
@@ -359,10 +360,47 @@ app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
 });
 
-// إضافة مهمة جديدة
+// تأشير/إلغاء تأشير مخرج كمنجَز (بإضافة/إزالة «✓»)؛ عند إنجاز كل المخرجات تصبح المهمة «منجزة»
+app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const done = /^✓/.test(dB[idx]);
+    dB[idx] = done ? dB[idx].replace(/^✓\s*/, '') : '✓ ' + dB[idx];
+    const patch = { deliverable: dB.join('\n\n') };
+    if (dB.length && dB.every((b) => /^✓/.test(b))) patch.status = sheets.DONE_STATUS;
+    const task = await sheets.updateTask(req.params.row, patch);
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// حذف مهمة (يحذف صفّها من الشيت)
+app.delete('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    await sheets.deleteTask(req.params.row);
+    invalidateCache();
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE /api/tasks', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// إضافة مهمة جديدة (مع أحداث متابعة اختيارية)
 app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    await sheets.addTask(req.body || {});
+    const body = { ...(req.body || {}) };
+    const events = Array.isArray(body.events) ? body.events.map((e) => String(e).replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim()).filter(Boolean) : [];
+    delete body.events;
+    if (events.length) {
+      const u = req.session && req.session.user;
+      const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
+      const stamp = nowStamp();
+      body.followup = events.join('\n\n');
+      body.log = events.map(() => `[${stamp} — ${author}]`).join('\n\n');
+    }
+    await sheets.addTask(body);
     invalidateCache();
     res.json({ ok: true });
   } catch (err) {
