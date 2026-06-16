@@ -619,7 +619,7 @@ function openModal(id) {
     ? `<div class="field"><label>الاجتماع</label><div class="val"><span class="badge ${t.meetingScheduled ? 'mt-sched' : 'mt-unsched'}">${esc(t.meetingStatus)}</span></div></div>`
     : '';
   $('mBody').innerHTML =
-    F('المشروع', t.project) + F('القسم / الشركة / المشروع', t.dept) + F('الملف', t.file) + F('النوع', t.type) + F('المسؤول المعني', t.owner) +
+    F('المشروع', t.project) + F('الملف', t.file) + F('النوع', t.type) + F('المسؤول المعني', t.owner) +
     deliverableSection(t) +
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +

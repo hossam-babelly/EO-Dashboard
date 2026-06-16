@@ -187,16 +187,30 @@ async function exportPDF() {
   pdf.save('تقرير-المهام.pdf');
 }
 
+// Word: نضع نفس صور صفحات الـ PDF (كل صفحة صورة كاملة) فيصبح مطابقاً للـ PDF بصرياً
 async function exportWord() {
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const logo = await logoSmall(34);
   const chunks = rows.length ? await paginate(rows, COLS, logo) : [[]];
+  const DOC_W = 1040; // عرض الصورة في الصفحة (≈ عرض A4 العرضية)
   let gi = 0;
-  const pages = chunks.map((chunk, ci) => pageHTML(COLS, logo, rows.length, chunk.map((r) => rowHTML(COLS, r, gi++)).join(''), ci === 0)).join('');
+  const imgs = [];
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
+    el.innerHTML = pageHTML(COLS, logo, rows.length, chunks[ci].map((r) => rowHTML(COLS, r, gi++)).join(''), true);
+    document.body.appendChild(el);
+    try { await document.fonts.ready; } catch { /* تجاهل */ }
+    await new Promise((r) => setTimeout(r, 40));
+    const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 });
+    el.remove();
+    imgs.push({ src: canvas.toDataURL('image/jpeg', 0.95), h: Math.round(DOC_W * canvas.height / canvas.width) });
+  }
+  const pagesHtml = imgs.map((im, i) => `<div style="${i > 0 ? 'page-break-before:always;' : ''}"><img src="${im.src}" width="${DOC_W}" height="${im.h}"></div>`).join('');
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
-    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 1cm; } div.Section1 { page: Section1; } body { margin: 0; font-family: 'Cairo', Arial, sans-serif; } table { width: 100%; } tr { page-break-inside: avoid; }</style>`
-    + `</head><body dir='rtl'><div class='Section1'>${pages}</div></body></html>`;
+    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 0.6cm; } div.Section1 { page: Section1; } body { margin: 0; }</style>`
+    + `</head><body><div class='Section1'>${pagesHtml}</div></body></html>`;
   dl(new Blob(['﻿', doc], { type: 'application/msword' }), 'تقرير-المهام.doc');
 }
 
