@@ -47,6 +47,7 @@
       <div class="ms" id="msStatus" data-all="الحالات"></div>
       <input class="search" id="fSearch" type="text" placeholder="🔍 بحث في المهام...">
       <button class="btn reset" id="resetBtn">مسح الفلاتر</button>
+      <button class="btn btn-gold" id="reportBtn" type="button">📄 تقرير</button>
     </div>
   </div>
 
@@ -76,7 +77,26 @@
   </div>
 </div>
 
+<div class="modal-back" id="reportModalBack">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head"><h3>توليد تقرير</h3><button class="modal-close" id="reportClose">✕</button></div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:13px;margin-bottom:12px">يصدّر المهام المعروضة حالياً (حسب الفلاتر والبطاقات المختارة) بهوية سنكري.</p>
+      <div class="rep-cols-title">الأعمدة الظاهرة في التقرير:</div>
+      <div class="rep-cols" id="reportCols"></div>
+      <div class="report-btns">
+        <button class="rep-btn rep-pdf" id="reportPdf" type="button">📕 تقرير PDF</button>
+        <button class="rep-btn rep-word" id="reportWord" type="button">📘 تقرير Word</button>
+        <button class="rep-btn rep-excel" id="reportExcel" type="button">📗 تقرير Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 <script src="/app.js"></script>
+<script src="/report.js"></script>
 </body>
 </html>
