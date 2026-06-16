@@ -81,26 +81,30 @@ function activeCols() {
 }
 
 // ===== بناء التقرير (صفحات بترويسة مكرّرة، مهام كاملة لكل صفحة) =====
-let _logoDims = null;
-async function logoDims() {
-  if (_logoDims) return _logoDims;
+// يُصغّر الشعار فعلياً إلى صورة بحجم العرض (حتى يحترم Word حجمه الأصلي الصغير)
+let _logo = null;
+async function logoSmall(targetH) {
+  if (_logo) return _logo;
   const url = await logoDataUrl();
-  if (!url) { _logoDims = { w: 0, h: 0, url: '' }; return _logoDims; }
-  const d = await new Promise((res) => { const im = new Image(); im.onload = () => res({ nw: im.naturalWidth, nh: im.naturalHeight }); im.onerror = () => res({ nw: 4, nh: 1 }); im.src = url; });
-  const h = 40, w = Math.max(40, Math.round(h * (d.nw / d.nh)));
-  _logoDims = { w, h, url };
-  return _logoDims;
+  if (!url) { _logo = { url: '', w: 0, h: 0 }; return _logo; }
+  const img = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+  if (!img || !img.naturalWidth) { _logo = { url, w: targetH * 4, h: targetH }; return _logo; }
+  const h = targetH, w = Math.round(h * img.naturalWidth / img.naturalHeight);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(img, 0, 0, w, h);
+  _logo = { url: cv.toDataURL('image/png'), w, h };
+  return _logo;
 }
 
-function headerBlock(dims, count) {
-  const img = dims.url ? `<img src="${dims.url}" width="${dims.w}" height="${dims.h}" style="height:${dims.h}px;width:${dims.w}px">` : '';
-  return `<div class="rpt-h" style="background:${RB.ink};padding:15px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
+function headerBlock(logo, count) {
+  const img = logo && logo.url ? `<img src="${logo.url}" width="${logo.w}" height="${logo.h}" style="width:${logo.w}px;height:${logo.h}px">` : '';
+  return `<div class="rpt-h" style="background:${RB.ink};padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
       <div>
-        <div style="font-size:21px;font-weight:800;color:#fff">تقرير المهام</div>
-        <div style="font-size:13px;color:${RB.champagne};margin-top:3px">المكتب التنفيذي — مجموعة سنكري القابضة</div>
+        <div style="font-size:20px;font-weight:800;color:#fff">تقرير المهام</div>
+        <div style="font-size:12.5px;color:${RB.champagne};margin-top:3px">المكتب التنفيذي — مجموعة سنكري القابضة</div>
       </div>${img}
     </div>
-    <div class="rpt-m" style="padding:10px 24px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:12px;color:${RB.copperDeep}">
+    <div class="rpt-m" style="padding:9px 24px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:12px;color:${RB.copperDeep}">
       <b>تاريخ التقرير:</b> ${esc(nowText())} &nbsp;•&nbsp; <b>عدد المهام:</b> ${count}
     </div>`;
 }
@@ -124,18 +128,19 @@ function tableHTML(COLS, bodyHtml) {
   return `<table style="width:100%;border-collapse:collapse;border:1px solid ${RB.copperDeep};table-layout:fixed">${cg}<thead><tr>${th}</tr></thead><tbody>${bodyHtml || `<tr><td colspan="${COLS.length}" style="padding:20px;text-align:center;color:${RB.muted}">لا توجد مهام مطابقة.</td></tr>`}</tbody></table>`;
 }
 
-function pageHTML(COLS, dims, count, bodyHtml, isFirst) {
-  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink};${isFirst ? '' : 'page-break-before:always;'}page-break-inside:avoid">
-    ${headerBlock(dims, count)}
-    <div style="padding:14px 24px 6px">${tableHTML(COLS, bodyHtml)}</div>
-    <div style="padding:0 24px 12px;font-size:10.5px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — المكتب التنفيذي</div>
+function pageHTML(COLS, logo, count, bodyHtml, isFirst) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink};${isFirst ? '' : 'page-break-before:always;'}">
+    ${headerBlock(logo, count)}
+    <div style="padding:12px 24px 4px">${tableHTML(COLS, bodyHtml)}</div>
+    <div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — المكتب التنفيذي</div>
   </div>`;
 }
 
-async function paginate(rows, COLS, dims) {
+// يقيس ارتفاعات الصفوف ويوزّعها على صفحات بحيث لا تُقسَّم مهمة بين صفحتين
+async function paginate(rows, COLS, logo) {
   const m = document.createElement('div');
   m.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;visibility:hidden';
-  m.innerHTML = pageHTML(COLS, dims, rows.length, rows.map((r, i) => rowHTML(COLS, r, i)).join(''), true);
+  m.innerHTML = pageHTML(COLS, logo, rows.length, rows.map((r, i) => rowHTML(COLS, r, i)).join(''), true);
   document.body.appendChild(m);
   try { await document.fonts.ready; } catch { /* تجاهل */ }
   const page = m.firstElementChild;
@@ -144,8 +149,9 @@ async function paginate(rows, COLS, dims) {
   const theadH = m.querySelector('thead').offsetHeight;
   const hts = [...m.querySelectorAll('tbody tr')].map((tr) => tr.offsetHeight);
   m.remove();
-  const PAGE_H = 735, SAFE = 30;
-  const avail = PAGE_H - SAFE - topArea - theadH;
+  // ارتفاع صفحة A4 العرضية المطبوعة ≈ 715px عند 96dpi (مع هوامش 1سم) — متحفّظ ليتّسع في PDF و Word
+  const PAGE_H = 705, FOOTER = 34;
+  const avail = Math.max(120, PAGE_H - topArea - theadH - FOOTER);
   const chunks = []; let cur = [], used = 0;
   for (let i = 0; i < rows.length; i++) {
     const h = hts[i] || 24;
@@ -156,38 +162,40 @@ async function paginate(rows, COLS, dims) {
   return chunks.length ? chunks : [[]];
 }
 
-async function reportPagesHTML() {
+// PDF: نرسم كل صفحة كصورة مستقلّة ونضيفها لصفحة PDF — لا قصّ، مهام كاملة، ترويسة مكرّرة
+async function exportPDF() {
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
-  const dims = await logoDims();
-  if (!rows.length) return pageHTML(COLS, dims, 0, '', true);
-  const chunks = await paginate(rows, COLS, dims);
+  const logo = await logoSmall(34);
+  const chunks = await paginate(rows, COLS, logo);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  const pw = pdf.internal.pageSize.getWidth();
   let gi = 0;
-  return chunks.map((chunk, ci) => pageHTML(COLS, dims, rows.length, chunk.map((r) => rowHTML(COLS, r, gi++)).join(''), ci === 0)).join('');
-}
-
-async function exportPDF() {
-  const el = document.createElement('div');
-  el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
-  el.innerHTML = await reportPagesHTML();
-  document.body.appendChild(el);
-  try { await document.fonts.ready; } catch { /* تجاهل */ }
-  await new Promise((r) => setTimeout(r, 150));
-  try {
-    await html2pdf().set({
-      margin: 0, filename: 'تقرير-المهام.pdf',
-      image: { type: 'jpeg', quality: 0.96 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-      pagebreak: { mode: ['css', 'legacy'] },
-    }).from(el).save();
-  } finally { el.remove(); }
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
+    el.innerHTML = pageHTML(COLS, logo, rows.length, chunks[ci].map((r) => rowHTML(COLS, r, gi++)).join(''), true);
+    document.body.appendChild(el);
+    try { await document.fonts.ready; } catch { /* تجاهل */ }
+    await new Promise((r) => setTimeout(r, 40));
+    const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 });
+    el.remove();
+    if (ci > 0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, canvas.height * pw / canvas.width);
+  }
+  pdf.save('تقرير-المهام.pdf');
 }
 
 async function exportWord() {
-  const pages = await reportPagesHTML();
+  const rows = reportTasks().map(reportRow);
+  const COLS = activeCols();
+  const logo = await logoSmall(34);
+  const chunks = rows.length ? await paginate(rows, COLS, logo) : [[]];
+  let gi = 0;
+  const pages = chunks.map((chunk, ci) => pageHTML(COLS, logo, rows.length, chunk.map((r) => rowHTML(COLS, r, gi++)).join(''), ci === 0)).join('');
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
-    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 1cm; } div.Section1 { page: Section1; } body { margin: 0; font-family: 'Cairo', Arial, sans-serif; } table { width: 100%; }</style>`
+    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 1cm; } div.Section1 { page: Section1; } body { margin: 0; font-family: 'Cairo', Arial, sans-serif; } table { width: 100%; } tr { page-break-inside: avoid; }</style>`
     + `</head><body dir='rtl'><div class='Section1'>${pages}</div></body></html>`;
   dl(new Blob(['﻿', doc], { type: 'application/msword' }), 'تقرير-المهام.doc');
 }
@@ -215,8 +223,8 @@ async function exportExcel() {
   ws.getRow(3).height = 6;
   ws.getRow(4).height = 6;
 
-  const dataUrl = await logoDataUrl();
-  if (dataUrl) { try { const id = wb.addImage({ base64: dataUrl, extension: 'png' }); ws.addImage(id, { tl: { col: last - 2.0, row: 0.15 }, ext: { width: 150, height: 38 } }); } catch { /* تجاهل */ } }
+  const lg = await logoSmall(38);
+  if (lg.url) { try { const id = wb.addImage({ base64: lg.url, extension: 'png' }); ws.addImage(id, { tl: { col: last - 2.0, row: 0.15 }, ext: { width: lg.w, height: lg.h } }); } catch { /* تجاهل */ } }
 
   // صفّ العناوين
   const hdrRowIdx = 5;

@@ -168,6 +168,15 @@ function typeCell(type) {
   if (!type) return '<span style="color:var(--muted)">—</span>';
   return `<span class="type-tag">${TYPE_ICON[type] || '🏷️'} ${esc(type)}</span>`;
 }
+// خلية المخرجات في الجدول: مضغوط = أول مخرج + «+عدد»، موسّع = كل المخرجات مكدّسة
+function deliverableCell(t) {
+  const items = fuBlocks(t.deliverable);
+  if (!items.length) return '<span style="color:var(--muted)">—</span>';
+  if (state.expanded) return `<div class="fu-cell-full">${items.map((b, i) => `<div class="fu-mini"><div class="fu-meta"><b>مخرج ${i + 1}</b></div><div class="fu-mtext">${esc(b)}</div></div>`).join('')}</div>`;
+  const first = items[0];
+  const more = items.length > 1 ? `<span class="fu-more">+${items.length - 1}</span>` : '';
+  return `<div class="fu-cell"><div class="fu-meta">${more}</div><div class="fu-text">${esc(first.slice(0, 100))}${first.length > 100 ? '…' : ''}</div></div>`;
+}
 
 // ===== سجلّ المتابعة اليومية =====
 // عمودان متوازيان: «المتابعة» (نصّ الحدث) و«السجل» (الاسم·التاريخ·الوقت بصيغة [..])، كتلة لكل حدث مفصولة بسطر فارغ.
@@ -390,7 +399,7 @@ function renderTable() {
       <td>${esc(t.file)}</td>
       <td>${typeCell(t.type)}</td>
       <td class="cell-owner">${esc(t.owner)}</td>
-      <td><div class="deliv">${esc(t.deliverable)}</div></td>
+      <td class="fu-col">${deliverableCell(t)}</td>
       <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
       <td><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></td>
       <td><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></td>
@@ -684,13 +693,22 @@ function textarea(label, name, value) {
 function selectField(label, name, options, value) {
   return `<div class="field"><label>${label}</label><select name="${name}">${options.map((o) => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
 }
+// حقل المشروع: قائمة منسدلة من المشاريع الموجودة + خيار «إضافة جديد»
+function projectSelectField(value) {
+  const projs = (state.filters.projects || []).slice();
+  if (value && !projs.includes(value)) projs.unshift(value);
+  const opts = projs.map((p) => `<option value="${esc(p)}" ${p === value ? 'selected' : ''}>${esc(p)}</option>`).join('');
+  return `<div class="field"><label>المشروع</label>
+    <select name="project" id="projSel">${opts}<option value="__new__">➕ إضافة مشروع جديد…</option></select>
+    <input name="projectNew" id="projNew" type="text" placeholder="اكتب اسم المشروع الجديد" style="display:none;margin-top:8px"></div>`;
+}
 
 function openEdit(t) {
   const isNew = !t;
   t = t || { project: '', dept: '', file: '', type: '', owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', source: '', notes: '', isMeeting: false, meetingStatus: '' };
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
-    <div class="form-row">${field('المشروع', 'project', t.project)}${field('القسم / الشركة / المشروع', 'dept', t.dept)}</div>
+    ${projectSelectField(t.project)}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
     ${field('المسؤول المعني (افصل بسطر لكل شخص)', 'owner', t.owner)}
     ${isNew ? textarea('المخرج المطلوب', 'deliverable', t.deliverable) : '<div class="field"><label>المخرجات المطلوبة</label><div class="val" style="color:var(--muted);font-size:13px">تُدار المخرجات (إضافة/تعديل/حذف) من نافذة عرض المهمة.</div></div>'}
@@ -707,6 +725,8 @@ function openEdit(t) {
   </form>`;
   const mtgChk = $('mtgChk');
   if (mtgChk) mtgChk.onchange = () => { const w = $('mtgStatusWrap'); if (w) w.style.display = mtgChk.checked ? '' : 'none'; };
+  const projSel = $('projSel');
+  if (projSel) projSel.onchange = () => { const n = $('projNew'); if (n) { n.style.display = projSel.value === '__new__' ? '' : 'none'; if (projSel.value === '__new__') n.focus(); } };
   $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
   $('mSave').onclick = () => saveTask(isNew ? null : t.id);
   $('mCancel').onclick = () => (isNew ? closeModal() : openModal(t.id));
@@ -722,6 +742,9 @@ async function saveTask(id) {
   const sc = form.querySelector('[name="scheduled"]');
   if (mc) payload.meeting = mc.checked;
   payload.scheduled = !!(mc && mc.checked && sc && sc.checked); // الجدولة فقط حين يوجد اجتماع
+  // المشروع: «إضافة جديد» → استخدم النصّ المُدخَل
+  if (payload.project === '__new__') payload.project = (payload.projectNew || '').trim();
+  delete payload.projectNew;
   const btn = $('mSave'); btn.disabled = true; btn.textContent = '... جارٍ الحفظ';
   try {
     const url = id ? `/api/tasks/${id}` : '/api/tasks';
