@@ -80,63 +80,115 @@ function activeCols() {
   return checked.length ? REPORT_COLS.filter((c) => checked.includes(c.k)) : REPORT_COLS.slice();
 }
 
-// ===== HTML للتقرير (يُستخدم لـ PDF و Word) =====
-async function reportHTML() {
-  const rows = reportTasks().map(reportRow);
-  const COLS = activeCols();
-  const logo = await logoDataUrl();
-  const th = COLS.map((c) => `<th style="background:${RB.ink};color:${RB.champagne};padding:8px 6px;font-size:12px;border:1px solid ${RB.copperDeep};text-align:right;white-space:nowrap">${esc(c.label)}</th>`).join('');
-  const trs = rows.map((r, idx) => `<tr style="background:${idx % 2 ? '#faf5ee' : '#ffffff'}">${COLS.map((c) => {
+// ===== بناء التقرير (صفحات بترويسة مكرّرة، مهام كاملة لكل صفحة) =====
+let _logoDims = null;
+async function logoDims() {
+  if (_logoDims) return _logoDims;
+  const url = await logoDataUrl();
+  if (!url) { _logoDims = { w: 0, h: 0, url: '' }; return _logoDims; }
+  const d = await new Promise((res) => { const im = new Image(); im.onload = () => res({ nw: im.naturalWidth, nh: im.naturalHeight }); im.onerror = () => res({ nw: 4, nh: 1 }); im.src = url; });
+  const h = 40, w = Math.max(40, Math.round(h * (d.nw / d.nh)));
+  _logoDims = { w, h, url };
+  return _logoDims;
+}
+
+function headerBlock(dims, count) {
+  const img = dims.url ? `<img src="${dims.url}" width="${dims.w}" height="${dims.h}" style="height:${dims.h}px;width:${dims.w}px">` : '';
+  return `<div class="rpt-h" style="background:${RB.ink};padding:15px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
+      <div>
+        <div style="font-size:21px;font-weight:800;color:#fff">تقرير المهام</div>
+        <div style="font-size:13px;color:${RB.champagne};margin-top:3px">المكتب التنفيذي — مجموعة سنكري القابضة</div>
+      </div>${img}
+    </div>
+    <div class="rpt-m" style="padding:10px 24px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:12px;color:${RB.copperDeep}">
+      <b>تاريخ التقرير:</b> ${esc(nowText())} &nbsp;•&nbsp; <b>عدد المهام:</b> ${count}
+    </div>`;
+}
+
+function rowHTML(COLS, r, gi) {
+  return `<tr style="background:${gi % 2 ? '#faf5ee' : '#ffffff'};page-break-inside:avoid">${COLS.map((c) => {
     let v = esc(String(r[c.k]));
     let style = `padding:7px 6px;font-size:11.5px;border:1px solid ${RB.line};vertical-align:top;text-align:right`;
+    if (c.k === 'deliverable' || c.k === 'followup' || c.k === 'owner') style += ';white-space:pre-line';
     if (c.k === 'priority') v = `<span style="color:${priColor(r.priority)};font-weight:700">${v}</span>`;
     if (c.k === 'status') v = `<span style="color:${stColor(r.status)};font-weight:700">${v}</span>`;
     if (c.k === 'i') style += ';text-align:center;color:' + RB.muted;
     return `<td style="${style}">${v}</td>`;
-  }).join('')}</tr>`).join('');
+  }).join('')}</tr>`;
+}
 
-  return `<div dir="rtl" style="font-family:'Cairo',Arial,sans-serif;color:${RB.ink};background:#fff;width:100%;padding:0;box-sizing:border-box">
-    <div style="background:${RB.ink};padding:18px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
-      <div>
-        <div style="font-size:22px;font-weight:800;color:#fff">تقرير المهام — المكتب التنفيذي</div>
-        <div style="font-size:13px;color:${RB.champagne};margin-top:3px">مجموعة سنكري القابضة</div>
-      </div>
-      ${logo ? `<img src="${logo}" style="height:46px">` : ''}
-    </div>
-    <div style="padding:14px 24px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:12.5px;color:${RB.copperDeep}">
-      <div><b>تاريخ التقرير:</b> ${esc(nowText())}</div>
-      <div style="margin-top:5px"><b>عدد المهام:</b> ${rows.length}</div>
-    </div>
-    <div style="padding:18px 24px">
-      <table style="width:100%;border-collapse:collapse;border:1px solid ${RB.copperDeep}">
-        <thead><tr>${th}</tr></thead><tbody>${trs || `<tr><td colspan="${COLS.length}" style="padding:20px;text-align:center;color:${RB.muted}">لا توجد مهام مطابقة.</td></tr>`}</tbody>
-      </table>
-      <div style="margin-top:14px;font-size:11px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — المكتب التنفيذي · تقرير مُولَّد آلياً</div>
-    </div>
+function tableHTML(COLS, bodyHtml) {
+  const totalW = COLS.reduce((s, c) => s + c.w, 0);
+  const cg = `<colgroup>${COLS.map((c) => `<col style="width:${(c.w / totalW * 100).toFixed(2)}%">`).join('')}</colgroup>`;
+  const th = COLS.map((c) => `<th style="background:${RB.ink};color:${RB.champagne};padding:8px 6px;font-size:12px;border:1px solid ${RB.copperDeep};text-align:right">${esc(c.label)}</th>`).join('');
+  return `<table style="width:100%;border-collapse:collapse;border:1px solid ${RB.copperDeep};table-layout:fixed">${cg}<thead><tr>${th}</tr></thead><tbody>${bodyHtml || `<tr><td colspan="${COLS.length}" style="padding:20px;text-align:center;color:${RB.muted}">لا توجد مهام مطابقة.</td></tr>`}</tbody></table>`;
+}
+
+function pageHTML(COLS, dims, count, bodyHtml, isFirst) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink};${isFirst ? '' : 'page-break-before:always;'}page-break-inside:avoid">
+    ${headerBlock(dims, count)}
+    <div style="padding:14px 24px 6px">${tableHTML(COLS, bodyHtml)}</div>
+    <div style="padding:0 24px 12px;font-size:10.5px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — المكتب التنفيذي</div>
   </div>`;
 }
 
+async function paginate(rows, COLS, dims) {
+  const m = document.createElement('div');
+  m.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;visibility:hidden';
+  m.innerHTML = pageHTML(COLS, dims, rows.length, rows.map((r, i) => rowHTML(COLS, r, i)).join(''), true);
+  document.body.appendChild(m);
+  try { await document.fonts.ready; } catch { /* تجاهل */ }
+  const page = m.firstElementChild;
+  const tableEl = m.querySelector('table');
+  const topArea = tableEl.getBoundingClientRect().top - page.getBoundingClientRect().top;
+  const theadH = m.querySelector('thead').offsetHeight;
+  const hts = [...m.querySelectorAll('tbody tr')].map((tr) => tr.offsetHeight);
+  m.remove();
+  const PAGE_H = 735, SAFE = 30;
+  const avail = PAGE_H - SAFE - topArea - theadH;
+  const chunks = []; let cur = [], used = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const h = hts[i] || 24;
+    if (cur.length && used + h > avail) { chunks.push(cur); cur = []; used = 0; }
+    cur.push(rows[i]); used += h;
+  }
+  if (cur.length) chunks.push(cur);
+  return chunks.length ? chunks : [[]];
+}
+
+async function reportPagesHTML() {
+  const rows = reportTasks().map(reportRow);
+  const COLS = activeCols();
+  const dims = await logoDims();
+  if (!rows.length) return pageHTML(COLS, dims, 0, '', true);
+  const chunks = await paginate(rows, COLS, dims);
+  let gi = 0;
+  return chunks.map((chunk, ci) => pageHTML(COLS, dims, rows.length, chunk.map((r) => rowHTML(COLS, r, gi++)).join(''), ci === 0)).join('');
+}
+
 async function exportPDF() {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:absolute;left:-11000px;top:0;width:1080px';
-  wrap.innerHTML = await reportHTML();
-  document.body.appendChild(wrap);
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
+  el.innerHTML = await reportPagesHTML();
+  document.body.appendChild(el);
+  try { await document.fonts.ready; } catch { /* تجاهل */ }
+  await new Promise((r) => setTimeout(r, 150));
   try {
     await html2pdf().set({
-      margin: [6, 6], filename: 'تقرير-المهام.pdf',
+      margin: 0, filename: 'تقرير-المهام.pdf',
       image: { type: 'jpeg', quality: 0.96 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
       pagebreak: { mode: ['css', 'legacy'] },
-    }).from(wrap.firstElementChild).save();
-  } finally { wrap.remove(); }
+    }).from(el).save();
+  } finally { el.remove(); }
 }
 
 async function exportWord() {
-  const html = await reportHTML();
+  const pages = await reportPagesHTML();
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
-    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 1.2cm; } div.Section1 { page: Section1; } body { margin: 0; font-family: 'Cairo', Arial, sans-serif; }</style>`
-    + `</head><body dir='rtl'><div class='Section1'>${html}</div></body></html>`;
+    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 1cm; } div.Section1 { page: Section1; } body { margin: 0; font-family: 'Cairo', Arial, sans-serif; } table { width: 100%; }</style>`
+    + `</head><body dir='rtl'><div class='Section1'>${pages}</div></body></html>`;
   dl(new Blob(['﻿', doc], { type: 'application/msword' }), 'تقرير-المهام.doc');
 }
 

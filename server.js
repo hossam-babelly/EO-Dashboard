@@ -316,6 +316,49 @@ app.delete('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), 
   } catch (err) { console.error('DELETE followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
 
+// ===== المخرجات المطلوبة ككائنات (كتل مفصولة بسطر فارغ في نفس الخلية) =====
+app.post('/api/tasks/:row/deliverable', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    dB.push(text);
+    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST deliverable', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+app.patch('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    dB[idx] = text;
+    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    dB.splice(idx, 1);
+    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
 // إضافة مهمة جديدة
 app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {

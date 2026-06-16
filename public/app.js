@@ -493,6 +493,55 @@ function renderCalendar() {
   $('viewArea').querySelectorAll('.cal-task').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
 }
 
+// ===== المخرجات المطلوبة ككائنات (كتل مفصولة بسطر فارغ) =====
+function deliverableSection(t) {
+  const items = fuBlocks(t.deliverable);
+  const ed = canEdit();
+  const acts = (i) => ed ? `<span class="fu-acts"><button class="fu-ico dv-ed" type="button" data-idx="${i}" title="تعديل">✏️</button><button class="fu-ico dv-del" type="button" data-idx="${i}" title="حذف">🗑</button></span>` : '';
+  const list = items.length ? items.map((b, i) => `
+    <div class="fu-item plain" data-idx="${i}">
+      <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span>${acts(i)}</div>
+      <div class="fu-ibody">${esc(b)}</div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
+  const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="أضف مخرجاً مطلوباً جديداً…"></textarea><button class="btn btn-save" id="dvAdd" type="button">➕ إضافة مخرج</button></div>` : '';
+  return `<div class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>${add}</div>`;
+}
+async function addDeliverable(id) {
+  const inp = $('dvInput'); const text = inp ? inp.value.trim() : '';
+  if (!text) { toast('اكتب نصّ المخرج أولاً', true); return; }
+  const btn = $('dvAdd'); if (btn) { btn.disabled = true; btn.textContent = '... إضافة'; }
+  try {
+    const res = await fetch(`/api/tasks/${id}/deliverable`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تمت إضافة المخرج ✓'); openModal(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); if (btn) { btn.disabled = false; btn.textContent = '➕ إضافة مخرج'; } }
+}
+function startEditDeliv(id, idx, btn) {
+  const body = btn.closest('.fu-item').querySelector('.fu-ibody'); const cur = body.textContent;
+  body.innerHTML = `<textarea class="fu-eta" rows="3"></textarea><div class="fu-eacts"><button class="btn btn-save dv-savebtn" type="button">حفظ</button><button class="btn btn-cancel dv-cancelbtn" type="button">إلغاء</button></div>`;
+  const ta = body.querySelector('.fu-eta'); ta.value = cur; ta.focus();
+  body.querySelector('.dv-savebtn').onclick = () => saveDeliv(id, idx, ta.value.trim());
+  body.querySelector('.dv-cancelbtn').onclick = () => openModal(id);
+}
+async function saveDeliv(id, idx, text) {
+  if (!text) { toast('نصّ المخرج فارغ', true); return; }
+  try {
+    const res = await fetch(`/api/tasks/${id}/deliverable/${idx}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تم تعديل المخرج ✓'); openModal(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
+}
+async function deleteDeliv(id, idx) {
+  if (!confirm('حذف هذا المخرج؟')) return;
+  try {
+    const res = await fetch(`/api/tasks/${id}/deliverable/${idx}`, { method: 'DELETE' });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast('تم حذف المخرج ✓'); openModal(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
+}
+
 // ===== Meetings view (قائمة الاجتماعات) =====
 function renderMeetings() {
   let list = state.tasks.filter((t) => t.isMeeting);
@@ -562,7 +611,7 @@ function openModal(id) {
     : '';
   $('mBody').innerHTML =
     F('المشروع', t.project) + F('القسم / الشركة / المشروع', t.dept) + F('الملف', t.file) + F('النوع', t.type) + F('المسؤول المعني', t.owner) +
-    F('المخرج المطلوب', t.deliverable) +
+    deliverableSection(t) +
     `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
     `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
@@ -575,6 +624,10 @@ function openModal(id) {
   if (fuAdd) fuAdd.onclick = () => addFollowup(t.id);
   $('mBody').querySelectorAll('.fu-ed').forEach((b) => b.onclick = () => startEditEvent(t.id, Number(b.dataset.idx), b));
   $('mBody').querySelectorAll('.fu-del').forEach((b) => b.onclick = () => deleteEvent(t.id, Number(b.dataset.idx)));
+  const dvAdd = $('dvAdd');
+  if (dvAdd) dvAdd.onclick = () => addDeliverable(t.id);
+  $('mBody').querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
+  $('mBody').querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
   bindReminderSection(t);
   $('modalBack').classList.add('open');
 }
@@ -640,7 +693,7 @@ function openEdit(t) {
     <div class="form-row">${field('المشروع', 'project', t.project)}${field('القسم / الشركة / المشروع', 'dept', t.dept)}</div>
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
     ${field('المسؤول المعني (افصل بسطر لكل شخص)', 'owner', t.owner)}
-    ${textarea('المخرج المطلوب', 'deliverable', t.deliverable)}
+    ${isNew ? textarea('المخرج المطلوب', 'deliverable', t.deliverable) : '<div class="field"><label>المخرجات المطلوبة</label><div class="val" style="color:var(--muted);font-size:13px">تُدار المخرجات (إضافة/تعديل/حذف) من نافذة عرض المهمة.</div></div>'}
     <div class="form-row">${field('الموعد / الدورية', 'deadlineRaw', t.deadlineRaw)}${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}</div>
     ${selectField('الحالة', 'status', STATUSES, t.status)}
     <div class="rem-box" style="margin:0 0 16px">
