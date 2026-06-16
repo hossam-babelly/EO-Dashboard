@@ -5,16 +5,19 @@
 const RB = { ink: '#211d1a', copper: '#bd6a43', copperDeep: '#a4572f', champagne: '#d8c4b0', cream: '#f7f2ea', line: '#e7ddcf', red: '#b4453c', green: '#5f7457', amber: '#c0822f', muted: '#8a8175' };
 
 const REPORT_COLS = [
-  { k: 'i', label: '#', w: 5 },
-  { k: 'project', label: 'المشروع', w: 16 },
-  { k: 'file', label: 'الملف', w: 14 },
-  { k: 'type', label: 'النوع', w: 12 },
-  { k: 'owner', label: 'المسؤول', w: 16 },
-  { k: 'deliverable', label: 'المخرج المطلوب', w: 30 },
-  { k: 'deadline', label: 'الموعد', w: 12 },
-  { k: 'priority', label: 'الأولوية', w: 10 },
-  { k: 'status', label: 'الحالة', w: 12 },
-  { k: 'followup', label: 'آخر متابعة', w: 26 },
+  { k: 'i', label: '#', w: 4 },
+  { k: 'project', label: 'المشروع', w: 15 },
+  { k: 'file', label: 'الملف', w: 13 },
+  { k: 'type', label: 'النوع', w: 11 },
+  { k: 'linkedTo', label: 'مرتبط بـ', w: 13 },
+  { k: 'owner', label: 'المسؤول المعني', w: 14 },
+  { k: 'deliverable', label: 'المخرج المطلوب', w: 28 },
+  { k: 'deadline', label: 'الموعد', w: 11 },
+  { k: 'priority', label: 'الأولوية', w: 9 },
+  { k: 'status', label: 'الحالة', w: 11 },
+  { k: 'followup', label: 'آخر متابعة', w: 24 },
+  { k: 'source', label: 'مصدر المهمة', w: 16 },
+  { k: 'notes', label: 'ملاحظات', w: 16 },
 ];
 
 function reportTasks() { return sortList(applyFilters()); }
@@ -22,18 +25,23 @@ function reportTasks() { return sortList(applyFilters()); }
 function reportRow(t, i) {
   const evs = parseFollowup(t.followup, t.log);
   const last = evs.length ? evs[evs.length - 1] : null;
-  const fu = last ? ((last.manual ? '' : (last.author + ' · ' + fuShort(last.date, last.time) + ' — ')) + (last.text || '')) : '';
+  const fu = last ? (last.text || '') : '';
+  const fuMeta = last && !last.manual ? (last.author + ' · ' + fuShort(last.date, last.time)) : '';
   return {
+    fuMeta,
     i: i + 1,
     project: t.project || '',
     file: t.file || '',
     type: t.type || '—',
+    linkedTo: t.linkedTo || '',
     owner: (t.owner || '').replace(/\n+/g, '، '),
     deliverable: t.deliverable || '',
     deadline: t.deadlineIso || t.deadlineRaw || '—',
     priority: t.priority || '',
     status: t.status || '',
     followup: fu,
+    source: t.source || '',
+    notes: t.notes || '',
   };
 }
 
@@ -71,6 +79,11 @@ function dl(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+function reportName() {
+  const el = document.getElementById('reportName');
+  const v = el ? String(el.value || '').trim() : '';
+  return (v || 'تقرير-المهام').replace(/[\\/:*?"<>|]+/g, '_');
+}
 function priColor(p) { return p === 'حرجة' ? RB.red : p === 'عالية' ? RB.amber : RB.copperDeep; }
 function stColor(s) { return s === 'منجزة' ? RB.green : s === 'متوقفة' ? RB.red : s === 'قيد التنفيذ' ? RB.copperDeep : RB.muted; }
 
@@ -101,7 +114,7 @@ function headerBlock(logo, count) {
   return `<div class="rpt-h" style="background:${RB.ink};padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
       <div>
         <div style="font-size:20px;font-weight:800;color:#fff">تقرير المهام</div>
-        <div style="font-size:12.5px;color:${RB.champagne};margin-top:3px">المكتب التنفيذي — مجموعة سنكري القابضة</div>
+        <div style="font-size:12.5px;color:${RB.champagne};margin-top:3px">الإدارة التنفيذية — مجموعة سنكري القابضة</div>
       </div>${img}
     </div>
     <div class="rpt-m" style="padding:9px 24px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:12px;color:${RB.copperDeep}">
@@ -116,6 +129,7 @@ function rowHTML(COLS, r, gi) {
     if (c.k === 'deliverable' || c.k === 'followup' || c.k === 'owner') style += ';white-space:pre-line';
     if (c.k === 'priority') v = `<span style="color:${priColor(r.priority)};font-weight:700">${v}</span>`;
     if (c.k === 'status') v = `<span style="color:${stColor(r.status)};font-weight:700">${v}</span>`;
+    if (c.k === 'followup' && r.fuMeta) v = `${esc(String(r.followup || ''))}<div style="color:${RB.copper};font-size:10.5px;margin-top:4px">${esc(r.fuMeta)}</div>`;
     if (c.k === 'i') style += ';text-align:center;color:' + RB.muted;
     return `<td style="${style}">${v}</td>`;
   }).join('')}</tr>`;
@@ -132,7 +146,7 @@ function pageHTML(COLS, logo, count, bodyHtml, isFirst) {
   return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink};${isFirst ? '' : 'page-break-before:always;'}">
     ${headerBlock(logo, count)}
     <div style="padding:12px 24px 4px">${tableHTML(COLS, bodyHtml)}</div>
-    <div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — المكتب التنفيذي</div>
+    <div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div>
   </div>`;
 }
 
@@ -184,7 +198,7 @@ async function exportPDF() {
     if (ci > 0) pdf.addPage();
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, canvas.height * pw / canvas.width);
   }
-  pdf.save('تقرير-المهام.pdf');
+  pdf.save(reportName() + '.pdf');
 }
 
 // Word: نضع نفس صور صفحات الـ PDF (كل صفحة صورة كاملة) فيصبح مطابقاً للـ PDF بصرياً
@@ -211,7 +225,7 @@ async function exportWord() {
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
     + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 0.6cm; } div.Section1 { page: Section1; } body { margin: 0; }</style>`
     + `</head><body><div class='Section1'>${pagesHtml}</div></body></html>`;
-  dl(new Blob(['﻿', doc], { type: 'application/msword' }), 'تقرير-المهام.doc');
+  dl(new Blob(['﻿', doc], { type: 'application/msword' }), reportName() + '.doc');
 }
 
 async function exportExcel() {
@@ -227,7 +241,7 @@ async function exportExcel() {
   // ترويسة + شعار
   ws.mergeCells(`A1:${L}1`); ws.mergeCells(`A2:${L}2`); ws.mergeCells(`A3:${L}3`); ws.mergeCells(`A4:${L}4`);
   const titleCell = ws.getCell('A1');
-  titleCell.value = 'تقرير المهام — المكتب التنفيذي | مجموعة سنكري القابضة';
+  titleCell.value = 'تقرير المهام — الإدارة التنفيذية | مجموعة سنكري القابضة';
   titleCell.font = { name: 'Cairo', size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
   ['A1', 'A2', 'A3', 'A4'].forEach((a) => { ws.getCell(a).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF211D1A' } }; });
@@ -258,7 +272,8 @@ async function exportExcel() {
     const row = ws.getRow(hdrRowIdx + 1 + idx);
     COLS.forEach((c, i) => {
       const cell = row.getCell(i + 1);
-      cell.value = r[c.k];
+      if (c.k === 'followup' && r.fuMeta) cell.value = { richText: [{ text: String(r.followup || '') + '\n' }, { text: r.fuMeta, font: { color: { argb: 'FFBD6A43' }, name: 'Cairo', size: 9 } }] };
+      else cell.value = r[c.k];
       cell.alignment = { horizontal: c.k === 'i' ? 'center' : 'right', vertical: 'top', wrapText: true };
       cell.font = { name: 'Cairo', size: 10, color: { argb: 'FF2B2823' } };
       if (idx % 2) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAF5EE' } };
@@ -270,7 +285,7 @@ async function exportExcel() {
   ws.autoFilter = { from: { row: hdrRowIdx, column: 1 }, to: { row: hdrRowIdx, column: last } };
 
   const buf = await wb.xlsx.writeBuffer();
-  dl(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'تقرير-المهام.xlsx');
+  dl(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), reportName() + '.xlsx');
 }
 
 function runExport(btn, fn, label) {

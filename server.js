@@ -254,7 +254,7 @@ app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWr
 // إضافة حدث إلى سجل «نتائج المتابعة اليومية» (يُلحق سطراً مؤرّخاً باسم المستخدم)
 app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    const text = String((req.body && req.body.text) || '').trim().replace(/\s*\n\s*/g, ' / '); // الحدث في سطر واحد
+    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim(); // نحفظ أسطر الحدث، ونمنع السطر الفارغ داخله
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
     const tasks = await loadTasks(true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
@@ -279,7 +279,7 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
 // تعديل حدث متابعة بالموضع — يحدّث نصّه في «المتابعة» وسجلّه في «السجل» (بوقت التعديل واسم المعدِّل)
 app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    const text = String((req.body && req.body.text) || '').trim().replace(/\s*\n\s*/g, ' / ');
+    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim();
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
     const idx = Number(req.params.idx);
     const tasks = await loadTasks(true);
@@ -397,7 +397,8 @@ app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
     const email = req.session.user.email;
     const methods = (req.body.methods || []).filter((m) => REMINDER_METHODS.includes(m));
     const offsets = (req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
-    await store.setReminder(email, req.params.row, methods, offsets);
+    const dates = (req.body.dates || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    await store.setReminder(email, req.params.row, methods, offsets, dates);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });

@@ -177,6 +177,7 @@ tbody tr.row-done td { color: var(--muted); }
 tbody tr.row-done .deliv { text-decoration: line-through; }
 .deliv { max-width: 360px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
 .cell-owner { white-space: pre-line; }
+.linked-card { display: inline-block; margin-top: 6px; background: var(--blue-bg); color: var(--blue); border: 1px solid #e1d2b9; border-radius: 8px; padding: 3px 9px; font-size: 11.5px; font-weight: 700; }
 
 .badge { display: inline-block; padding: 3px 10px; border-radius: 14px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .p-حرجة { background: var(--red-bg); color: var(--red); }
@@ -370,6 +371,10 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .rem-cal { margin-top: 12px; font-size: 13px; color: var(--muted); }
 .rem-cal-row { display: flex; gap: 8px; margin-top: 6px; }
 .rem-cal-row input { flex: 1; font-family: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.rem-dates { display: flex; flex-wrap: wrap; gap: 6px; }
+.rem-date { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; color: var(--copper-deep); }
+.rem-date-x { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 0; line-height: 1; }
+.rem-date-x:hover { color: var(--red); }
 
 /* ===== Users admin page ===== */
 .page-wrap { max-width: 980px; margin: 24px auto; padding: 0 20px; }

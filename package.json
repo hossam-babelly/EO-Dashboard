@@ -1,7 +1,7 @@
 {
   "name": "eo-dashboard",
   "version": "1.0.0",
-  "description": "EO-Dashboard — لوحة متابعة مهام المكتب التنفيذي (سنكري القابضة)",
+  "description": "EO-Dashboard — لوحة متابعة مهام الإدارة التنفيذية (سنكري القابضة)",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {

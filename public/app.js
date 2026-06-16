@@ -17,6 +17,7 @@ const state = {
   sortKey: 'deadline',
   sortDir: 'asc',
   expanded: false,
+  tableCols: [],
   calY: null,
   calM: null, // 0-based
 };
@@ -231,7 +232,18 @@ function followupSection(t) {
       <textarea id="fuInput" rows="2" placeholder="أضف تحديث متابعة جديد… (يُسجَّل باسمك ووقته تلقائياً)"></textarea>
       <button class="btn btn-save" id="fuAdd" type="button">➕ إضافة حدث</button>
     </div>` : '';
-  return `<div class="field"><label>سجلّ المتابعة اليومية</label><div class="fu-log">${items}</div>${add}</div>`;
+  return `<div id="fuSection" class="field"><label>سجلّ المتابعة اليومية</label><div class="fu-log">${items}</div>${add}</div>`;
+}
+function bindFollowup(t) {
+  const fuAdd = $('fuAdd');
+  if (fuAdd) fuAdd.onclick = () => addFollowup(t.id);
+  const sec = $('fuSection'); if (!sec) return;
+  sec.querySelectorAll('.fu-ed').forEach((b) => b.onclick = () => startEditEvent(t.id, Number(b.dataset.idx), b));
+  sec.querySelectorAll('.fu-del').forEach((b) => b.onclick = () => deleteEvent(t.id, Number(b.dataset.idx)));
+}
+function refreshFollowup(id) {
+  const t = state.tasks.find((x) => x.id === id); if (!t) return;
+  const el = $('fuSection'); if (el) { el.outerHTML = followupSection(t); bindFollowup(t); }
 }
 async function addFollowup(id) {
   const inp = $('fuInput');
@@ -244,7 +256,7 @@ async function addFollowup(id) {
     if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
     toast('تمت إضافة الحدث ✓');
-    openModal(id);
+    refreshFollowup(id);
     render();
   } catch (e) {
     toast('تعذّر: ' + e.message, true);
@@ -260,7 +272,7 @@ function startEditEvent(id, idx, btn) {
   const ta = body.querySelector('.fu-eta');
   ta.value = cur; ta.focus();
   body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, ta.value.trim());
-  body.querySelector('.fu-cancelbtn').onclick = () => openModal(id);
+  body.querySelector('.fu-cancelbtn').onclick = () => refreshFollowup(id);
 }
 async function saveEvent(id, idx, text) {
   if (!text) { toast('نصّ الحدث فارغ', true); return; }
@@ -269,7 +281,7 @@ async function saveEvent(id, idx, text) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تم تعديل الحدث ✓'); openModal(id); render();
+    toast('تم تعديل الحدث ✓'); refreshFollowup(id); render();
   } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 async function deleteEvent(id, idx) {
@@ -279,7 +291,7 @@ async function deleteEvent(id, idx) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تم حذف الحدث ✓'); openModal(id); render();
+    toast('تم حذف الحدث ✓'); refreshFollowup(id); render();
   } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 function relText(t) {
@@ -385,37 +397,60 @@ function renderFilters() {
 }
 
 // ===== Table view =====
+// خانة المسؤول المعني + بطاقة «مرتبط بـ» أسفلها
+function ownerCell(t) {
+  return `${esc(t.owner)}${t.linkedTo ? `<div class="linked-card">🔗 ${esc(t.linkedTo)}</div>` : ''}`;
+}
+function deadlineCellHtml(t) {
+  const dlCls = t.isOverdue ? 'overdue' : t.isSoon3 ? 'soon' : '';
+  const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
+  return `<div class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></div>`;
+}
+// كل أعمدة الجدول المتاحة (مفتاح + عنوان + فرز + مُصيِّر)
+const TABLE_COLS = [
+  { k: 'num', label: 'م', r: (t) => esc(t.num) },
+  { k: 'project', label: 'المشروع', sort: 'project', r: (t) => esc(t.project) },
+  { k: 'file', label: 'الملف', sort: 'file', r: (t) => esc(t.file) },
+  { k: 'type', label: 'النوع', sort: 'type', r: (t) => typeCell(t.type) },
+  { k: 'owner', label: 'المسؤول المعني', sort: 'owner', cls: 'cell-owner', r: ownerCell },
+  { k: 'deliverable', label: 'المخرج المطلوب', cls: 'fu-col', r: deliverableCell },
+  { k: 'deadline', label: 'الموعد', sort: 'deadline', r: deadlineCellHtml },
+  { k: 'priority', label: 'الأولوية', sort: 'priority', r: (t) => `<span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span>` },
+  { k: 'status', label: 'الحالة', sort: 'status', r: (t) => `<span class="badge st ${stClass(t.status)}">${esc(t.status)}</span>` },
+  { k: 'followup', label: 'المتابعة', cls: 'fu-col', r: followupCell },
+  { k: 'source', label: 'مصدر المهمة', r: (t) => esc(t.source) },
+  { k: 'notes', label: 'ملاحظات', r: (t) => esc(t.notes) },
+];
+const DEFAULT_TABLE_COLS = ['project', 'file', 'type', 'owner', 'deliverable', 'deadline', 'priority', 'status', 'followup'];
+function activeTableCols() {
+  const sel = (state.tableCols && state.tableCols.length) ? state.tableCols : DEFAULT_TABLE_COLS;
+  return TABLE_COLS.filter((c) => sel.includes(c.k));
+}
+function buildColsPanel() {
+  const el = $('colsPanel'); if (!el) return;
+  el.innerHTML = TABLE_COLS.map((c) => `<label class="ms-opt"><input type="checkbox" value="${c.k}" ${state.tableCols.includes(c.k) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('');
+  el.querySelectorAll('input').forEach((inp) => inp.onchange = () => {
+    const i = state.tableCols.indexOf(inp.value);
+    if (inp.checked && i === -1) state.tableCols.push(inp.value);
+    else if (!inp.checked && i > -1) state.tableCols.splice(i, 1);
+    localStorage.setItem('eo_tablecols', JSON.stringify(state.tableCols));
+    render();
+  });
+}
+
 function renderTable() {
   const list = sortList(applyFilters());
   $('countLine').textContent = `عرض ${list.length} من ${state.tasks.length} مهمة`;
   if (!list.length) { $('viewArea').innerHTML = '<div class="table-wrap"><div class="empty">لا توجد مهام مطابقة للفلاتر.</div></div>'; return; }
   const arrow = (k) => state.sortKey === k ? `<span class="arrow">${state.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
+  const cols = activeTableCols();
+  const ths = cols.map((c) => c.sort ? `<th data-sort="${c.sort}">${c.label} ${arrow(c.sort)}</th>` : `<th>${c.label}</th>`).join('');
   const rows = list.map((t) => {
     const rowCls = t.isDone ? 'row-done' : t.isOverdue ? 'row-overdue' : t.isSoon3 ? 'row-soon' : '';
-    const dlCls = t.isOverdue ? 'overdue' : t.isSoon3 ? 'soon' : '';
-    const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
-    return `<tr class="${rowCls}" data-id="${t.id}">
-      <td>${esc(t.project)}</td>
-      <td>${esc(t.file)}</td>
-      <td>${typeCell(t.type)}</td>
-      <td class="cell-owner">${esc(t.owner)}</td>
-      <td class="fu-col">${deliverableCell(t)}</td>
-      <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
-      <td><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></td>
-      <td><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></td>
-      <td class="fu-col">${followupCell(t)}</td></tr>`;
+    const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(t)}</td>`).join('');
+    return `<tr class="${rowCls}" data-id="${t.id}">${tds}</tr>`;
   }).join('');
-  $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>
-      <th data-sort="project">المشروع ${arrow('project')}</th>
-      <th data-sort="file">الملف ${arrow('file')}</th>
-      <th data-sort="type">النوع ${arrow('type')}</th>
-      <th data-sort="owner">المسؤول ${arrow('owner')}</th>
-      <th>المخرج المطلوب</th>
-      <th data-sort="deadline">الموعد ${arrow('deadline')}</th>
-      <th data-sort="priority">الأولوية ${arrow('priority')}</th>
-      <th data-sort="status">الحالة ${arrow('status')}</th>
-      <th>المتابعة</th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
   $('viewArea').querySelectorAll('th[data-sort]').forEach((th) => {
     th.onclick = () => { const k = th.dataset.sort; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } renderTable(); };
   });
@@ -512,7 +547,18 @@ function deliverableSection(t) {
       <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span>${acts(i)}</div>
       <div class="fu-ibody">${esc(b)}</div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
   const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="أضف مخرجاً مطلوباً جديداً…"></textarea><button class="btn btn-save" id="dvAdd" type="button">➕ إضافة مخرج</button></div>` : '';
-  return `<div class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>${add}</div>`;
+  return `<div id="dvSection" class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>${add}</div>`;
+}
+function bindDeliverable(t) {
+  const dvAdd = $('dvAdd');
+  if (dvAdd) dvAdd.onclick = () => addDeliverable(t.id);
+  const sec = $('dvSection'); if (!sec) return;
+  sec.querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
+  sec.querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
+}
+function refreshDeliverable(id) {
+  const t = state.tasks.find((x) => x.id === id); if (!t) return;
+  const el = $('dvSection'); if (el) { el.outerHTML = deliverableSection(t); bindDeliverable(t); }
 }
 async function addDeliverable(id) {
   const inp = $('dvInput'); const text = inp ? inp.value.trim() : '';
@@ -522,7 +568,7 @@ async function addDeliverable(id) {
     const res = await fetch(`/api/tasks/${id}/deliverable`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
     const data = await res.json(); if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تمت إضافة المخرج ✓'); openModal(id); render();
+    toast('تمت إضافة المخرج ✓'); refreshDeliverable(id); render();
   } catch (e) { toast('تعذّر: ' + e.message, true); if (btn) { btn.disabled = false; btn.textContent = '➕ إضافة مخرج'; } }
 }
 function startEditDeliv(id, idx, btn) {
@@ -530,7 +576,7 @@ function startEditDeliv(id, idx, btn) {
   body.innerHTML = `<textarea class="fu-eta" rows="3"></textarea><div class="fu-eacts"><button class="btn btn-save dv-savebtn" type="button">حفظ</button><button class="btn btn-cancel dv-cancelbtn" type="button">إلغاء</button></div>`;
   const ta = body.querySelector('.fu-eta'); ta.value = cur; ta.focus();
   body.querySelector('.dv-savebtn').onclick = () => saveDeliv(id, idx, ta.value.trim());
-  body.querySelector('.dv-cancelbtn').onclick = () => openModal(id);
+  body.querySelector('.dv-cancelbtn').onclick = () => refreshDeliverable(id);
 }
 async function saveDeliv(id, idx, text) {
   if (!text) { toast('نصّ المخرج فارغ', true); return; }
@@ -538,7 +584,7 @@ async function saveDeliv(id, idx, text) {
     const res = await fetch(`/api/tasks/${id}/deliverable/${idx}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
     const data = await res.json(); if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تم تعديل المخرج ✓'); openModal(id); render();
+    toast('تم تعديل المخرج ✓'); refreshDeliverable(id); render();
   } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 async function deleteDeliv(id, idx) {
@@ -547,7 +593,7 @@ async function deleteDeliv(id, idx) {
     const res = await fetch(`/api/tasks/${id}/deliverable/${idx}`, { method: 'DELETE' });
     const data = await res.json(); if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
-    toast('تم حذف المخرج ✓'); openModal(id); render();
+    toast('تم حذف المخرج ✓'); refreshDeliverable(id); render();
   } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 
@@ -629,14 +675,8 @@ function openModal(id) {
     reminderSection(t);
   $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button>` : '';
   if (canEdit()) $('mEdit').onclick = () => openEdit(t);
-  const fuAdd = $('fuAdd');
-  if (fuAdd) fuAdd.onclick = () => addFollowup(t.id);
-  $('mBody').querySelectorAll('.fu-ed').forEach((b) => b.onclick = () => startEditEvent(t.id, Number(b.dataset.idx), b));
-  $('mBody').querySelectorAll('.fu-del').forEach((b) => b.onclick = () => deleteEvent(t.id, Number(b.dataset.idx)));
-  const dvAdd = $('dvAdd');
-  if (dvAdd) dvAdd.onclick = () => addDeliverable(t.id);
-  $('mBody').querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
-  $('mBody').querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
+  bindFollowup(t);
+  bindDeliverable(t);
   bindReminderSection(t);
   $('modalBack').classList.add('open');
 }
@@ -647,10 +687,11 @@ function reminderSection(t) {
     return `<div class="rem-box"><label class="rem-title">🔔 تذكيراتي</label>
       <div style="color:var(--muted);font-size:13px">ميزة التذكيرات تتطلب تفعيل التخزين الدائم (DATA_SHEET_ID).</div></div>`;
   }
-  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [] };
+  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [], dates: [] };
   const chk = (arr, item) => arr.includes(item.key) ? 'checked' : '';
   const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
   const offsets = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="offset" value="${o.key}" ${chk(pref.offsets, o)}> ${o.label}</label>`).join('');
+  const datesHtml = (pref.dates || []).map((d) => remDateChip(d)).join('');
   const calUrl = state.me && state.me.calToken ? `${location.origin}/api/calendar/${state.me.calToken}.ics` : '';
   const calHint = calUrl
     ? `<div class="rem-cal">لإضافة مهامك إلى تقويم حاسوبك، اشترك بهذا الرابط مرة واحدة:
@@ -660,22 +701,42 @@ function reminderSection(t) {
     <label class="rem-title">🔔 تذكيراتي لهذه المهمة</label>
     <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
     <div class="rem-group"><span class="rem-sub">توقيت التذكير:</span>${offsets}</div>
+    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">تواريخ ثابتة:</span>
+      <div style="flex:1">
+        <div id="remDates" class="rem-dates">${datesHtml}</div>
+        <div class="rem-cal-row" style="margin-top:6px"><input type="date" id="remDateInput"><button class="btn btn-cancel" id="remDateAdd" type="button">➕ أضف تاريخاً</button></div>
+      </div>
+    </div>
     <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">💾 حفظ التذكير</button>
     ${calHint}
   </div>`;
 }
 
+function remDateChip(d) {
+  return `<span class="rem-date" data-date="${esc(d)}">${esc(d)} <button type="button" class="rem-date-x" data-date="${esc(d)}" aria-label="حذف">✕</button></span>`;
+}
 function bindReminderSection(t) {
   if (!state.storeEnabled) return;
+  const datesBox = $('remDates');
+  const dateAdd = $('remDateAdd');
+  if (dateAdd) dateAdd.onclick = () => {
+    const inp = $('remDateInput'); const v = inp ? inp.value : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('اختر تاريخاً صالحاً', true); return; }
+    if ([...datesBox.querySelectorAll('.rem-date')].some((x) => x.dataset.date === v)) return;
+    datesBox.insertAdjacentHTML('beforeend', remDateChip(v));
+    if (inp) inp.value = '';
+  };
+  if (datesBox) datesBox.onclick = (e) => { const x = e.target.closest('.rem-date-x'); if (x) x.closest('.rem-date').remove(); };
   const save = $('remSave');
   if (save) save.onclick = async () => {
     const methods = [...document.querySelectorAll('[data-rem="method"]:checked')].map((x) => x.value);
     const offsets = [...document.querySelectorAll('[data-rem="offset"]:checked')].map((x) => x.value);
+    const dates = [...(datesBox ? datesBox.querySelectorAll('.rem-date') : [])].map((x) => x.dataset.date);
     save.disabled = true; save.textContent = '... حفظ';
     try {
-      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets }) });
+      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets, dates }) });
       const data = await res.json(); if (!data.ok) throw new Error(data.error);
-      state.reminders[String(t.id)] = { methods, offsets };
+      state.reminders[String(t.id)] = { methods, offsets, dates };
       toast('تم حفظ التذكير ✓');
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
     save.disabled = false; save.textContent = '💾 حفظ التذكير';
@@ -693,6 +754,34 @@ function textarea(label, name, value) {
 function selectField(label, name, options, value) {
   return `<div class="field"><label>${label}</label><select name="${name}">${options.map((o) => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
 }
+// حقل الموعد: تاريخ محدد (تقويم) / دورية / غير محدد
+const DL_WEEKDAYS = ['كل السبت', 'كل الأحد', 'كل الإثنين', 'كل الثلاثاء', 'كل الأربعاء', 'كل الخميس'];
+function deadlineField(t) {
+  let mode = 'none', dateVal = '', recur = 'يوميا', mday = 1;
+  if (t.deadlineIso) { mode = 'date'; dateVal = t.deadlineIso; }
+  else if (t.recurrence) {
+    mode = 'recur';
+    const rc = String(t.recurrence);
+    if (/يوميا|يومي/.test(rc)) recur = 'يوميا';
+    else { const wd = DL_WEEKDAYS.find((d) => rc.includes(d) || rc.includes(d.replace('كل ال', '').replace('كل ', '')));
+      if (wd) recur = wd;
+      else if (/شهر/.test(rc)) { recur = 'شهري'; const mm = rc.match(/(\d{1,2})/); if (mm) mday = Number(mm[1]); }
+      else recur = 'أسبوعي'; }
+  }
+  const recurOpts = ['يوميا', 'أسبوعي', ...DL_WEEKDAYS, 'شهري'];
+  return `<div class="field"><label>الموعد / الدورية</label>
+    <select id="dlMode">
+      <option value="date" ${mode === 'date' ? 'selected' : ''}>📅 تاريخ محدد</option>
+      <option value="recur" ${mode === 'recur' ? 'selected' : ''}>🔁 دورية</option>
+      <option value="none" ${mode === 'none' ? 'selected' : ''}>— غير محدد</option>
+    </select>
+    <input type="date" id="dlDate" value="${esc(dateVal)}" style="margin-top:8px;${mode === 'date' ? '' : 'display:none'}">
+    <div id="dlRecurWrap" style="margin-top:8px;${mode === 'recur' ? '' : 'display:none'}">
+      <select id="dlRecur">${recurOpts.map((o) => `<option ${o === recur ? 'selected' : ''}>${o}</option>`).join('')}</select>
+      <input type="number" id="dlMday" min="1" max="31" value="${mday}" placeholder="يوم الشهر" style="margin-top:8px;${recur === 'شهري' ? '' : 'display:none'}">
+    </div></div>`;
+}
+
 // حقل المشروع: قائمة منسدلة من المشاريع الموجودة + خيار «إضافة جديد»
 function projectSelectField(value) {
   const projs = (state.filters.projects || []).slice();
@@ -710,23 +799,30 @@ function openEdit(t) {
   $('mBody').innerHTML = `<form id="taskForm">
     ${projectSelectField(t.project)}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
-    ${field('المسؤول المعني (افصل بسطر لكل شخص)', 'owner', t.owner)}
-    ${isNew ? textarea('المخرج المطلوب', 'deliverable', t.deliverable) : '<div class="field"><label>المخرجات المطلوبة</label><div class="val" style="color:var(--muted);font-size:13px">تُدار المخرجات (إضافة/تعديل/حذف) من نافذة عرض المهمة.</div></div>'}
-    <div class="form-row">${field('الموعد / الدورية', 'deadlineRaw', t.deadlineRaw)}${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}</div>
-    ${selectField('الحالة', 'status', STATUSES, t.status)}
+    ${textarea('المسؤول المعني (سطر لكل مسؤول)', 'owner', t.owner)}
+    ${isNew ? textarea('المخرج المطلوب', 'deliverable', t.deliverable) : deliverableSection(t)}
+    ${deadlineField(t)}
+    <div class="form-row">${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}${selectField('الحالة', 'status', STATUSES, t.status)}</div>
     <div class="rem-box" style="margin:0 0 16px">
       <label class="rem-opt" style="font-weight:800;color:var(--navy)"><input type="checkbox" name="meeting" id="mtgChk" ${t.isMeeting ? 'checked' : ''}> 🤝 يوجد اجتماع مرتبط بهذه المهمة</label>
       <div id="mtgStatusWrap" style="margin-top:10px;${t.isMeeting ? '' : 'display:none'}">
         <label class="rem-opt"><input type="checkbox" name="scheduled" ${t.meetingScheduled ? 'checked' : ''}> ✓ تمت جدولة الاجتماع</label>
       </div>
     </div>
-    <div class="field"><label>سجلّ المتابعة اليومية</label><div class="val" style="color:var(--muted);font-size:13px">تُدار المتابعة (إضافة/تعديل/حذف الأحداث) من نافذة عرض المهمة — ليبقى السجلّ متوازياً.</div></div>
+    ${isNew ? '' : followupSection(t)}
     <div class="form-row">${field('مصدر المهمة', 'source', t.source)}${field('ملاحظات', 'notes', t.notes)}</div>
   </form>`;
   const mtgChk = $('mtgChk');
   if (mtgChk) mtgChk.onchange = () => { const w = $('mtgStatusWrap'); if (w) w.style.display = mtgChk.checked ? '' : 'none'; };
   const projSel = $('projSel');
   if (projSel) projSel.onchange = () => { const n = $('projNew'); if (n) { n.style.display = projSel.value === '__new__' ? '' : 'none'; if (projSel.value === '__new__') n.focus(); } };
+  const dlMode = $('dlMode');
+  if (dlMode) {
+    dlMode.onchange = () => { $('dlDate').style.display = dlMode.value === 'date' ? '' : 'none'; $('dlRecurWrap').style.display = dlMode.value === 'recur' ? '' : 'none'; };
+    const dlRecur = $('dlRecur');
+    if (dlRecur) dlRecur.onchange = () => { $('dlMday').style.display = dlRecur.value === 'شهري' ? '' : 'none'; };
+  }
+  if (!isNew) { bindDeliverable(t); bindFollowup(t); }
   $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
   $('mSave').onclick = () => saveTask(isNew ? null : t.id);
   $('mCancel').onclick = () => (isNew ? closeModal() : openModal(t.id));
@@ -745,6 +841,13 @@ async function saveTask(id) {
   // المشروع: «إضافة جديد» → استخدم النصّ المُدخَل
   if (payload.project === '__new__') payload.project = (payload.projectNew || '').trim();
   delete payload.projectNew;
+  // الموعد: من خيار التاريخ/الدورية/غير محدد
+  const dlMode = form.querySelector('#dlMode');
+  if (dlMode) {
+    if (dlMode.value === 'date') { const v = form.querySelector('#dlDate').value; payload.deadlineRaw = v ? v.split('-').reverse().map(Number).join('/') : ''; }
+    else if (dlMode.value === 'recur') { let r = form.querySelector('#dlRecur').value; if (r === 'شهري') r = `شهري - يوم ${form.querySelector('#dlMday').value || 1}`; payload.deadlineRaw = r; }
+    else payload.deadlineRaw = '';
+  }
   const btn = $('mSave'); btn.disabled = true; btn.textContent = '... جارٍ الحفظ';
   try {
     const url = id ? `/api/tasks/${id}` : '/api/tasks';
@@ -816,6 +919,11 @@ async function load(refresh = false) {
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
 state.expanded = localStorage.getItem('eo_expanded') === '1';
+try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
+(function () {
+  const cb = $('colsBtn');
+  if (cb) cb.onclick = (e) => { e.stopPropagation(); const w = $('colsWrap'); const open = w.classList.contains('open'); document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); if (!open) { buildColsPanel(); w.classList.add('open'); } };
+})();
 (function () {
   const eb = $('expandBtn');
   const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.textContent = state.expanded ? '↕ عرض مضغوط' : '↕ عرض موسّع'; } };
@@ -867,7 +975,7 @@ let searchTimer;
 $('fSearch').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value; render(); }, 200); };
 $('resetBtn').onclick = () => { Object.assign(state, { time: 'all', projects: [], owners: [], priorities: [], statuses: [], types: [], search: '' }); $('fSearch').value = ''; render(); };
 $('mClose').onclick = closeModal;
-$('modalBack').onclick = (e) => { if (e.target === $('modalBack')) closeModal(); };
+// لا تُغلق نافذة المهمة بالنقر خارجها — فقط عبر زر ✕ (حفاظاً على التعديلات غير المحفوظة)
 
 load();
 setInterval(() => { if (!$('modalBack').classList.contains('open')) load(true); }, 30000);

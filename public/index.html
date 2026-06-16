@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EO-Dashboard — المكتب التنفيذي | سنكري القابضة</title>
+<title>EO-Dashboard — الإدارة التنفيذية | سنكري القابضة</title>
 <link rel="icon" type="image/png" href="/assets/logo-mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
     <img src="/assets/logo-horizontal.png" alt="سنكري القابضة — SANKARI HOLDING">
   </div>
   <div class="title">
-    <h1>لوحة المكتب التنفيذي</h1>
+    <h1>لوحة الإدارة التنفيذية</h1>
     <p>مجموعة سنكري القابضة — متابعة المهام والمخرجات</p>
   </div>
   <div class="header-actions">
@@ -57,6 +57,7 @@
     <button class="view-tab" data-view="calendar">🗓️ تقويم</button>
     <button class="view-tab" data-view="meetings">🤝 الاجتماعات</button>
     <button class="view-tab toggle" id="expandBtn" type="button" style="margin-inline-start:auto">↕ عرض موسّع</button>
+    <div class="ms" id="colsWrap"><button class="view-tab toggle" id="colsBtn" type="button">⚙ الأعمدة</button><div class="ms-panel" id="colsPanel" style="inset-inline-start:auto;inset-inline-end:0;min-width:210px"></div></div>
   </div>
 
   <div class="count-line" id="countLine"></div>
@@ -84,6 +85,8 @@
       <p style="color:var(--muted);font-size:13px;margin-bottom:12px">يصدّر المهام المعروضة حالياً (حسب الفلاتر والبطاقات المختارة) بهوية سنكري.</p>
       <div class="rep-cols-title">الأعمدة الظاهرة في التقرير:</div>
       <div class="rep-cols" id="reportCols"></div>
+      <div class="rep-cols-title">اسم ملف التقرير:</div>
+      <input id="reportName" type="text" value="تقرير-المهام" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;margin-bottom:18px;color:var(--text)">
       <div class="report-btns">
         <button class="rep-btn rep-pdf" id="reportPdf" type="button">📕 تقرير PDF</button>
         <button class="rep-btn rep-word" id="reportWord" type="button">📘 تقرير Word</button>

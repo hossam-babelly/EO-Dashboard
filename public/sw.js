@@ -3,7 +3,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data.json(); } catch (e) { data = { title: 'تنبيه', body: event.data ? event.data.text() : '' }; }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'لوحة المكتب التنفيذي', {
+    self.registration.showNotification(data.title || 'لوحة الإدارة التنفيذية', {
       body: data.body || '',
       dir: 'rtl',
       lang: 'ar',
