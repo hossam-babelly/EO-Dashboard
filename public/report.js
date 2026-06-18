@@ -246,7 +246,7 @@ function calendarHTML(rows, logo) {
   let cells = dows.map((d) => `<div style="text-align:center;font-weight:800;color:${RB.muted};font-size:11px;padding:4px">${d}</div>`).join('');
   for (let i = 0; i < startDow; i++) cells += '<div></div>';
   for (let d = 1; d <= daysInMonth; d++) {
-    const items = (byDay[d] || []).map((t) => `<div style="font-size:9.5px;background:${t.priority === 'حرجة' ? RB.red : t.priority === 'عالية' ? RB.amber : RB.copperDeep};color:#fff;border-radius:4px;padding:1px 4px;margin-bottom:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(t.project)}</div>`).join('');
+    const items = (byDay[d] || []).map((t) => `<div style="font-size:9.5px;background:${t.priority === 'حرجة' ? RB.red : t.priority === 'عالية' ? RB.amber : RB.copperDeep};color:#fff;border-radius:4px;padding:2px 4px;margin-bottom:2px;overflow:hidden;line-height:1.35"><div style="font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.project)}</div>${t.file ? `<div style="opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.file)}</div>` : ''}</div>`).join('');
     cells += `<div style="border:1px solid ${RB.line};border-radius:6px;min-height:62px;padding:4px;vertical-align:top"><div style="font-size:10px;font-weight:800;color:${RB.muted};margin-bottom:2px">${d}</div>${items}</div>`;
   }
   return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">

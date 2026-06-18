@@ -332,8 +332,8 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
   }
 });
 
-// تعديل حدث متابعة بالموضع: النصّ (مدير/محرّر) · تاريخ ووقت السجل (الجميع) · اسم المستخدم في السجل (المدير فقط)
-app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireWrite, async (req, res) => {
+// تعديل حدث متابعة بالموضع: النصّ والتاريخ/الوقت (مدير/محرّر) · اسم المستخدم في السجل (المدير فقط) — المشاهد ممنوع
+app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
     const tasks = await loadTasks(true);
@@ -508,7 +508,10 @@ app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
     const methods = (req.body.methods || []).filter((m) => REMINDER_METHODS.includes(m));
     const offsets = (req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
     const dates = (req.body.dates || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
-    await store.setReminder(email, req.params.row, methods, offsets, dates);
+    const time = /^\d{1,2}:\d{2}$/.test(String(req.body.time || '')) ? req.body.time : '';
+    const repeatCount = Math.min(20, Math.max(0, parseInt(req.body.repeatCount, 10) || 0));
+    const repeatEvery = Math.min(720, Math.max(0, parseInt(req.body.repeatEvery, 10) || 0));
+    await store.setReminder(email, req.params.row, methods, offsets, dates, time, repeatCount, repeatEvery);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });

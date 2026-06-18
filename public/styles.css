@@ -329,6 +329,13 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .modal-head h3 { font-size: 17px; }
 .modal-close { background: rgba(216,196,176,.2); border: none; color: #fff; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 18px; }
 .modal-close:hover { background: rgba(216,196,176,.34); }
+.mh-right { display: flex; align-items: center; gap: 8px; }
+.modal-head-actions { display: inline-flex; gap: 6px; }
+.mh-icon { background: rgba(216,196,176,.2); border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; transition: .15s; }
+.mh-icon:hover { background: rgba(216,196,176,.36); }
+.mh-icon.mh-save { background: var(--green); }
+.mh-icon.mh-save:hover { background: #51624a; }
+.mh-icon.mh-del:hover { background: var(--red); }
 .modal-body { padding: 20px 22px; }
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 12.5px; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
@@ -369,6 +376,8 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .cal-task { font-size: 11px; padding: 3px 6px; border-radius: 6px; margin-bottom: 3px; cursor: pointer; background: var(--blue-bg); color: var(--copper-deep); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-task.crit { background: var(--red-bg); color: var(--red); }
 .cal-task.high { background: var(--orange-bg); color: var(--orange); }
+.cal-task .cal-p { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-task .cal-f { display: block; opacity: .82; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ===== Edit form ===== */
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

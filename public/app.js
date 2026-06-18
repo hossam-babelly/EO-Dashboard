@@ -15,8 +15,8 @@ const state = {
   statuses: [],
   types: [],
   search: '',
-  sortKey: 'deadline',
-  sortDir: 'asc',
+  sortKey: 'created',
+  sortDir: 'desc',
   expanded: false,
   tableCols: [],
   newDv: [],
@@ -54,8 +54,8 @@ function canEdit() {
   return !!state.meta.canWrite && !!state.me && (state.me.role === 'admin' || state.me.role === 'editor');
 }
 function isAdmin() { return !!state.me && state.me.role === 'admin'; }
-// تعديل السجل (تاريخ/وقت) متاح لأي مستخدم مسجّل؛ النصّ للمحرّر/المدير، واسم المستخدم للمدير فقط
-function canEditLog() { return !!state.meta.canWrite && !!state.me; }
+// تعديل السجل متاح للمحرّر/المدير فقط (المشاهد ممنوع)؛ واسم المستخدم في السجل للمدير فقط
+function canEditLog() { return canEdit(); }
 async function fetchMe() {
   const res = await fetch('/api/me');
   if (res.status === 401) { location.href = '/login.html'; throw new Error('redirect'); }
@@ -349,13 +349,11 @@ function startEditEvent(id, idx, btn) {
   const date = ev.date || todayISO();
   const time = ev.time || nowHM();
   const author = ev.author || me;
-  const textRO = canEdit() ? '' : 'readonly';
   const authorRO = isAdmin() ? '' : 'disabled';
-  const hint = !canEdit() ? '<div class="fu-logedit-hint">يمكنك تعديل تاريخ ووقت السجل فقط.</div>'
-    : (!isAdmin() ? '<div class="fu-logedit-hint">اسم المستخدم في السجل يعدّله المدير فقط.</div>' : '');
+  const hint = !isAdmin() ? '<div class="fu-logedit-hint">اسم المستخدم في السجل يعدّله المدير فقط.</div>' : '';
   const item = btn.closest('.fu-item');
   const body = item.querySelector('.fu-ibody');
-  body.innerHTML = `<textarea class="fu-eta" rows="2" ${textRO}></textarea>
+  body.innerHTML = `<textarea class="fu-eta" rows="2"></textarea>
     <div class="fu-logedit">
       <span class="fu-logedit-lbl">السجل:</span>
       <input type="date" class="fe-date" value="${esc(date)}">
@@ -364,7 +362,7 @@ function startEditEvent(id, idx, btn) {
     </div>${hint}
     <div class="fu-eacts"><button class="btn btn-save fu-savebtn" type="button">حفظ</button><button class="btn btn-cancel fu-cancelbtn" type="button">إلغاء</button></div>`;
   const ta = body.querySelector('.fu-eta');
-  ta.value = ev.text; if (canEdit()) ta.focus();
+  ta.value = ev.text; ta.focus();
   body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, {
     text: ta.value.trim(),
     date: body.querySelector('.fe-date').value,
@@ -525,7 +523,7 @@ const TABLE_COLS = [
   { k: 'created', label: 'تاريخ الإنشاء', sort: 'created', r: (t) => esc(t.created || '—') },
   { k: 'notes', label: 'ملاحظات', r: (t) => esc(t.notes) },
 ];
-const DEFAULT_TABLE_COLS = ['project', 'file', 'type', 'owner', 'deliverable', 'deadline', 'priority', 'status', 'followup'];
+const DEFAULT_TABLE_COLS = ['project', 'file', 'type', 'owner', 'deliverable', 'deadline', 'status', 'followup', 'created', 'notes'];
 function activeTableCols() {
   const sel = (state.tableCols && state.tableCols.length) ? state.tableCols : DEFAULT_TABLE_COLS;
   return TABLE_COLS.filter((c) => sel.includes(c.k));
@@ -554,7 +552,7 @@ function buildColsPanel() {
   const meetings = state.view === 'meetings';
   const COLS = meetings ? MEETING_COLS : TABLE_COLS;
   const sel = meetings ? state.meetingCols : state.tableCols;
-  const lsKey = meetings ? 'eo_meetingcols' : 'eo_tablecols';
+  const lsKey = meetings ? 'eo_meetingcols' : 'eo_tablecols_v2';
   el.innerHTML = COLS.map((c) => `<label class="ms-opt"><input type="checkbox" value="${c.k}" ${sel.includes(c.k) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('');
   el.querySelectorAll('input').forEach((inp) => inp.onchange = () => {
     const i = sel.indexOf(inp.value);
@@ -652,7 +650,7 @@ function renderCalendar() {
     const tasks = byDay[d] || [];
     const tHtml = tasks.map((t) => {
       const cls = t.priority === 'حرجة' ? 'crit' : t.priority === 'عالية' ? 'high' : '';
-      return `<div class="cal-task ${cls}" data-id="${t.id}" title="${esc(t.deliverable)}">${esc(t.project)}</div>`;
+      return `<div class="cal-task ${cls}" data-id="${t.id}" title="${esc(t.deliverable)}"><span class="cal-p">${esc(t.project)}</span>${t.file ? `<span class="cal-f">${esc(t.file)}</span>` : ''}</div>`;
     }).join('');
     cells += `<div class="cal-cell ${iso === todayStr ? 'today' : ''} ${dow === 6 ? 'fri' : ''}"><div class="d">${d}</div>${tHtml}</div>`;
   }
@@ -980,7 +978,8 @@ function openModal(id) {
     meetingField +
     followupSection(t) + F('ملاحظات', t.notes) +
     reminderSection(t);
-  $('mFoot').innerHTML = canEdit() ? `<button class="btn btn-edit" id="mEdit">✏️ تعديل</button><button class="btn btn-del-task" id="mDel">🗑 حذف المهمة</button>` : '';
+  $('mHeadActions').innerHTML = canEdit() ? `<button class="mh-icon" id="mEdit" title="تعديل المهمة">✏️</button><button class="mh-icon mh-del" id="mDel" title="حذف المهمة">🗑</button>` : '';
+  $('mFoot').innerHTML = '';
   if (canEdit()) { $('mEdit').onclick = () => openEdit(t); $('mDel').onclick = () => removeTask(t.id); }
   bindFollowup(t);
   bindDeliverable(t);
@@ -994,11 +993,14 @@ function reminderSection(t) {
     return `<div class="rem-box"><label class="rem-title">🔔 تذكيراتي</label>
       <div style="color:var(--muted);font-size:13px">ميزة التذكيرات تتطلب تفعيل التخزين الدائم (DATA_SHEET_ID).</div></div>`;
   }
-  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [], dates: [] };
+  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [], dates: [], time: '', repeatCount: '', repeatEvery: '' };
   const chk = (arr, item) => arr.includes(item.key) ? 'checked' : '';
   const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
   const offsets = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="offset" value="${o.key}" ${chk(pref.offsets, o)}> ${o.label}</label>`).join('');
   const datesHtml = (pref.dates || []).map((d) => remDateChip(d)).join('');
+  // تنبيه افتراضي: المسؤول المعني يصله إشعار متصفح قبل يوم عند دخوله — حتى دون ضبط يدوي
+  const isMine = state.me && (t.owners || []).includes(state.me.name);
+  const defaultHint = isMine ? '<div class="rem-cal" style="margin-top:0;margin-bottom:8px;color:var(--green)">✓ أنت المسؤول: سيصلك إشعار متصفح <b>قبل يوم</b> من الموعد افتراضياً عند دخولك. يمكنك تخصيص الطرق/الأوقات أدناه.</div>' : '';
   const calUrl = state.me && state.me.calToken ? `${location.origin}/api/calendar/${state.me.calToken}.ics` : '';
   const calHint = calUrl
     ? `<div class="rem-cal">لإضافة مهامك إلى تقويم حاسوبك، اشترك بهذا الرابط مرة واحدة:
@@ -1006,8 +1008,17 @@ function reminderSection(t) {
     : '';
   return `<div class="rem-box">
     <label class="rem-title">🔔 تذكيراتي لهذه المهمة</label>
+    ${defaultHint}
     <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
     <div class="rem-group"><span class="rem-sub">توقيت التذكير:</span>${offsets}</div>
+    <div class="rem-group"><span class="rem-sub">وقت التنبيه:</span>
+      <input type="time" id="remTime" value="${esc(pref.time || '09:00')}" style="width:auto">
+      <span class="rem-sub" style="min-width:auto">التكرار:</span>
+      <input type="number" id="remRepeatCount" min="1" max="20" value="${esc(pref.repeatCount || '1')}" style="width:64px" title="عدد مرات التكرار">
+      <span style="font-size:12.5px;color:var(--muted)">مرّة، كل</span>
+      <input type="number" id="remRepeatEvery" min="0" max="720" value="${esc(pref.repeatEvery || '0')}" style="width:70px" title="الدقائق بين التكرارات">
+      <span style="font-size:12.5px;color:var(--muted)">دقيقة</span>
+    </div>
     <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">تواريخ ثابتة:</span>
       <div style="flex:1">
         <div id="remDates" class="rem-dates">${datesHtml}</div>
@@ -1015,6 +1026,7 @@ function reminderSection(t) {
       </div>
     </div>
     <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">💾 حفظ التذكير</button>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">يُطلَق إشعار المتصفح أثناء فتحك للوحة بحسابك. التوقيت الدقيق والتكرار يعملان واللوحة مفتوحة.</div>
     ${calHint}
   </div>`;
 }
@@ -1039,12 +1051,16 @@ function bindReminderSection(t) {
     const methods = [...document.querySelectorAll('[data-rem="method"]:checked')].map((x) => x.value);
     const offsets = [...document.querySelectorAll('[data-rem="offset"]:checked')].map((x) => x.value);
     const dates = [...(datesBox ? datesBox.querySelectorAll('.rem-date') : [])].map((x) => x.dataset.date);
+    const time = $('remTime') ? $('remTime').value : '';
+    const repeatCount = $('remRepeatCount') ? $('remRepeatCount').value : '';
+    const repeatEvery = $('remRepeatEvery') ? $('remRepeatEvery').value : '';
     save.disabled = true; save.textContent = '... حفظ';
     try {
-      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets, dates }) });
+      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets, dates, time, repeatCount, repeatEvery }) });
       const data = await res.json(); if (!data.ok) throw new Error(data.error);
-      state.reminders[String(t.id)] = { methods, offsets, dates };
+      state.reminders[String(t.id)] = { methods, offsets, dates, time, repeatCount, repeatEvery };
       toast('تم حفظ التذكير ✓');
+      scheduleReminders();
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
     save.disabled = false; save.textContent = '💾 حفظ التذكير';
   };
@@ -1137,7 +1153,8 @@ function openEdit(t) {
   bindOwner();
   bindMeetingsEdit();
   if (isNew) { bindLocalDeliverable(); bindLocalEvent(); } else { bindDeliverable(t); bindFollowup(t); }
-  $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
+  $('mHeadActions').innerHTML = `<button class="mh-icon mh-save" id="mSave" title="حفظ">💾</button>`;
+  $('mFoot').innerHTML = `<button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
   $('mSave').onclick = () => saveTask(isNew ? null : t.id);
   $('mCancel').onclick = () => (isNew ? closeModal() : openModal(t.id));
   $('modalBack').classList.add('open');
@@ -1192,6 +1209,75 @@ async function removeTask(id) {
 
 function closeModal() { $('modalBack').classList.remove('open'); }
 
+// ===== محرّك تذكيرات المهام (إشعارات المتصفح أثناء فتح اللوحة) =====
+const REM_OFFSET_DAYS = { morning: 0, '1d': 1, '3d': 3, '7d': 7 };
+const REM_DEFAULT_TIME = '09:00';
+let _remTimers = [];
+
+function showLocalNotif(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, { body, icon: '/assets/logo-mark.png', tag: title + body })).catch(() => { new Notification(title, { body }); });
+    } else { new Notification(title, { body }); }
+  } catch { /* تجاهل */ }
+}
+
+// تاريخ التذكير = (الموعد − عدد الأيام) عند الساعة المحدّدة
+function reminderFireDate(deadlineIso, days, time) {
+  const [y, m, d] = deadlineIso.split('-').map(Number);
+  const [hh, mm] = String(time || REM_DEFAULT_TIME).split(':').map(Number);
+  return new Date(y, m - 1, d - days, hh || 9, mm || 0, 0, 0);
+}
+
+// أحداث التذكير المستحقّة للمستخدم الحالي (افتراضي للمسؤول + التذكيرات المضبوطة يدوياً)
+function reminderEvents() {
+  const me = state.me; if (!me) return [];
+  const events = [];
+  for (const t of state.tasks) {
+    if (t.isDone || !t.deadlineIso) continue;
+    const pref = (state.reminders || {})[String(t.id)];
+    const isMine = (t.owners || []).includes(me.name);
+    let offsets, time, count, every, on;
+    if (pref && (pref.methods || []).length) {
+      on = (pref.methods || []).includes('push'); // إشعار المتصفح
+      offsets = pref.offsets || [];
+      time = pref.time || REM_DEFAULT_TIME;
+      count = Math.max(1, Number(pref.repeatCount) || 1);
+      every = Math.max(0, Number(pref.repeatEvery) || 0);
+    } else if (isMine) {
+      on = true; offsets = ['1d']; time = REM_DEFAULT_TIME; count = 1; every = 0; // الافتراضي
+    } else continue;
+    if (!on || !offsets.length) continue;
+    const body = `${t.project}${t.file ? ' — ' + t.file : ''} (${relText(t)})`;
+    for (const off of offsets) {
+      const days = REM_OFFSET_DAYS[off]; if (days == null) continue;
+      const base = reminderFireDate(t.deadlineIso, days, time);
+      for (let i = 0; i < count; i++) {
+        events.push({ taskId: t.id, fireAt: new Date(base.getTime() + i * every * 60000), tag: `${off}_${i}`, title: 'تذكير بمهمة', body });
+      }
+    }
+  }
+  return events;
+}
+
+// يُطلق المستحقّ الآن (عند الدخول) ويجدول القادم خلال اليوم ما دامت اللوحة مفتوحة — مع منع التكرار عبر localStorage
+function scheduleReminders() {
+  _remTimers.forEach(clearTimeout); _remTimers = [];
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !state.me) return;
+  const now = Date.now();
+  for (const ev of reminderEvents()) {
+    const key = `eo_rem_${state.me.email || ''}_${ev.taskId}_${ev.tag}_${ev.fireAt.toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(key)) continue;
+    const delay = ev.fireAt.getTime() - now;
+    if (delay <= 0 && delay > -24 * 3600 * 1000) {
+      showLocalNotif(ev.title, ev.body); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ }
+    } else if (delay > 0 && delay < 24 * 3600 * 1000) {
+      _remTimers.push(setTimeout(() => { showLocalNotif(ev.title, ev.body); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ } }, delay));
+    }
+  }
+}
+
 // ===== Notification bell (in-app) =====
 function bellItems() {
   return state.tasks
@@ -1243,11 +1329,17 @@ function render() {
 
 async function load(refresh = false) {
   try {
-    if (!state.me) { await fetchMe(); await fetchReminders(); await fetchUsers(); }
+    const firstLoad = !state.me;
+    if (firstLoad) { await fetchMe(); await fetchReminders(); await fetchUsers(); }
     await fetchTasks(refresh);
     $('sync').textContent = fmtSync(state.meta.fetchedAt);
     render();
     if (window.Notification && Notification.permission === 'granted') setupPush(false);
+    // طلب إذن الإشعارات مرّة (لتفعيل التذكير الافتراضي قبل يوم) ثم جدولة التذكيرات
+    if (firstLoad && window.Notification && Notification.permission === 'default') {
+      try { await Notification.requestPermission(); } catch { /* تجاهل */ }
+    }
+    scheduleReminders();
   } catch (e) {
     if (e.message === 'redirect') return;
     $('viewArea').innerHTML = `<div class="table-wrap"><div class="empty">تعذّر تحميل المهام: ${esc(e.message)}</div></div>`;
@@ -1258,7 +1350,7 @@ async function load(refresh = false) {
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
 state.expanded = localStorage.getItem('eo_expanded') === '1';
-try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
+try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols_v2') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
 try { state.meetingCols = JSON.parse(localStorage.getItem('eo_meetingcols') || 'null') || DEFAULT_MEETING_COLS.slice(); } catch { state.meetingCols = DEFAULT_MEETING_COLS.slice(); }
 try { state.seenNotif = new Set(JSON.parse(localStorage.getItem('eo_seen_notif') || '[]')); } catch { state.seenNotif = new Set(); }
 (function () {
