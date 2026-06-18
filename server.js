@@ -185,6 +185,7 @@ function summarize(tasks) {
     byType: {},
     meetings: { total: 0, scheduled: 0, unscheduled: 0 },
   };
+  let completionSum = 0;
   for (const t of tasks) {
     if (t.isToday) s.today++;
     if (t.isOverdue) s.overdue++;
@@ -202,9 +203,20 @@ function summarize(tasks) {
       s.meetings.total++;
       if (m.scheduled) s.meetings.scheduled++; else s.meetings.unscheduled++;
     }
+    completionSum += taskCompletion(t);
   }
-  s.completion = s.total ? Math.round((s.done / s.total) * 100) : 0;
+  // نسبة الإنجاز تشمل الإنجاز الجزئي للمخرجات (مهمة بنصف مخرجاتها منجزة = 0.5)
+  s.completion = s.total ? Math.round((completionSum / s.total) * 100) : 0;
   return s;
+}
+
+// نسبة إنجاز المهمة الواحدة (0..1): منجزة كلياً=1، وإلا نسبة المخرجات المؤشَّرة، وبلا مخرجات=0
+function taskCompletion(t) {
+  if (t.isDone) return 1;
+  const dB = sheets.fuBlocks(t.deliverable || '');
+  if (!dB.length) return 0;
+  const done = dB.filter((b) => /^✓/.test(b)).length;
+  return done / dB.length;
 }
 
 // كل المهام + ملخص + خيارات الفلاتر
@@ -299,7 +311,15 @@ app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), r
     const u = req.session && req.session.user;
     const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
     fB[idx] = text;
-    lB[idx] = `[${nowStamp()} — ${author}]`;
+    // سجل الحدث: قابل للتعديل — إن وُصِل تاريخ صالح نبنيه من المُدخَل، وإلا نستخدم وقت التعديل واسم المعدِّل
+    const { date, time, author: customAuthor } = req.body || {};
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+      const tm = /^\d{1,2}:\d{2}$/.test(String(time || '')) ? time : '00:00';
+      const au = String(customAuthor || '').trim() || author;
+      lB[idx] = `[${date} ${tm} — ${au}]`;
+    } else {
+      lB[idx] = `[${nowStamp()} — ${author}]`;
+    }
     const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
     invalidateCache();
     res.json({ ok: true, task });

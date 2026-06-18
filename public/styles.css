@@ -227,6 +227,10 @@ tbody tr.row-done .deliv { text-decoration: line-through; }
 .fu-ico { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 6px; line-height: 1; }
 .fu-ico:hover { background: var(--surface-2); }
 .fu-eta { width: 100%; font-family: inherit; font-size: 13.5px; padding: 8px 10px; border: 1px solid var(--copper); border-radius: 8px; resize: vertical; }
+.fu-logedit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.fu-logedit-lbl { font-size: 12px; color: var(--muted); font-weight: 700; }
+.fu-logedit input { font-family: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--text); }
+.fu-logedit .fe-author { flex: 1; min-width: 90px; }
 .fu-eacts { display: flex; gap: 8px; margin-top: 6px; }
 .fu-eacts .btn { padding: 6px 12px; font-size: 12.5px; }
 .dv-num { font-weight: 800; color: var(--copper-deep); font-size: 12px; }

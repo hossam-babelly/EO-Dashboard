@@ -125,7 +125,7 @@ function matchTime(t, key) {
     case 'today': return t.isToday;
     case 'soon3': return t.isSoon3;
     case 'week': return t.isThisWeek;
-    case 'overdue': return t.isOverdue;
+    case 'overdue': return t.isOverdue || t.isUndated; // المهام بلا موعد تُعدّ متأخرة دوماً
     case 'undated': return t.isUndated;
     case 'recurring': return t.isRecurring;
     default: return true;
@@ -148,11 +148,40 @@ function applyFilters() {
   return list;
 }
 
+// هل المهمة الشهرية تقع اليوم؟ (نقارن «يوم N» في نصّ الدورية بيوم الشهر الحالي)
+function monthlyToday(t) {
+  const m = String(t.recurrence || '').match(/(\d{1,2})/);
+  return m ? Number(m[1]) === new Date().getDate() : false;
+}
+// رتبة الموعد عند الفرز التصاعدي:
+// 0 بلا موعد · 1 شهري اليوم · 2 أسبوعي/يوم محدّد اليوم · 3 يومي · 4 دورية أخرى · 5 تواريخ محدّدة
+function deadlineRank(t) {
+  if (t.isUndated) return 0;
+  if (t.isRecurring) {
+    const k = t.recurrenceKind;
+    if (k === 'monthly') return monthlyToday(t) ? 1 : 4;
+    if (k === 'weekday') return t.isToday ? 2 : 4;
+    if (k === 'weekly') return 2;
+    if (k === 'daily') return 3;
+    return 4;
+  }
+  return 5;
+}
+
 function sortList(list) {
   const dir = state.sortDir === 'asc' ? 1 : -1;
   const key = state.sortKey;
+  if (key === 'deadline') {
+    return [...list].sort((a, b) => {
+      if (a.isDone !== b.isDone) return a.isDone ? 1 : -1; // المنجزة دائماً في الأسفل
+      const ra = deadlineRank(a), rb = deadlineRank(b);
+      if (ra !== rb) return (ra - rb) * dir;
+      const x = a.deadlineIso || '', y = b.deadlineIso || ''; // ضمن نفس الرتبة: حسب التاريخ
+      if (x !== y) return (x < y ? -1 : 1) * dir;
+      return 0;
+    });
+  }
   const val = (t) => {
-    if (key === 'deadline') return t.deadlineIso || '9999-99-99';
     if (key === 'priority') return ({ 'حرجة': 0, 'عالية': 1, 'متوسطة': 2 })[t.priority] ?? 9;
     if (key === 'project') return t.project || '';
     if (key === 'file') return t.file || '';
@@ -291,21 +320,39 @@ async function addFollowup(id) {
     if (btn) { btn.disabled = false; btn.textContent = '➕ إضافة حدث'; }
   }
 }
+function todayISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function nowHM() { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
 function startEditEvent(id, idx, btn) {
+  const t = state.tasks.find((x) => x.id === id); if (!t) return;
+  const ev = parseFollowup(t.followup, t.log).find((e) => e.idx === idx) || { text: '' };
+  const me = (state.me && state.me.firstName) ? state.me.firstName : '';
+  const date = ev.date || todayISO();
+  const time = ev.time || nowHM();
+  const author = ev.author || me;
   const item = btn.closest('.fu-item');
   const body = item.querySelector('.fu-ibody');
-  const cur = body.textContent;
   body.innerHTML = `<textarea class="fu-eta" rows="2"></textarea>
+    <div class="fu-logedit">
+      <span class="fu-logedit-lbl">السجل:</span>
+      <input type="date" class="fe-date" value="${esc(date)}">
+      <input type="time" class="fe-time" value="${esc(time)}">
+      <input type="text" class="fe-author" value="${esc(author)}" placeholder="الاسم">
+    </div>
     <div class="fu-eacts"><button class="btn btn-save fu-savebtn" type="button">حفظ</button><button class="btn btn-cancel fu-cancelbtn" type="button">إلغاء</button></div>`;
   const ta = body.querySelector('.fu-eta');
-  ta.value = cur; ta.focus();
-  body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, ta.value.trim());
+  ta.value = ev.text; ta.focus();
+  body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, {
+    text: ta.value.trim(),
+    date: body.querySelector('.fe-date').value,
+    time: body.querySelector('.fe-time').value,
+    author: body.querySelector('.fe-author').value.trim(),
+  });
   body.querySelector('.fu-cancelbtn').onclick = () => refreshFollowup(id);
 }
-async function saveEvent(id, idx, text) {
-  if (!text) { toast('نصّ الحدث فارغ', true); return; }
+async function saveEvent(id, idx, payload) {
+  if (!payload.text) { toast('نصّ الحدث فارغ', true); return; }
   try {
-    const res = await fetch(`/api/tasks/${id}/followup/${idx}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const res = await fetch(`/api/tasks/${id}/followup/${idx}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
@@ -340,15 +387,9 @@ function renderKpis() {
   const byType = s.byType || {};
   const meet = s.meetings || { total: 0, scheduled: 0, unscheduled: 0 };
 
-  // البطاقات الزمنية الأساسية
+  // البطاقات: نُبقي «إجمالي المهام» و«نسبة الإنجاز» فقط (البقية متوفّرة كشرائح فوق الفلاتر)
   const cards = [
     { kind: 'time', key: 'all', cls: '', num: s.total, lbl: 'إجمالي المهام' },
-    { kind: 'time', key: 'today', cls: 'orange', num: s.today, lbl: 'مهام اليوم' },
-    { kind: 'time', key: 'overdue', cls: 'red', num: s.overdue, lbl: 'متأخرة' },
-    { kind: 'time', key: 'soon3', cls: 'orange', num: s.soon3, lbl: 'خلال 3 أيام' },
-    { kind: 'time', key: 'week', cls: '', num: s.thisWeek, lbl: 'هذا الأسبوع' },
-    { kind: 'time', key: 'undated', cls: '', num: s.undated, lbl: 'بلا موعد' },
-    { kind: 'time', key: 'recurring', cls: '', num: s.recurring, lbl: 'دورية' },
     { kind: 'time', key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: 'نسبة الإنجاز' },
   ];
 
@@ -426,12 +467,16 @@ function renderFilters() {
 }
 
 // ===== Table view =====
+// مجموعة كل المسؤولين المعنيين في كامل التطبيق (لتمييز بطاقات «مرتبط بـ» المطابِقة لأحدهم)
+function allOwnersSet() {
+  return new Set((state.filters.owners || []).map((o) => o.trim()).filter(Boolean));
+}
 // خانة المسؤول المعني + بطاقة لكل شخص في «مرتبط بـ» أسفلها
-// (البطاقة التي يطابق محتواها أحد المسؤولين المعنيين تأخذ لوناً داكناً مميّزاً)
+// (البطاقة التي يطابق محتواها أحد المسؤولين المعنيين في كامل الرابط تأخذ لوناً داكناً مميّزاً)
 function ownerCell(t) {
-  const ownersSet = new Set((t.owners || []).map((o) => o.trim()).filter(Boolean));
+  const owners = allOwnersSet();
   const cards = (t.linkedList || []).map((p) => {
-    const isOwner = ownersSet.has(p.trim());
+    const isOwner = owners.has(p.trim());
     return `<div class="linked-card${isOwner ? ' is-owner' : ''}">🔗 ${esc(p)}</div>`;
   }).join('');
   return `${esc(t.owner)}${cards ? `<div class="linked-cards">${cards}</div>` : ''}`;
@@ -460,14 +505,37 @@ function activeTableCols() {
   const sel = (state.tableCols && state.tableCols.length) ? state.tableCols : DEFAULT_TABLE_COLS;
   return TABLE_COLS.filter((c) => sel.includes(c.k));
 }
+
+// ===== أعمدة جدول الاجتماعات (مُصيِّراتها تأخذ السياق {t, m, idx}) =====
+const MEETING_COLS = [
+  { k: 'meetingName', label: 'اسم الاجتماع', r: ({ m }) => `<span class="mtg-name-cell">🤝 ${esc(m.title)}</span>` },
+  { k: 'project', label: 'المشروع', r: ({ t }) => esc(t.project) },
+  { k: 'file', label: 'الملف', r: ({ t }) => esc(t.file) },
+  { k: 'type', label: 'النوع', r: ({ t }) => typeCell(t.type) },
+  { k: 'owner', label: 'المسؤول', cls: 'cell-owner', r: ({ t }) => esc(t.owner) },
+  { k: 'priority', label: 'الأولوية', r: ({ t }) => `<span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span>` },
+  { k: 'deadline', label: 'الموعد', r: ({ t, m }) => { const dlCls = !m.scheduled && t.isOverdue ? 'overdue' : !m.scheduled && t.isSoon3 ? 'soon' : ''; const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—'); return `<div class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></div>`; } },
+  { k: 'status', label: 'حالة الاجتماع', r: ({ m }) => `<span class="badge ${m.scheduled ? 'mt-sched' : 'mt-unsched'}">${m.scheduled ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span>` },
+];
+const DEFAULT_MEETING_COLS = ['meetingName', 'project', 'file', 'owner', 'deadline', 'status'];
+function activeMeetingCols() {
+  const sel = (state.meetingCols && state.meetingCols.length) ? state.meetingCols : DEFAULT_MEETING_COLS;
+  return MEETING_COLS.filter((c) => sel.includes(c.k));
+}
+
+// لوحة «⚙ الأعمدة» — تتكيّف حسب العرض الحالي (جدول المهام أو جدول الاجتماعات)
 function buildColsPanel() {
   const el = $('colsPanel'); if (!el) return;
-  el.innerHTML = TABLE_COLS.map((c) => `<label class="ms-opt"><input type="checkbox" value="${c.k}" ${state.tableCols.includes(c.k) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('');
+  const meetings = state.view === 'meetings';
+  const COLS = meetings ? MEETING_COLS : TABLE_COLS;
+  const sel = meetings ? state.meetingCols : state.tableCols;
+  const lsKey = meetings ? 'eo_meetingcols' : 'eo_tablecols';
+  el.innerHTML = COLS.map((c) => `<label class="ms-opt"><input type="checkbox" value="${c.k}" ${sel.includes(c.k) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('');
   el.querySelectorAll('input').forEach((inp) => inp.onchange = () => {
-    const i = state.tableCols.indexOf(inp.value);
-    if (inp.checked && i === -1) state.tableCols.push(inp.value);
-    else if (!inp.checked && i > -1) state.tableCols.splice(i, 1);
-    localStorage.setItem('eo_tablecols', JSON.stringify(state.tableCols));
+    const i = sel.indexOf(inp.value);
+    if (inp.checked && i === -1) sel.push(inp.value);
+    else if (!inp.checked && i > -1) sel.splice(i, 1);
+    localStorage.setItem(lsKey, JSON.stringify(sel));
     render();
   });
 }
@@ -796,24 +864,19 @@ function renderMeetings() {
     return;
   }
 
-  const body = rows.map(({ t, m, idx }) => {
+  const cols = activeMeetingCols();
+  const editable = canEdit();
+  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (editable ? '<th></th>' : '');
+  const body = rows.map((row) => {
+    const { t, m, idx } = row;
     const sch = m.scheduled;
-    const dlCls = !sch && t.isOverdue ? 'overdue' : !sch && t.isSoon3 ? 'soon' : '';
-    const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
-    const btn = canEdit()
-      ? `<button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-idx="${idx}" data-sched="${sch ? 0 : 1}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button>`
+    const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(row)}</td>`).join('');
+    const btn = editable
+      ? `<td><button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-idx="${idx}" data-sched="${sch ? 0 : 1}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button></td>`
       : '';
-    return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">
-      <td><span class="mtg-name-cell">🤝 ${esc(m.title)}</span></td>
-      <td>${esc(t.project)}</td>
-      <td class="cell-owner">${esc(t.owner)}</td>
-      <td class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></td>
-      <td><span class="badge ${sch ? 'mt-sched' : 'mt-unsched'}">${sch ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span></td>
-      <td>${btn}</td></tr>`;
+    return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">${tds}${btn}</tr>`;
   }).join('');
-  $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div><div class="table-wrap"><table><thead><tr>
-      <th>اسم الاجتماع</th><th>المشروع</th><th>المسؤول</th><th>الموعد</th><th>حالة الاجتماع</th><th></th>
-    </tr></thead><tbody>${body}</tbody></table></div>`;
+  $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div><div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${body}</tbody></table></div>`;
   bindMeetingFilter();
   $('viewArea').querySelectorAll('tbody tr').forEach((tr) => {
     tr.onclick = (e) => { if (e.target.closest('.mt-toggle')) return; openModal(Number(tr.dataset.id)); };
@@ -1124,6 +1187,7 @@ $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
 state.expanded = localStorage.getItem('eo_expanded') === '1';
 try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
+try { state.meetingCols = JSON.parse(localStorage.getItem('eo_meetingcols') || 'null') || DEFAULT_MEETING_COLS.slice(); } catch { state.meetingCols = DEFAULT_MEETING_COLS.slice(); }
 (function () {
   const cb = $('colsBtn');
   if (cb) cb.onclick = (e) => { e.stopPropagation(); const w = $('colsWrap'); const open = w.classList.contains('open'); document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); if (!open) { buildColsPanel(); w.classList.add('open'); } };
