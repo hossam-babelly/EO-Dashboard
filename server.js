@@ -8,6 +8,7 @@ try { require('dns').setDefaultResultOrder('ipv4first'); } catch (e) { /* إصد
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
 const sheets = require('./lib/sheets');
@@ -486,6 +487,19 @@ async function runDailyDigest(req, res) {
 app.post('/api/cron/daily-digest', runDailyDigest);
 app.get('/api/cron/daily-digest', runDailyDigest);
 
+// نسخة node-fetch الفعلية المثبّتة (للتشخيص) — نبحث في المواقع المحتملة داخل node_modules
+function pkgVersion(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')).version; } catch { return null; } }
+function nodeFetchVersion() {
+  const nm = path.join(__dirname, 'node_modules');
+  const candidates = [
+    path.join(nm, 'node-fetch', 'package.json'),
+    path.join(nm, 'gaxios', 'node_modules', 'node-fetch', 'package.json'),
+    path.join(nm, 'google-auth-library', 'node_modules', 'node-fetch', 'package.json'),
+  ];
+  for (const c of candidates) { const v = pkgVersion(c); if (v) return v; }
+  return 'unknown';
+}
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -494,7 +508,28 @@ app.get('/api/health', (req, res) => {
     storeEnabled: store.enabled,
     mailProvider: notify.emailProvider(),
     notifyEmailSet: !!process.env.NOTIFY_EMAIL,
+    node: process.version,         // إصدار Node الفعلي على Render
+    nodeFetch: nodeFetchVersion(), // إصدار node-fetch الفعلي (يجب أن يكون 2.6.13)
+    dnsOrder: (() => { try { return require('dns').getDefaultResultOrder(); } catch { return 'n/a'; } })(),
   });
+});
+
+// تشخيص حيّ لاتصال Google: يحاول جلب رمز عبر نفس مكتبات التطبيق ويعيد النتيجة الدقيقة
+app.get('/api/diag/google', async (req, res) => {
+  const out = { node: process.version, nodeFetch: nodeFetchVersion() };
+  try {
+    const { request } = require('gaxios');
+    const r = await request({
+      url: 'https://oauth2.googleapis.com/token', method: 'POST',
+      data: { grant_type: 'x' }, validateStatus: () => true, retry: false, timeout: 15000,
+    });
+    out.googleTransport = 'OK';   // اكتمل الاتصال (حتى لو رمز 400) ⇒ المشكلة محلولة
+    out.googleStatus = r.status;
+  } catch (e) {
+    out.googleTransport = 'FAIL'; // فشل النقل ⇒ ما زالت المشكلة قائمة
+    out.googleError = e.message;
+  }
+  res.json(out);
 });
 
 app.listen(PORT, async () => {
