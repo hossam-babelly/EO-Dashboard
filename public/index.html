@@ -29,6 +29,7 @@
     <button class="btn btn-gold" id="refreshBtn">🔄 تحديث</button>
     <button class="btn btn-ghost" id="pushBtn" title="تفعيل إشعارات المتصفح" style="display:none">🔕</button>
     <a class="btn btn-ghost" id="usersBtn" href="/users.html" style="display:none">👥 المستخدمون</a>
+    <button class="btn btn-ghost" id="accountBtn" style="display:none">⚙ حسابي</button>
     <span class="user-chip" id="userChip" style="display:none"></span>
     <button class="btn btn-ghost" id="logoutBtn" style="display:none">خروج</button>
   </div>
@@ -84,8 +85,16 @@
     <div class="modal-head"><h3>توليد تقرير</h3><button class="modal-close" id="reportClose">✕</button></div>
     <div class="modal-body">
       <p style="color:var(--muted);font-size:13px;margin-bottom:12px">يصدّر المهام المعروضة حالياً (حسب الفلاتر والبطاقات المختارة) بهوية سنكري.</p>
-      <div class="rep-cols-title">الأعمدة الظاهرة في التقرير:</div>
-      <div class="rep-cols" id="reportCols"></div>
+      <div class="rep-cols-title">شكل التقرير:</div>
+      <div class="rep-layout" id="reportLayout">
+        <button type="button" class="rep-lay active" data-layout="table">📋 جدول</button>
+        <button type="button" class="rep-lay" data-layout="kanban">🗂️ كانبان</button>
+        <button type="button" class="rep-lay" data-layout="calendar">🗓️ تقويم</button>
+      </div>
+      <div id="reportColsWrap">
+        <div class="rep-cols-title">الأعمدة الظاهرة في التقرير:</div>
+        <div class="rep-cols" id="reportCols"></div>
+      </div>
       <div class="rep-cols-title">اسم ملف التقرير:</div>
       <input id="reportName" type="text" value="تقرير-المهام" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;margin-bottom:18px;color:var(--text)">
       <div class="report-btns">
@@ -94,6 +103,23 @@
         <button class="rep-btn rep-excel" id="reportExcel" type="button">📗 تقرير Excel</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="modal-back" id="acctModalBack">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head"><h3>تعديل حسابي</h3><button class="modal-close" id="acctClose">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>البريد (اسم الدخول)</label><input id="acctEmail" type="email" disabled></div>
+      <div class="form-row">
+        <div class="field"><label>الاسم الأول</label><input id="acctFirst" type="text"></div>
+        <div class="field"><label>الاسم الأخير</label><input id="acctLast" type="text"></div>
+      </div>
+      <div class="field"><label>كلمة المرور (اتركها فارغة لعدم التغيير)</label>
+        <div class="pw-wrap"><input id="acctPw" type="password" placeholder="••••••"><button type="button" class="pw-eye" id="acctEye">👁</button></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-save" id="acctSave">💾 حفظ</button><button class="btn btn-cancel" id="acctCancel">إلغاء</button></div>
   </div>
 </div>
 

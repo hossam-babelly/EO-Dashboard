@@ -26,6 +26,11 @@ function nowStamp() {
   return `${date} ${time}`;
 }
 
+// اسم المستخدم الكامل المستخدَم في سجلّ الأحداث (الاسم الكامل لا الأول فقط)
+function authorName(u) {
+  return (u && (String(u.name || '').trim() || [u.firstName, u.lastName].filter(Boolean).join(' ').trim())) || 'مستخدم';
+}
+
 const ROLES = ['viewer', 'editor', 'admin'];
 const REMINDER_METHODS = ['email', 'push', 'calendar'];
 const REMINDER_OFFSETS = ['morning', '1d', '3d', '7d'];
@@ -102,6 +107,37 @@ app.get('/api/me', async (req, res) => {
     } catch { /* تجاهل */ }
   }
   res.json({ ok: true, user, storeEnabled: store.enabled });
+});
+
+// قائمة المستخدمين (للاختيار كمسؤول معني) — متاحة لكل مسجّل دخول، تُعيد الاسم والبريد فقط
+app.get('/api/users/list', requireAuth, async (req, res) => {
+  try {
+    const users = (await auth.listUsers()).filter((u) => u.active !== false);
+    res.json({ ok: true, users: users.map((u) => ({ name: u.name, email: u.email, firstName: u.firstName, lastName: u.lastName })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// تعديل المستخدم لحسابه هو (الاسم + كلمة المرور) — لا يمسّ الدور ولا التفعيل
+app.patch('/api/account', requireAuth, async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const me = req.session.user;
+    const patch = {};
+    const { firstName, lastName, password } = req.body || {};
+    if (firstName != null) patch.firstName = String(firstName).trim();
+    if (lastName != null) patch.lastName = String(lastName).trim();
+    if (password) patch.hash = await auth.hashPassword(password);
+    await store.updateUser(String(me.email).toLowerCase(), patch);
+    // تحديث الجلسة بالاسم الجديد
+    if (patch.firstName != null || patch.lastName != null) {
+      const fn = patch.firstName != null ? patch.firstName : me.firstName;
+      const ln = patch.lastName != null ? patch.lastName : (me.lastName || '');
+      me.firstName = fn;
+      me.name = `${fn} ${ln}`.trim() || me.name;
+      req.session.user = me;
+    }
+    res.json({ ok: true, user: { name: me.name, firstName: me.firstName, role: me.role, email: me.email } });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
 // ===== إدارة المستخدمين (مدير) =====
@@ -279,7 +315,7 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
     const tasks = await loadTasks(true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const u = req.session && req.session.user;
-    const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
+    const author = authorName(u);
     const logLine = `[${nowStamp()} — ${author}]`;
     // الكتل متوازية: نصّ الحدث في «المتابعة» والسجل في «السجل»، والأحداث اليدوية تأخذ «----------»
     const fB = sheets.fuBlocks(t ? t.followup : '');
@@ -296,11 +332,9 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
   }
 });
 
-// تعديل حدث متابعة بالموضع — يحدّث نصّه في «المتابعة» وسجلّه في «السجل» (بوقت التعديل واسم المعدِّل)
-app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+// تعديل حدث متابعة بالموضع: النصّ (مدير/محرّر) · تاريخ ووقت السجل (الجميع) · اسم المستخدم في السجل (المدير فقط)
+app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireWrite, async (req, res) => {
   try {
-    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim();
-    if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
     const idx = Number(req.params.idx);
     const tasks = await loadTasks(true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
@@ -308,18 +342,29 @@ app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), r
     const lB = sheets.fuBlocks(t ? t.log : '');
     while (lB.length < fB.length) lB.push('----------');
     if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
+
     const u = req.session && req.session.user;
-    const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
-    fB[idx] = text;
-    // سجل الحدث: قابل للتعديل — إن وُصِل تاريخ صالح نبنيه من المُدخَل، وإلا نستخدم وقت التعديل واسم المعدِّل
-    const { date, time, author: customAuthor } = req.body || {};
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
-      const tm = /^\d{1,2}:\d{2}$/.test(String(time || '')) ? time : '00:00';
-      const au = String(customAuthor || '').trim() || author;
-      lB[idx] = `[${date} ${tm} — ${au}]`;
-    } else {
-      lB[idx] = `[${nowStamp()} — ${author}]`;
+    const role = !auth.authEnabled() ? 'admin' : ((u && u.role) || 'viewer');
+    const isAdmin = role === 'admin';
+    const canText = isAdmin || role === 'editor';
+
+    // النصّ: يعدّله المدير/المحرّر فقط؛ المشاهد يُبقيه كما هو
+    if (canText) {
+      const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim();
+      if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
+      fB[idx] = text;
     }
+    // السجل: نقرأ القيم الأصلية لنحافظ على اسم المستخدم عند غير المدير
+    const m = String(lB[idx] || '').match(/^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*$/);
+    const origAuthor = m ? m[3].trim() : authorName(u);
+    const { date, time, author: customAuthor } = req.body || {};
+    const stamp = nowStamp();
+    const dt = (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) ? date : (m ? m[1] : stamp.slice(0, 10));
+    const tm = /^\d{1,2}:\d{2}$/.test(String(time || '')) ? time : (m ? m[2] : stamp.slice(11));
+    // اسم المستخدم في السجل: المدير فقط يعدّله؛ غيره يُبقي الاسم الأصلي
+    const au = isAdmin ? (String(customAuthor || '').trim() || origAuthor) : origAuthor;
+    lB[idx] = `[${dt} ${tm} — ${au}]`;
+
     const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
     invalidateCache();
     res.json({ ok: true, task });
@@ -422,7 +467,7 @@ app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (
     delete body.events;
     if (events.length) {
       const u = req.session && req.session.user;
-      const author = (u && (u.firstName || String(u.name || '').trim().split(/\s+/)[0])) || 'مستخدم';
+      const author = authorName(u);
       const stamp = nowStamp();
       body.followup = events.join('\n\n');
       body.log = events.map(() => `[${stamp} — ${author}]`).join('\n\n');

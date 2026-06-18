@@ -174,8 +174,116 @@ async function paginate(rows, COLS, logo) {
   return chunks.length ? chunks : [[]];
 }
 
+// ===== شكل التقرير: جدول (افتراضي) / كانبان / تقويم =====
+let reportLayout = 'table';
+
+// تحويل عنصر HTML إلى canvas (للكانبان/التقويم)
+async function renderHtmlCanvas(html) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  try { await document.fonts.ready; } catch { /* تجاهل */ }
+  await new Promise((r) => setTimeout(r, 40));
+  const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 });
+  el.remove();
+  return canvas;
+}
+
+// إضافة canvas (قد يكون طويلاً) إلى PDF موزّعاً على عدّة صفحات
+function addCanvasPaged(pdf, canvas, firstPage) {
+  const pw = pdf.internal.pageSize.getWidth();
+  const ph = pdf.internal.pageSize.getHeight();
+  const fullH = canvas.width ? canvas.height * pw / canvas.width : 0;
+  if (fullH <= ph + 1) {
+    if (!firstPage) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, fullH);
+    return;
+  }
+  const sliceHpx = Math.floor(canvas.width * ph / pw); // ارتفاع الشريحة بالبكسل لكل صفحة
+  let y = 0, first = firstPage;
+  while (y < canvas.height) {
+    const h = Math.min(sliceHpx, canvas.height - y);
+    const c = document.createElement('canvas'); c.width = canvas.width; c.height = h;
+    c.getContext('2d').drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+    if (!first) pdf.addPage(); first = false;
+    pdf.addImage(c.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, h * pw / canvas.width);
+    y += h;
+  }
+}
+
+// بناء صفحة كانبان (أعمدة حسب الحالة)
+function kanbanHTML(rows, logo) {
+  const byStatus = {};
+  STATUSES.forEach((s) => { byStatus[s] = []; });
+  rows.forEach((t) => { (byStatus[t.status] || (byStatus[t.status] = [])).push(t); });
+  const card = (t) => `<div style="border:1px solid ${RB.line};border-inline-start:4px solid ${priColor(t.priority)};border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff">
+      <div style="font-weight:800;color:${RB.ink};font-size:12.5px;margin-bottom:4px">${esc(t.project)}</div>
+      <div style="font-size:11.5px;color:${RB.ink};margin-bottom:5px">${esc((t.deliverable || '').slice(0, 90))}${(t.deliverable || '').length > 90 ? '…' : ''}</div>
+      <div style="font-size:11px;color:${RB.muted};display:flex;justify-content:space-between;gap:6px"><span>${esc((t.owner || '').split('\n')[0])}</span><span>${esc(t.deadlineIso || t.deadlineRaw || '')}</span></div>
+    </div>`;
+  const colHtml = STATUSES.map((s) => `<div style="flex:1;min-width:0;background:#faf6f0;border:1px solid ${RB.line};border-radius:10px;padding:8px">
+      <div style="font-weight:800;color:${RB.ink};padding:6px 4px;border-bottom:2px solid ${RB.copper};margin-bottom:8px;display:flex;justify-content:space-between"><span>${esc(s)}</span><span style="color:${RB.copper}">${byStatus[s].length}</span></div>
+      ${byStatus[s].map(card).join('') || `<div style="color:${RB.muted};font-size:11px;text-align:center;padding:10px">—</div>`}
+    </div>`).join('');
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
+      ${headerBlock(logo, rows.length)}
+      <div style="display:flex;gap:10px;padding:14px 18px;align-items:flex-start">${colHtml}</div>
+      <div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div>
+    </div>`;
+}
+
+// بناء صفحة تقويم (الشهر المعروض حالياً) — المهام المؤرّخة فقط
+function calendarHTML(rows, logo) {
+  let y = state.calY, m = state.calM;
+  if (y == null) { const d = new Date(); y = d.getFullYear(); m = d.getMonth(); }
+  const monthName = new Date(y, m, 1).toLocaleDateString('ar-SY-u-nu-latn', { month: 'long', year: 'numeric' });
+  const startDow = (new Date(y, m, 1).getDay() + 1) % 7;
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const byDay = {};
+  rows.forEach((t) => { if (!t.deadlineIso) return; const [ty, tm, td] = t.deadlineIso.split('-').map(Number); if (ty === y && tm === m + 1) (byDay[td] || (byDay[td] = [])).push(t); });
+  const dows = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+  let cells = dows.map((d) => `<div style="text-align:center;font-weight:800;color:${RB.muted};font-size:11px;padding:4px">${d}</div>`).join('');
+  for (let i = 0; i < startDow; i++) cells += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const items = (byDay[d] || []).map((t) => `<div style="font-size:9.5px;background:${t.priority === 'حرجة' ? RB.red : t.priority === 'عالية' ? RB.amber : RB.copperDeep};color:#fff;border-radius:4px;padding:1px 4px;margin-bottom:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(t.project)}</div>`).join('');
+    cells += `<div style="border:1px solid ${RB.line};border-radius:6px;min-height:62px;padding:4px;vertical-align:top"><div style="font-size:10px;font-weight:800;color:${RB.muted};margin-bottom:2px">${d}</div>${items}</div>`;
+  }
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
+      ${headerBlock(logo, rows.length)}
+      <div style="text-align:center;font-size:16px;font-weight:800;color:${RB.ink};padding:10px">${esc(monthName)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;padding:0 18px 14px">${cells}</div>
+      <div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div>
+    </div>`;
+}
+
+async function exportLayoutPDF() {
+  const logo = await logoSmall(34);
+  const rows = reportTasks();
+  const html = reportLayout === 'kanban' ? kanbanHTML(rows, logo) : calendarHTML(rows, logo);
+  const canvas = await renderHtmlCanvas(html);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  addCanvasPaged(pdf, canvas, true);
+  pdf.save(reportName() + '.pdf');
+}
+
+async function exportLayoutWord() {
+  const logo = await logoSmall(34);
+  const rows = reportTasks();
+  const html = reportLayout === 'kanban' ? kanbanHTML(rows, logo) : calendarHTML(rows, logo);
+  const canvas = await renderHtmlCanvas(html);
+  const DOC_W = 1040, h = Math.round(DOC_W * canvas.height / canvas.width);
+  const img = `<div><img src="${canvas.toDataURL('image/jpeg', 0.95)}" width="${DOC_W}" height="${h}"></div>`;
+  const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
+    + `<style>@page Section1 { size: 841.95pt 595.35pt; mso-page-orientation: landscape; margin: 0.6cm; } div.Section1 { page: Section1; } body { margin: 0; }</style>`
+    + `</head><body><div class='Section1'>${img}</div></body></html>`;
+  dl(new Blob(['﻿', doc], { type: 'application/msword' }), reportName() + '.doc');
+}
+
 // PDF: نرسم كل صفحة كصورة مستقلّة ونضيفها لصفحة PDF — لا قصّ، مهام كاملة، ترويسة مكرّرة
 async function exportPDF() {
+  if (reportLayout !== 'table') return exportLayoutPDF();
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const logo = await logoSmall(34);
@@ -201,6 +309,7 @@ async function exportPDF() {
 
 // Word: نضع نفس صور صفحات الـ PDF (كل صفحة صورة كاملة) فيصبح مطابقاً للـ PDF بصرياً
 async function exportWord() {
+  if (reportLayout !== 'table') return exportLayoutWord();
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const logo = await logoSmall(34);
@@ -307,6 +416,18 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const cl = document.getElementById('reportClose'); if (cl) cl.onclick = close;
   if (back) back.onclick = (e) => { if (e.target === back) close(); };
+  // اختيار شكل التقرير: جدول/كانبان/تقويم (الأعمدة و Excel للجدول فقط)
+  const layWrap = document.getElementById('reportLayout');
+  const colsWrap = document.getElementById('reportColsWrap');
+  const excelBtnEl = document.getElementById('reportExcel');
+  if (layWrap) layWrap.querySelectorAll('.rep-lay').forEach((b) => b.onclick = () => {
+    layWrap.querySelectorAll('.rep-lay').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    reportLayout = b.dataset.layout;
+    const isTable = reportLayout === 'table';
+    if (colsWrap) colsWrap.style.display = isTable ? '' : 'none';
+    if (excelBtnEl) excelBtnEl.style.display = isTable ? '' : 'none';
+  });
   const pdf = document.getElementById('reportPdf'); if (pdf) pdf.onclick = runExport(pdf, exportPDF, 'PDF');
   const word = document.getElementById('reportWord'); if (word) word.onclick = runExport(word, exportWord, 'Word');
   const excel = document.getElementById('reportExcel'); if (excel) excel.onclick = runExport(excel, exportExcel, 'Excel');

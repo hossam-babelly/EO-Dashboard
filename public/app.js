@@ -53,6 +53,9 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 function canEdit() {
   return !!state.meta.canWrite && !!state.me && (state.me.role === 'admin' || state.me.role === 'editor');
 }
+function isAdmin() { return !!state.me && state.me.role === 'admin'; }
+// تعديل السجل (تاريخ/وقت) متاح لأي مستخدم مسجّل؛ النصّ للمحرّر/المدير، واسم المستخدم للمدير فقط
+function canEditLog() { return !!state.meta.canWrite && !!state.me; }
 async function fetchMe() {
   const res = await fetch('/api/me');
   if (res.status === 401) { location.href = '/login.html'; throw new Error('redirect'); }
@@ -66,6 +69,8 @@ function renderUser() {
   $('userChip').style.display = '';
   $('logoutBtn').style.display = state.me && !state.meta.authDisabled ? '' : 'none';
   const ub = $('usersBtn'); if (ub) ub.style.display = state.me.role === 'admin' ? '' : 'none';
+  // المحرّر/المشاهد: زرّ «حسابي» بدل زرّ المستخدمين
+  const ab = $('accountBtn'); if (ab) ab.style.display = (state.me.role !== 'admin' && !state.meta.authDisabled) ? '' : 'none';
   const pb = $('pushBtn');
   if ('PushManager' in window) {
     pb.style.display = '';
@@ -181,6 +186,17 @@ function sortList(list) {
       return 0;
     });
   }
+  if (key === 'created') {
+    // المهام بلا تاريخ إنشاء تبقى في الأسفل دائماً (في الاتجاهين)
+    return [...list].sort((a, b) => {
+      if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
+      const x = a.createdIso, y = b.createdIso;
+      if (!x && !y) return 0;
+      if (!x) return 1;
+      if (!y) return -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * dir;
+    });
+  }
   const val = (t) => {
     if (key === 'priority') return ({ 'حرجة': 0, 'عالية': 1, 'متوسطة': 2 })[t.priority] ?? 9;
     if (key === 'project') return t.project || '';
@@ -278,8 +294,12 @@ function followupCell(t) {
 }
 function followupSection(t) {
   const evs = parseFollowup(t.followup, t.log).slice().reverse(); // الأحدث أولاً
-  const ed = canEdit();
-  const acts = (e) => ed ? `<span class="fu-acts"><button class="fu-ico fu-ed" type="button" data-idx="${e.idx}" title="تعديل">✏️</button><button class="fu-ico fu-del" type="button" data-idx="${e.idx}" title="حذف">🗑</button></span>` : '';
+  // ✏️ تعديل السجل لأي مستخدم (تاريخ/وقت)؛ 🗑 حذف للمحرّر/المدير فقط
+  const acts = (e) => {
+    const edit = canEditLog() ? `<button class="fu-ico fu-ed" type="button" data-idx="${e.idx}" title="تعديل">✏️</button>` : '';
+    const del = canEdit() ? `<button class="fu-ico fu-del" type="button" data-idx="${e.idx}" title="حذف">🗑</button>` : '';
+    return (edit || del) ? `<span class="fu-acts">${edit}${del}</span>` : '';
+  };
   const items = evs.length ? evs.map((e) => `
     <div class="fu-item ${e.manual ? 'plain' : ''}" data-idx="${e.idx}">
       <div class="fu-ihead">${e.manual ? '<span class="fu-leg">متابعة (يدوي)</span>' : `${fuAvatar(e.author)}<span class="fu-au">${esc(e.author)}</span><span class="fu-tm">${esc(e.date || '')} ${esc(e.time || '')}</span>`}${acts(e)}</div>
@@ -329,18 +349,22 @@ function startEditEvent(id, idx, btn) {
   const date = ev.date || todayISO();
   const time = ev.time || nowHM();
   const author = ev.author || me;
+  const textRO = canEdit() ? '' : 'readonly';
+  const authorRO = isAdmin() ? '' : 'disabled';
+  const hint = !canEdit() ? '<div class="fu-logedit-hint">يمكنك تعديل تاريخ ووقت السجل فقط.</div>'
+    : (!isAdmin() ? '<div class="fu-logedit-hint">اسم المستخدم في السجل يعدّله المدير فقط.</div>' : '');
   const item = btn.closest('.fu-item');
   const body = item.querySelector('.fu-ibody');
-  body.innerHTML = `<textarea class="fu-eta" rows="2"></textarea>
+  body.innerHTML = `<textarea class="fu-eta" rows="2" ${textRO}></textarea>
     <div class="fu-logedit">
       <span class="fu-logedit-lbl">السجل:</span>
       <input type="date" class="fe-date" value="${esc(date)}">
       <input type="time" class="fe-time" value="${esc(time)}">
-      <input type="text" class="fe-author" value="${esc(author)}" placeholder="الاسم">
-    </div>
+      <input type="text" class="fe-author" value="${esc(author)}" placeholder="الاسم" ${authorRO}>
+    </div>${hint}
     <div class="fu-eacts"><button class="btn btn-save fu-savebtn" type="button">حفظ</button><button class="btn btn-cancel fu-cancelbtn" type="button">إلغاء</button></div>`;
   const ta = body.querySelector('.fu-eta');
-  ta.value = ev.text; ta.focus();
+  ta.value = ev.text; if (canEdit()) ta.focus();
   body.querySelector('.fu-savebtn').onclick = () => saveEvent(id, idx, {
     text: ta.value.trim(),
     date: body.querySelector('.fe-date').value,
@@ -498,6 +522,7 @@ const TABLE_COLS = [
   { k: 'priority', label: 'الأولوية', sort: 'priority', r: (t) => `<span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span>` },
   { k: 'status', label: 'الحالة', sort: 'status', r: (t) => `<span class="badge st ${stClass(t.status)}">${esc(t.status)}</span>` },
   { k: 'followup', label: 'المتابعة', cls: 'fu-col', r: followupCell },
+  { k: 'created', label: 'تاريخ الإنشاء', sort: 'created', r: (t) => esc(t.created || '—') },
   { k: 'notes', label: 'ملاحظات', r: (t) => esc(t.notes) },
 ];
 const DEFAULT_TABLE_COLS = ['project', 'file', 'type', 'owner', 'deliverable', 'deadline', 'priority', 'status', 'followup'];
@@ -781,6 +806,39 @@ function bindLinked() {
   sec.querySelectorAll('.elink-del').forEach((b) => b.onclick = () => { state.editLinked.splice(Number(b.dataset.idx), 1); refreshLinked(); });
 }
 
+// ===== المسؤول المعني (متعدّد، من المستخدمين فقط — بلا إضافة جديد) =====
+function ownerCandidates() {
+  return [...new Set((state.users || []).map((u) => u.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+}
+function ownerEditSection() {
+  const chips = state.editOwner.length
+    ? state.editOwner.map((p, i) => `<span class="rem-date">${esc(p)} <button type="button" class="eowner-del" data-idx="${i}" aria-label="حذف">✕</button></span>`).join('')
+    : '<span style="color:var(--muted);font-size:13px">لا أحد</span>';
+  const opts = ownerCandidates().filter((p) => !state.editOwner.includes(p)).map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  return `<div id="eownerSection" class="field"><label>المسؤول المعني <span style="color:var(--muted);font-weight:400;font-size:11.5px">(من المستخدمين)</span></label>
+    <div id="eownerChips" class="rem-dates" style="margin-bottom:8px">${chips}</div>
+    <select id="eownerPick"><option value="">➕ اختر مستخدماً…</option>${opts}</select>
+  </div>`;
+}
+function refreshOwner() { const el = $('eownerSection'); if (el) { el.outerHTML = ownerEditSection(); bindOwner(); } }
+function addOwner(name) {
+  const v = String(name || '').trim();
+  if (!v) return;
+  if (!state.editOwner.includes(v)) state.editOwner.push(v);
+  refreshOwner();
+}
+function bindOwner() {
+  const sec = $('eownerSection'); if (!sec) return;
+  const sel = $('eownerPick');
+  if (sel) sel.onchange = () => { if (sel.value) addOwner(sel.value); };
+  sec.querySelectorAll('.eowner-del').forEach((b) => b.onclick = () => { state.editOwner.splice(Number(b.dataset.idx), 1); refreshOwner(); });
+}
+// جلب قائمة المستخدمين (لاختيار المسؤول المعني)
+async function fetchUsers() {
+  try { const d = await (await fetch('/api/users/list')).json(); state.users = d.ok ? (d.users || []) : []; }
+  catch { state.users = []; }
+}
+
 // ===== الاجتماعات (متعدّدة، كل واحد بعنوان وحالة) في نافذة الإضافة/التعديل =====
 function meetingsEditSection() {
   const list = state.editMeetings.length ? state.editMeetings.map((m, i) => `
@@ -1045,23 +1103,25 @@ function pickField(label, name, values, value, multiline) {
 
 function openEdit(t) {
   const isNew = !t;
-  t = t || { project: '', file: '', type: '', linkedTo: '', linkedList: [], owner: '', deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', notes: '', meetings: [] };
+  t = t || { project: '', file: '', type: '', linkedTo: '', linkedList: [], owner: '', owners: [], deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', notes: '', created: '', createdIso: '', meetings: [] };
   if (isNew) { state.newDv = []; state.newEv = []; }
-  // قوائم «مرتبط بـ» والاجتماعات المحلية (نسخة قابلة للتعديل)
+  // قوائم «مرتبط بـ» والمسؤولين والاجتماعات المحلية (نسخة قابلة للتعديل)
   state.editLinked = isNew ? [] : ((t.linkedList && t.linkedList.length) ? t.linkedList.slice() : []);
+  state.editOwner = isNew ? [] : ((t.owners && t.owners.length) ? t.owners.slice() : []);
   state.editMeetings = isNew ? [] : (t.meetings || []).map((m) => ({ title: m.title, scheduled: !!m.scheduled }));
+  const createdVal = isNew ? todayISO() : (t.createdIso || t.created || '');
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
     ${pickField('المشروع', 'project', state.filters.projects, t.project, false)}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
     ${linkedEditSection()}
-    ${pickField('المسؤول المعني', 'owner', state.filters.owners, t.owner, true)}
+    ${ownerEditSection()}
     ${isNew ? localDeliverableSection() : deliverableSection(t)}
     ${deadlineField(t)}
     <div class="form-row">${selectField('الأولوية', 'priority', PRIORITIES, t.priority)}${selectField('الحالة', 'status', STATUSES, t.status)}</div>
     ${meetingsEditSection()}
     ${isNew ? localEventSection() : followupSection(t)}
-    ${field('ملاحظات', 'notes', t.notes)}
+    <div class="form-row">${field('تاريخ إنشاء المهمة', 'created', createdVal, 'date')}${field('ملاحظات', 'notes', t.notes)}</div>
   </form>`;
   $('mBody').querySelectorAll('select[id$="Sel"]').forEach((sel) => {
     const ne = document.getElementById(sel.id.replace(/Sel$/, 'New'));
@@ -1074,6 +1134,7 @@ function openEdit(t) {
     if (dlRecur) dlRecur.onchange = () => { $('dlMday').style.display = dlRecur.value === 'شهري' ? '' : 'none'; };
   }
   bindLinked();
+  bindOwner();
   bindMeetingsEdit();
   if (isNew) { bindLocalDeliverable(); bindLocalEvent(); } else { bindDeliverable(t); bindFollowup(t); }
   $('mFoot').innerHTML = `<button class="btn btn-save" id="mSave">💾 حفظ</button><button class="btn btn-cancel" id="mCancel">إلغاء</button>`;
@@ -1086,11 +1147,12 @@ async function saveTask(id) {
   const form = $('taskForm');
   const payload = {};
   new FormData(form).forEach((v, k) => { payload[k] = v; });
-  // الاجتماعات و«مرتبط بـ» من القوائم المحلية (كل شخص بسطر مستقل)
+  // الاجتماعات و«مرتبط بـ» والمسؤولون من القوائم المحلية (كل شخص بسطر مستقل)
   payload.meetings = state.editMeetings.map((m) => ({ title: m.title, scheduled: !!m.scheduled }));
   payload.linkedTo = state.editLinked.join('\n');
-  // القوائم المنسدلة: «إضافة جديد» → استخدم النصّ المُدخَل
-  ['project', 'owner'].forEach((k) => {
+  payload.owner = state.editOwner.join('\n');
+  // القائمة المنسدلة للمشروع: «إضافة جديد» → استخدم النصّ المُدخَل
+  ['project'].forEach((k) => {
     if (payload[k] === '__new__') payload[k] = (payload[k + 'New'] || '').trim();
     delete payload[k + 'New'];
   });
@@ -1131,15 +1193,25 @@ async function removeTask(id) {
 function closeModal() { $('modalBack').classList.remove('open'); }
 
 // ===== Notification bell (in-app) =====
-function renderBell() {
-  // المتأخرة (غير المنجزة) + مهام اليوم
-  const items = state.tasks
+function bellItems() {
+  return state.tasks
     .filter((t) => (t.isOverdue || t.isToday) && !t.isDone)
     .sort((a, b) => (a.diffDays ?? 0) - (b.diffDays ?? 0));
+}
+// عند فتح الجرس: تُعتبر كل التنبيهات الحالية «مقروءة» فتختفي الدائرة الحمراء حتى ظهور تنبيه جديد
+function markNotifSeen() {
+  const ids = bellItems().map((t) => String(t.id));
+  state.seenNotif = new Set(ids);
+  try { localStorage.setItem('eo_seen_notif', JSON.stringify(ids)); } catch { /* تجاهل */ }
+  renderBell();
+}
+function renderBell() {
+  const items = bellItems();
   const cnt = items.length;
+  const unseen = items.filter((t) => !state.seenNotif.has(String(t.id))).length; // الجديدة غير المقروءة
   const badge = $('bellCount');
-  badge.textContent = cnt;
-  badge.style.display = cnt ? '' : 'none';
+  badge.textContent = unseen;
+  badge.style.display = unseen ? '' : 'none';
 
   const head = `<div class="bp-head">التنبيهات (${cnt})</div>`;
   const body = cnt
@@ -1171,7 +1243,7 @@ function render() {
 
 async function load(refresh = false) {
   try {
-    if (!state.me) { await fetchMe(); await fetchReminders(); }
+    if (!state.me) { await fetchMe(); await fetchReminders(); await fetchUsers(); }
     await fetchTasks(refresh);
     $('sync').textContent = fmtSync(state.meta.fetchedAt);
     render();
@@ -1188,6 +1260,7 @@ $('addBtn').onclick = () => openEdit(null);
 state.expanded = localStorage.getItem('eo_expanded') === '1';
 try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
 try { state.meetingCols = JSON.parse(localStorage.getItem('eo_meetingcols') || 'null') || DEFAULT_MEETING_COLS.slice(); } catch { state.meetingCols = DEFAULT_MEETING_COLS.slice(); }
+try { state.seenNotif = new Set(JSON.parse(localStorage.getItem('eo_seen_notif') || '[]')); } catch { state.seenNotif = new Set(); }
 (function () {
   const cb = $('colsBtn');
   if (cb) cb.onclick = (e) => { e.stopPropagation(); const w = $('colsWrap'); const open = w.classList.contains('open'); document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); if (!open) { buildColsPanel(); w.classList.add('open'); } };
@@ -1198,8 +1271,38 @@ try { state.meetingCols = JSON.parse(localStorage.getItem('eo_meetingcols') || '
   if (eb) eb.onclick = () => { state.expanded = !state.expanded; localStorage.setItem('eo_expanded', state.expanded ? '1' : '0'); sync(); render(); };
   sync();
 })();
-$('bellBtn').onclick = (e) => { e.stopPropagation(); $('bellPanel').classList.toggle('open'); };
+$('bellBtn').onclick = (e) => { e.stopPropagation(); const p = $('bellPanel'); const opening = !p.classList.contains('open'); p.classList.toggle('open'); if (opening) markNotifSeen(); };
 $('logoutBtn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; };
+
+// ===== حساب المستخدم (للمحرّر/المشاهد) =====
+function openAccount() {
+  if (!state.me) return;
+  $('acctEmail').value = state.me.email || '';
+  $('acctFirst').value = state.me.firstName || '';
+  $('acctLast').value = state.me.lastName || '';
+  $('acctPw').value = '';
+  $('acctModalBack').classList.add('open');
+}
+function closeAccount() { $('acctModalBack').classList.remove('open'); }
+(function () {
+  const ab = $('accountBtn'); if (ab) ab.onclick = openAccount;
+  const cl = $('acctClose'); if (cl) cl.onclick = closeAccount;
+  const cc = $('acctCancel'); if (cc) cc.onclick = closeAccount;
+  const eye = $('acctEye'); if (eye) eye.onclick = () => { const i = $('acctPw'); i.type = i.type === 'password' ? 'text' : 'password'; eye.textContent = i.type === 'password' ? '👁' : '🙈'; };
+  const sv = $('acctSave');
+  if (sv) sv.onclick = async () => {
+    const body = { firstName: $('acctFirst').value.trim(), lastName: $('acctLast').value.trim() };
+    const pw = $('acctPw').value; if (pw) body.password = pw;
+    sv.disabled = true; sv.textContent = '... حفظ';
+    try {
+      const res = await fetch('/api/account', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json(); if (!data.ok) throw new Error(data.error);
+      if (data.user) { state.me.name = data.user.name; state.me.firstName = data.user.firstName; state.me.lastName = body.lastName; }
+      toast('تم حفظ معلومات حسابك ✓'); closeAccount(); renderUser();
+    } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
+    sv.disabled = false; sv.textContent = '💾 حفظ';
+  };
+})();
 
 // ===== Web Push =====
 function urlBase64ToUint8Array(base64String) {
