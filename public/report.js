@@ -16,7 +16,6 @@ const REPORT_COLS = [
   { k: 'priority', label: 'الأولوية', w: 9 },
   { k: 'status', label: 'الحالة', w: 11 },
   { k: 'followup', label: 'آخر متابعة', w: 24 },
-  { k: 'source', label: 'مصدر المهمة', w: 16 },
   { k: 'notes', label: 'ملاحظات', w: 16 },
 ];
 
@@ -40,7 +39,6 @@ function reportRow(t, i) {
     priority: t.priority || '',
     status: t.status || '',
     followup: fu,
-    source: t.source || '',
     notes: t.notes || '',
   };
 }
@@ -126,7 +124,7 @@ function rowHTML(COLS, r, gi) {
   return `<tr style="background:${gi % 2 ? '#faf5ee' : '#ffffff'};page-break-inside:avoid">${COLS.map((c) => {
     let v = esc(String(r[c.k]));
     let style = `padding:7px 6px;font-size:11.5px;border:1px solid ${RB.line};vertical-align:top;text-align:right`;
-    if (c.k === 'deliverable' || c.k === 'followup' || c.k === 'owner') style += ';white-space:pre-line';
+    if (c.k === 'deliverable' || c.k === 'followup' || c.k === 'owner' || c.k === 'linkedTo') style += ';white-space:pre-line';
     if (c.k === 'priority') v = `<span style="color:${priColor(r.priority)};font-weight:700">${v}</span>`;
     if (c.k === 'status') v = `<span style="color:${stColor(r.status)};font-weight:700">${v}</span>`;
     if (c.k === 'followup' && r.fuMeta) v = `${esc(String(r.followup || ''))}<div style="color:${RB.copper};font-size:10.5px;margin-top:4px">${esc(r.fuMeta)}</div>`;

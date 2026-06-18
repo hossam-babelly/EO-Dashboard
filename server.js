@@ -191,9 +191,10 @@ function summarize(tasks) {
     s.byStatus[t.status] = (s.byStatus[t.status] || 0) + 1;
     const tk = t.type || '';
     s.byType[tk] = (s.byType[tk] || 0) + 1;
-    if (t.isMeeting) {
+    // عدّ الاجتماعات لكل اجتماع على حدة (المهمة قد تحوي عدّة اجتماعات)
+    for (const m of (t.meetings || [])) {
       s.meetings.total++;
-      if (t.meetingScheduled) s.meetings.scheduled++; else s.meetings.unscheduled++;
+      if (m.scheduled) s.meetings.scheduled++; else s.meetings.unscheduled++;
     }
   }
   s.completion = s.total ? Math.round((s.done / s.total) * 100) : 0;
@@ -215,7 +216,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         statuses: sheets.STATUSES,
         files: uniqueSorted(tasks.map((t) => t.file)),
         types: uniqueSorted(tasks.map((t) => t.type)),
-        linked: uniqueSorted(tasks.map((t) => t.linkedTo)),
+        linked: uniqueSorted(tasks.flatMap((t) => t.linkedList || [])),
       },
       meta: { canWrite: sheets.canWrite, fetchedAt: new Date().toISOString() },
     });
