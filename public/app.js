@@ -19,11 +19,15 @@ const state = {
   sortDir: 'desc',
   expanded: false,
   tableCols: [],
+  colWidths: {},        // عرض الأعمدة المخصّص (محفوظ لكل مستخدم)
+  expandedRows: new Set(), // صفوف مُوسّعة فردياً في الوضع المضغوط
   newDv: [],
   newEv: [],
   editLinked: [],   // قائمة «مرتبط بـ» المحلية في نافذة الإضافة/التعديل
   editMeetings: [], // قائمة الاجتماعات المحلية في نافذة الإضافة/التعديل
-  meetingFilter: 'all', // فلتر عرض الاجتماعات: all | scheduled | unscheduled
+  meetingFilter: 'all', // فلتر عرض الاجتماعات: all | required | scheduled | done
+  meetingDateFrom: '',  // فلتر تاريخ الاجتماعات المجدولة (من)
+  meetingDateTo: '',    // (إلى)
   calY: null,
   calM: null, // 0-based
 };
@@ -31,8 +35,9 @@ const state = {
 const STATUSES = ['لم تبدأ', 'قيد التنفيذ', 'منجزة', 'متوقفة'];
 const PRIORITIES = ['حرجة', 'عالية', 'متوسطة'];
 const TYPES = ['E-mail', 'مجلس الإدارة', 'مكتب تنفيذي', 'تواقيع واعتمادات'];
-const MEETING_SCHEDULED = 'مجدول';
-const MEETING_UNSCHEDULED = 'غير مجدول';
+// حالات الاجتماع الثلاث
+const MEETING_STATUS = { required: 'مطلوب', scheduled: 'مجدول', done: 'تم' };
+const MEETING_STATUS_CLS = { required: 'mt-unsched', scheduled: 'mt-sched-dt', done: 'mt-sched' };
 // أيقونة مختصرة لكل نوع (للبطاقات)
 const TYPE_ICON = { 'E-mail': '✉️', 'مجلس الإدارة': '🏛️', 'مكتب تنفيذي': '🏢', 'تواقيع واعتمادات': '✍️' };
 const $ = (id) => document.getElementById(id);
@@ -61,6 +66,7 @@ async function fetchMe() {
   if (res.status === 401) { location.href = '/login.html'; throw new Error('redirect'); }
   const data = await res.json();
   state.me = data.user;
+  state.attachmentsEnabled = !!data.attachmentsEnabled;
 }
 function renderUser() {
   if (!state.me) return;
@@ -228,11 +234,12 @@ function parseDeliverables(raw) {
 function dvChip(t, e) {
   return `<div class="dv-toggle ${e.done ? 'done' : ''}" data-id="${t.id}" data-idx="${e.idx}" title="${e.done ? 'إلغاء التأشير' : 'تأشير كمنجز'}"><span class="dv-check"></span><span class="dv-txt">${esc(e.text)}</span></div>`;
 }
+function rowExpanded(t) { return state.expanded || state.expandedRows.has(t.id); }
 function deliverableCell(t) {
   const items = parseDeliverables(t.deliverable);
   if (!items.length) return '<span style="color:var(--muted)">—</span>';
-  if (state.expanded) return `<div class="dv-list">${items.map((e) => dvChip(t, e)).join('')}</div>`;
-  const more = items.length > 1 ? `<span class="fu-more" style="margin-top:4px;display:inline-block">+${items.length - 1}</span>` : '';
+  if (rowExpanded(t)) return `<div class="dv-list">${items.map((e) => dvChip(t, e)).join('')}</div>`;
+  const more = items.length > 1 ? `<span class="fu-more row-expand" data-id="${t.id}" style="margin-top:4px;display:inline-block;cursor:pointer">+${items.length - 1}</span>` : '';
   return `<div class="dv-list">${dvChip(t, items[0])}${more}</div>`;
 }
 async function toggleDelivApi(id, idx) {
@@ -283,9 +290,9 @@ function fuMini(e) {
 function followupCell(t) {
   const evs = parseFollowup(t.followup, t.log);
   if (!evs.length) return '<span style="color:var(--muted)">—</span>';
-  if (state.expanded) return `<div class="fu-cell-full">${evs.slice().reverse().map(fuMini).join('')}</div>`;
+  if (rowExpanded(t)) return `<div class="fu-cell-full">${evs.slice().reverse().map(fuMini).join('')}</div>`;
   const last = evs[evs.length - 1];
-  const more = evs.length > 1 ? `<span class="fu-more">+${evs.length - 1}</span>` : '';
+  const more = evs.length > 1 ? `<span class="fu-more row-expand" data-id="${t.id}" style="cursor:pointer">+${evs.length - 1}</span>` : '';
   const meta = last.manual
     ? `<div class="fu-meta"><span class="fu-leg">متابعة</span>${more}</div>`
     : `<div class="fu-meta"><b>${esc(last.author)}</b> · ${esc(fuShort(last.date, last.time))} ${more}</div>`;
@@ -424,7 +431,7 @@ function renderKpis() {
   if (byType['']) cards.push({ kind: 'type', key: '__none__', cls: 'kpi-type', num: byType[''], lbl: '🏷️ بلا نوع' });
 
   // بطاقة الاجتماعات (التركيز على غير المجدولة)
-  if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.unscheduled, lbl: '🤝 اجتماعات غير مجدولة' });
+  if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.required, lbl: '🤝 اجتماعات مطلوبة' });
 
   const isActive = (c) =>
     (c.kind === 'time' && state.view !== 'meetings' && state.time === c.key) ||
@@ -440,7 +447,7 @@ function renderKpis() {
       const { kind, key } = el.dataset;
       if (kind === 'time') { if (key === '_done') return; if (state.view === 'meetings') state.view = 'table'; state.time = state.time === key ? 'all' : key; }
       else if (kind === 'type') { if (state.view === 'meetings') state.view = 'table'; const i = state.types.indexOf(key); if (i > -1) state.types.splice(i, 1); else state.types.push(key); }
-      else if (kind === 'meet') { state.view = 'meetings'; state.meetingFilter = 'unscheduled'; }
+      else if (kind === 'meet') { state.view = 'meetings'; state.meetingFilter = 'required'; }
       render();
     };
   });
@@ -537,10 +544,18 @@ const MEETING_COLS = [
   { k: 'type', label: 'النوع', r: ({ t }) => typeCell(t.type) },
   { k: 'owner', label: 'المسؤول', cls: 'cell-owner', r: ({ t }) => esc(t.owner) },
   { k: 'priority', label: 'الأولوية', r: ({ t }) => `<span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span>` },
-  { k: 'deadline', label: 'الموعد', r: ({ t, m }) => { const dlCls = !m.scheduled && t.isOverdue ? 'overdue' : !m.scheduled && t.isSoon3 ? 'soon' : ''; const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—'); return `<div class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></div>`; } },
-  { k: 'status', label: 'حالة الاجتماع', r: ({ m }) => `<span class="badge ${m.scheduled ? 'mt-sched' : 'mt-unsched'}">${m.scheduled ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span>` },
+  { k: 'mtgdate', label: 'موعد الاجتماع', r: ({ m }) => m.status === 'scheduled' && m.datetime ? `<span class="iso">${esc(m.datetime)}</span>` : '<span style="color:var(--muted)">—</span>' },
+  { k: 'deadline', label: 'موعد المهمة', r: ({ t }) => { const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—'); return `<div class="deadline-cell"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></div>`; } },
+  { k: 'status', label: 'حالة الاجتماع', r: ({ m }) => meetingStatusBadge(m) },
 ];
-const DEFAULT_MEETING_COLS = ['meetingName', 'project', 'file', 'owner', 'deadline', 'status'];
+const DEFAULT_MEETING_COLS = ['meetingName', 'project', 'file', 'owner', 'mtgdate', 'status'];
+// شارة حالة الاجتماع (مطلوب/مجدول+تاريخ/تم)
+function meetingStatusBadge(m) {
+  const lbl = MEETING_STATUS[m.status] || 'مطلوب';
+  const cls = MEETING_STATUS_CLS[m.status] || 'mt-unsched';
+  const dt = (m.status === 'scheduled' && m.datetime) ? ` <span class="mt-dt">${esc(m.datetime)}</span>` : '';
+  return `<span class="badge ${cls}">${lbl}</span>${dt}`;
+}
 function activeMeetingCols() {
   const sel = (state.meetingCols && state.meetingCols.length) ? state.meetingCols : DEFAULT_MEETING_COLS;
   return MEETING_COLS.filter((c) => sel.includes(c.k));
@@ -569,18 +584,52 @@ function renderTable() {
   if (!list.length) { $('viewArea').innerHTML = '<div class="table-wrap"><div class="empty">لا توجد مهام مطابقة للفلاتر.</div></div>'; return; }
   const arrow = (k) => state.sortKey === k ? `<span class="arrow">${state.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
   const cols = activeTableCols();
-  const ths = cols.map((c) => c.sort ? `<th data-sort="${c.sort}">${c.label} ${arrow(c.sort)}</th>` : `<th>${c.label}</th>`).join('');
+  const wStyle = (k) => state.colWidths[k] ? ` style="width:${state.colWidths[k]}px"` : '';
+  const ths = cols.map((c) => `<th data-k="${c.k}"${c.sort ? ` data-sort="${c.sort}"` : ''}${wStyle(c.k)}><span class="th-lbl">${c.label} ${c.sort ? arrow(c.sort) : ''}</span><span class="col-resizer" data-k="${c.k}"></span></th>`).join('');
+  // زر توسيع/طيّ الصف الفردي (في الوضع المضغوط فقط) يُوضع في زاوية أول خلية
+  const hasExpandable = (t) => parseDeliverables(t.deliverable).length > 1 || parseFollowup(t.followup, t.log).length > 1;
   const rows = list.map((t) => {
-    const rowCls = t.isDone ? 'row-done' : t.isOverdue ? 'row-overdue' : t.isSoon3 ? 'row-soon' : '';
-    const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(t)}</td>`).join('');
+    const exp = state.expandedRows.has(t.id);
+    const rowCls = (t.isDone ? 'row-done' : t.isOverdue ? 'row-overdue' : t.isSoon3 ? 'row-soon' : '') + (exp && !state.expanded ? ' row-exp' : '');
+    const tds = cols.map((c, ci) => {
+      const toggle = (ci === 0 && !state.expanded && hasExpandable(t))
+        ? `<button class="row-toggle" data-id="${t.id}" title="${exp ? 'طيّ' : 'توسيع'}">${exp ? '▴' : '▾'}</button>` : '';
+      return `<td class="${c.cls || ''}${ci === 0 ? ' rt-cell' : ''}">${c.r(t)}${toggle}</td>`;
+    }).join('');
     return `<tr class="${rowCls}" data-id="${t.id}">${tds}</tr>`;
   }).join('');
   $('viewArea').innerHTML = `<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
   $('viewArea').querySelectorAll('th[data-sort]').forEach((th) => {
-    th.onclick = () => { const k = th.dataset.sort; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } renderTable(); };
+    th.querySelector('.th-lbl').onclick = () => { const k = th.dataset.sort; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } renderTable(); };
   });
+  bindColResizers($('viewArea'));
   $('viewArea').querySelectorAll('tbody tr').forEach((tr) => { tr.onclick = () => openModal(Number(tr.dataset.id)); });
+  $('viewArea').querySelectorAll('.row-toggle, .row-expand').forEach((el) => el.onclick = (e) => { e.stopPropagation(); toggleRow(Number(el.dataset.id)); });
   bindDvToggles($('viewArea'));
+}
+
+function toggleRow(id) {
+  if (state.expandedRows.has(id)) state.expandedRows.delete(id); else state.expandedRows.add(id);
+  renderTable();
+}
+
+// سحب حدّ العمود لتغيير عرضه (RTL)، ويُحفظ في localStorage لكل مستخدم
+function bindColResizers(scope) {
+  scope.querySelectorAll('.col-resizer').forEach((r) => {
+    r.onclick = (e) => e.stopPropagation();
+    r.onmousedown = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const th = r.closest('th'); const k = r.dataset.k;
+      const startX = e.clientX; const startW = th.offsetWidth;
+      const move = (ev) => { const w = Math.max(50, startW + (startX - ev.clientX)); th.style.width = w + 'px'; };
+      const up = () => {
+        document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+        state.colWidths[k] = th.offsetWidth;
+        try { localStorage.setItem('eo_colwidths', JSON.stringify(state.colWidths)); } catch { /* تجاهل */ }
+      };
+      document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    };
+  });
 }
 
 // ===== Kanban view =====
@@ -837,17 +886,22 @@ async function fetchUsers() {
   catch { state.users = []; }
 }
 
-// ===== الاجتماعات (متعدّدة، كل واحد بعنوان وحالة) في نافذة الإضافة/التعديل =====
+// ===== الاجتماعات (متعدّدة، كل واحد بعنوان وحالة ثلاثية) في نافذة الإضافة/التعديل =====
+// datetime داخلي «YYYY-MM-DD HH:MM» ⇄ قيمة input datetime-local «YYYY-MM-DDTHH:MM»
+function dtToInput(dt) { return String(dt || '').replace(' ', 'T').slice(0, 16); }
+function dtFromInput(v) { return String(v || '').replace('T', ' ').slice(0, 16); }
 function meetingsEditSection() {
+  const statusSel = (i, st) => `<select class="emtg-status" data-idx="${i}">${Object.entries(MEETING_STATUS).map(([k, l]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const list = state.editMeetings.length ? state.editMeetings.map((m, i) => `
     <div class="fu-item plain" data-idx="${i}">
       <div class="fu-ihead"><span class="dv-num">اجتماع ${i + 1}</span>
-        <label class="rem-opt" style="margin-inline-start:10px"><input type="checkbox" class="emtg-chk" data-idx="${i}" ${m.scheduled ? 'checked' : ''}> تمت جدولته</label>
-        <span class="fu-acts"><button class="fu-ico emtg-ed" type="button" data-idx="${i}" title="تعديل">✏️</button><button class="fu-ico emtg-del" type="button" data-idx="${i}" title="حذف">🗑</button></span>
+        ${statusSel(i, m.status || 'required')}
+        <input type="datetime-local" class="emtg-dt" data-idx="${i}" value="${esc(dtToInput(m.datetime))}" style="${(m.status === 'scheduled') ? '' : 'display:none'};max-width:185px">
+        <span class="fu-acts"><button class="fu-ico emtg-ed" type="button" data-idx="${i}" title="تعديل العنوان">✏️</button><button class="fu-ico emtg-del" type="button" data-idx="${i}" title="حذف">🗑</button></span>
       </div>
       <div class="fu-ibody">${esc(m.title)}</div></div>`).join('') : '<div class="fu-empty">لا اجتماعات. أضف اجتماعاً ليظهر في عرض الاجتماعات.</div>';
   return `<div id="emtgSection" class="field"><label>🤝 الاجتماعات</label><div class="fu-log">${list}</div>
-    <div class="fu-add"><input id="emtgInput" type="text" placeholder="عنوان الاجتماع…"><label class="rem-opt"><input type="checkbox" id="emtgNewSched"> تمت جدولته</label><button class="btn btn-save" id="emtgAdd" type="button">➕ إضافة اجتماع</button></div></div>`;
+    <div class="fu-add"><input id="emtgInput" type="text" placeholder="عنوان الاجتماع…"><button class="btn btn-save" id="emtgAdd" type="button">➕ إضافة اجتماع</button></div></div>`;
 }
 function refreshMeetingsEdit() { const el = $('emtgSection'); if (el) { el.outerHTML = meetingsEditSection(); bindMeetingsEdit(); } }
 function bindMeetingsEdit() {
@@ -856,12 +910,17 @@ function bindMeetingsEdit() {
   if (add) add.onclick = () => {
     const inp = $('emtgInput'); const v = inp ? inp.value.trim() : '';
     if (!v) { toast('اكتب عنوان الاجتماع', true); return; }
-    const sc = $('emtgNewSched');
-    state.editMeetings.push({ title: v, scheduled: sc ? sc.checked : false });
+    state.editMeetings.push({ title: v, status: 'required', datetime: '' });
     refreshMeetingsEdit();
   };
-  // تبديل الحالة لا يُعيد البناء (حفاظاً على بقية المدخلات) بل يحدّث الحالة فقط
-  sec.querySelectorAll('.emtg-chk').forEach((b) => b.onchange = () => { const i = Number(b.dataset.idx); if (state.editMeetings[i]) state.editMeetings[i].scheduled = b.checked; });
+  // تغيير الحالة: عند «مجدول» يظهر حقل التاريخ/الوقت
+  sec.querySelectorAll('.emtg-status').forEach((s) => s.onchange = () => {
+    const i = Number(s.dataset.idx); if (!state.editMeetings[i]) return;
+    state.editMeetings[i].status = s.value;
+    if (s.value !== 'scheduled') state.editMeetings[i].datetime = '';
+    refreshMeetingsEdit();
+  });
+  sec.querySelectorAll('.emtg-dt').forEach((d) => d.onchange = () => { const i = Number(d.dataset.idx); if (state.editMeetings[i]) state.editMeetings[i].datetime = dtFromInput(d.value); });
   sec.querySelectorAll('.emtg-del').forEach((b) => b.onclick = () => { state.editMeetings.splice(Number(b.dataset.idx), 1); refreshMeetingsEdit(); });
   sec.querySelectorAll('.emtg-ed').forEach((b) => b.onclick = () => {
     const i = Number(b.dataset.idx), body = b.closest('.fu-item').querySelector('.fu-ibody'), cur = body.textContent;
@@ -886,76 +945,102 @@ function meetingTaskMatches(t) {
   return true;
 }
 
+// ضمن مدى تاريخ الاجتماعات المجدولة (إن ضُبط)
+function meetingInDateRange(m) {
+  if (m.status !== 'scheduled' || !m.datetime) return !(state.meetingDateFrom || state.meetingDateTo);
+  const d = m.datetime.slice(0, 10);
+  if (state.meetingDateFrom && d < state.meetingDateFrom) return false;
+  if (state.meetingDateTo && d > state.meetingDateTo) return false;
+  return true;
+}
+
 function renderMeetings() {
   const tasks = state.tasks.filter((t) => t.meetings && t.meetings.length && meetingTaskMatches(t));
-  // تسطيح: صفّ لكل اجتماع داخل كل مهمة
   let rows = [];
   tasks.forEach((t) => (t.meetings || []).forEach((m, idx) => rows.push({ t, m, idx })));
   const totalAll = rows.length;
-  const schedAll = rows.filter((r) => r.m.scheduled).length;
-  const unschedAll = totalAll - schedAll;
+  const cnt = (st) => rows.filter((r) => r.m.status === st).length;
+  const counts = { required: cnt('required'), scheduled: cnt('scheduled'), done: cnt('done') };
 
-  if (state.meetingFilter === 'scheduled') rows = rows.filter((r) => r.m.scheduled);
-  else if (state.meetingFilter === 'unscheduled') rows = rows.filter((r) => !r.m.scheduled);
+  if (state.meetingFilter !== 'all') rows = rows.filter((r) => r.m.status === state.meetingFilter);
+  // فلتر التاريخ يُطبَّق على الاجتماعات المجدولة فقط
+  const dateActive = !!(state.meetingDateFrom || state.meetingDateTo);
+  if (dateActive) rows = rows.filter((r) => r.m.status === 'scheduled' && meetingInDateRange(r.m));
 
-  // غير المجدول أولاً ثم حسب الموعد
+  // مطلوب أولاً ثم مجدول (حسب موعد الاجتماع) ثم تم
+  const order = { required: 0, scheduled: 1, done: 2 };
   rows.sort((a, b) => {
-    if (a.m.scheduled !== b.m.scheduled) return a.m.scheduled ? 1 : -1;
-    const x = a.t.deadlineIso || '9999-99-99', y = b.t.deadlineIso || '9999-99-99';
+    if (order[a.m.status] !== order[b.m.status]) return order[a.m.status] - order[b.m.status];
+    const x = (a.m.datetime || a.t.deadlineIso || '9999'), y = (b.m.datetime || b.t.deadlineIso || '9999');
     return x < y ? -1 : x > y ? 1 : 0;
   });
 
   const fchips = [
     { k: 'all', lbl: 'الكل', c: totalAll },
-    { k: 'unscheduled', lbl: 'غير مجدول', c: unschedAll },
-    { k: 'scheduled', lbl: 'مجدول', c: schedAll },
+    { k: 'required', lbl: 'مطلوب', c: counts.required },
+    { k: 'scheduled', lbl: 'مجدول', c: counts.scheduled },
+    { k: 'done', lbl: 'تم', c: counts.done },
   ].map((c) => `<button class="chip ${state.meetingFilter === c.k ? 'active' : ''}" data-mf="${c.k}">${c.lbl}<span class="c">${c.c}</span></button>`).join('');
+  // فلتر التاريخ للاجتماعات المجدولة (تاريخ محدّد = ضبط «من» و«إلى» بنفس اليوم)
+  const dateBar = `<div class="mtg-datefilter">📅 الاجتماعات المجدولة بين:
+    <input type="date" id="mtgFrom" value="${esc(state.meetingDateFrom)}"> و
+    <input type="date" id="mtgTo" value="${esc(state.meetingDateTo)}">
+    ${dateActive ? '<button class="btn btn-cancel" id="mtgDateClear" type="button">مسح التاريخ</button>' : ''}</div>`;
 
-  $('countLine').textContent = `${rows.length} اجتماع معروض — الإجمالي ${totalAll} (${unschedAll} غير مجدول · ${schedAll} مجدول)`
-    + (canEdit() ? ' — انقر زرّ الحالة للتبديل' : '');
+  $('countLine').textContent = `${rows.length} اجتماع معروض — الإجمالي ${totalAll} (مطلوب ${counts.required} · مجدول ${counts.scheduled} · تم ${counts.done})`;
 
-  if (!totalAll) {
-    $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div><div class="table-wrap"><div class="empty">لا توجد اجتماعات. أضف اجتماعاً من نافذة المهمة (إضافة/تعديل).</div></div>`;
+  if (!rows.length) {
+    $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div>${dateBar}<div class="table-wrap"><div class="empty">لا توجد اجتماعات مطابقة. أضف اجتماعاً من نافذة المهمة (إضافة/تعديل).</div></div>`;
     bindMeetingFilter();
     return;
   }
 
   const cols = activeMeetingCols();
   const editable = canEdit();
-  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (editable ? '<th></th>' : '');
+  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (editable ? '<th>تغيير الحالة</th>' : '');
   const body = rows.map((row) => {
     const { t, m, idx } = row;
-    const sch = m.scheduled;
     const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(row)}</td>`).join('');
-    const btn = editable
-      ? `<td><button class="btn mt-toggle ${sch ? 'btn-cancel' : 'btn-save'}" data-id="${t.id}" data-idx="${idx}" data-sched="${sch ? 0 : 1}">${sch ? '↩ إلغاء الجدولة' : '✓ تم جدولته'}</button></td>`
-      : '';
-    return `<tr class="${sch ? 'row-done' : ''}" data-id="${t.id}">${tds}${btn}</tr>`;
+    const ctrl = editable ? `<td class="mt-ctrl">
+        <select class="mt-status" data-id="${t.id}" data-idx="${idx}">${Object.entries(MEETING_STATUS).map(([k, l]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input type="datetime-local" class="mt-dt" data-id="${t.id}" data-idx="${idx}" value="${esc(dtToInput(m.datetime))}" style="${m.status === 'scheduled' ? '' : 'display:none'}">
+      </td>` : '';
+    return `<tr class="${m.status === 'done' ? 'row-done' : ''}" data-id="${t.id}">${tds}${ctrl}</tr>`;
   }).join('');
-  $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div><div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${body}</tbody></table></div>`;
+  $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div>${dateBar}<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${body}</tbody></table></div>`;
   bindMeetingFilter();
   $('viewArea').querySelectorAll('tbody tr').forEach((tr) => {
-    tr.onclick = (e) => { if (e.target.closest('.mt-toggle')) return; openModal(Number(tr.dataset.id)); };
+    tr.onclick = (e) => { if (e.target.closest('.mt-ctrl')) return; openModal(Number(tr.dataset.id)); };
   });
-  $('viewArea').querySelectorAll('.mt-toggle').forEach((b) => {
-    b.onclick = async (e) => { e.stopPropagation(); await setMeetingScheduled(Number(b.dataset.id), Number(b.dataset.idx), b.dataset.sched === '1'); };
+  // تغيير حالة اجتماع من العرض مباشرةً
+  $('viewArea').querySelectorAll('.mt-status').forEach((s) => s.onchange = async () => {
+    const id = Number(s.dataset.id), idx = Number(s.dataset.idx);
+    const dtEl = s.closest('.mt-ctrl').querySelector('.mt-dt');
+    const datetime = s.value === 'scheduled' ? dtFromInput(dtEl ? dtEl.value : '') : '';
+    await setMeetingStatus(id, idx, s.value, datetime);
+  });
+  $('viewArea').querySelectorAll('.mt-dt').forEach((d) => d.onchange = async () => {
+    await setMeetingStatus(Number(d.dataset.id), Number(d.dataset.idx), 'scheduled', dtFromInput(d.value));
   });
 }
 
 function bindMeetingFilter() {
   document.querySelectorAll('[data-mf]').forEach((b) => b.onclick = () => { state.meetingFilter = b.dataset.mf; renderMeetings(); });
+  const from = $('mtgFrom'); if (from) from.onchange = () => { state.meetingDateFrom = from.value; renderMeetings(); };
+  const to = $('mtgTo'); if (to) to.onchange = () => { state.meetingDateTo = to.value; renderMeetings(); };
+  const clr = $('mtgDateClear'); if (clr) clr.onclick = () => { state.meetingDateFrom = ''; state.meetingDateTo = ''; renderMeetings(); };
 }
 
-// تبديل جدولة اجتماع واحد بالموضع (يرسل المصفوفة الكاملة بعد التعديل)
-async function setMeetingScheduled(id, idx, scheduled) {
+// تغيير حالة اجتماع واحد بالموضع (يرسل المصفوفة الكاملة بعد التعديل)
+async function setMeetingStatus(id, idx, status, datetime) {
   const t = state.tasks.find((x) => x.id === id); if (!t) return;
-  const meetings = (t.meetings || []).map((m, i) => ({ title: m.title, scheduled: i === idx ? scheduled : m.scheduled }));
+  const meetings = (t.meetings || []).map((m, i) => i === idx ? { title: m.title, status, datetime: status === 'scheduled' ? (datetime || m.datetime || '') : '' } : { title: m.title, status: m.status, datetime: m.datetime });
   try {
     const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meetings }) });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     Object.assign(t, data.task);
-    toast('تم تحديث جدولة الاجتماع ✓');
+    toast('تم تحديث حالة الاجتماع ✓');
     render();
   } catch (e) { toast('تعذّر التحديث: ' + e.message, true); load(true); }
 }
@@ -967,7 +1052,7 @@ function openModal(id) {
   $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
   const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
   const meetingField = (t.meetings && t.meetings.length)
-    ? `<div class="field"><label>🤝 الاجتماعات</label><div class="val">${t.meetings.map((m) => `<div class="mtg-row"><span class="badge ${m.scheduled ? 'mt-sched' : 'mt-unsched'}">${m.scheduled ? MEETING_SCHEDULED : MEETING_UNSCHEDULED}</span> <span class="mtg-name">${esc(m.title)}</span></div>`).join('')}</div></div>`
+    ? `<div class="field"><label>🤝 الاجتماعات</label><div class="val">${t.meetings.map((m) => `<div class="mtg-row">${meetingStatusBadge(m)} <span class="mtg-name">${esc(m.title)}</span></div>`).join('')}</div></div>`
     : '';
   $('mBody').innerHTML =
     F('المشروع', t.project) + F('الملف', t.file) + F('النوع', t.type) + F('مرتبط بـ', t.linkedTo) + F('المسؤول المعني', t.owner) +
@@ -977,14 +1062,60 @@ function openModal(id) {
     `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
     meetingField +
     followupSection(t) + F('ملاحظات', t.notes) +
+    attachmentsSection(t) +
     reminderSection(t);
   $('mHeadActions').innerHTML = canEdit() ? `<button class="mh-icon" id="mEdit" title="تعديل المهمة">✏️</button><button class="mh-icon mh-del" id="mDel" title="حذف المهمة">🗑</button>` : '';
   $('mFoot').innerHTML = '';
   if (canEdit()) { $('mEdit').onclick = () => openEdit(t); $('mDel').onclick = () => removeTask(t.id); }
   bindFollowup(t);
   bindDeliverable(t);
+  bindAttachments(t);
   bindReminderSection(t);
   $('modalBack').classList.add('open');
+}
+
+// ===== المرفقات (Google Drive) داخل نافذة المهمة =====
+function parseAttachments(raw) {
+  return fuBlocks(raw).map((b, i) => { const lines = b.split('\n'); return { idx: i, name: (lines[0] || 'مرفق').trim(), url: (lines[1] || lines[0] || '').trim() }; });
+}
+function attachmentsSection(t) {
+  if (!state.attachmentsEnabled) return ''; // غير مفعّل (يحتاج إعداد Drive)
+  const items = parseAttachments(t.attachments);
+  const ed = canEdit();
+  const list = items.length
+    ? items.map((a) => `<div class="att-item"><a class="att-link" href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>${ed ? `<button class="fu-ico att-del" type="button" data-idx="${a.idx}" title="حذف">🗑</button>` : ''}</div>`).join('')
+    : '<div class="fu-empty">لا مرفقات.</div>';
+  const add = ed ? `<div class="att-add"><input type="file" id="attInput"><button class="btn btn-save" id="attUpload" type="button">⬆ رفع مرفق</button></div>` : '';
+  return `<div id="attSection" class="field"><label>📎 المرفقات</label><div class="fu-log">${list}</div>${add}</div>`;
+}
+function refreshAttachments(id) { const t = state.tasks.find((x) => x.id === id); if (!t) return; const el = $('attSection'); if (el) { el.outerHTML = attachmentsSection(t); bindAttachments(t); } }
+function bindAttachments(t) {
+  if (!state.attachmentsEnabled) return;
+  const up = $('attUpload'); if (up) up.onclick = () => uploadAttachment(t.id);
+  const sec = $('attSection'); if (sec) sec.querySelectorAll('.att-del').forEach((b) => b.onclick = () => deleteAttachment(t.id, Number(b.dataset.idx)));
+}
+async function uploadAttachment(id) {
+  const inp = $('attInput'); const f = inp && inp.files && inp.files[0];
+  if (!f) { toast('اختر ملفاً أولاً', true); return; }
+  if (f.size > 8 * 1024 * 1024) { toast('الحجم يتجاوز ٨ ميغابايت', true); return; }
+  const btn = $('attUpload'); if (btn) { btn.disabled = true; btn.textContent = '... رفع'; }
+  try {
+    const data = await new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result).split(',')[1]); fr.onerror = reject; fr.readAsDataURL(f); });
+    const res = await fetch(`/api/tasks/${id}/attachment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name, mime: f.type, data }) });
+    const d = await res.json(); if (!d.ok) throw new Error(d.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, d.task);
+    toast('تم رفع المرفق ✓'); refreshAttachments(id);
+  } catch (e) { toast('تعذّر الرفع: ' + e.message, true); }
+  if (btn) { btn.disabled = false; btn.textContent = '⬆ رفع مرفق'; }
+}
+async function deleteAttachment(id, idx) {
+  if (!confirm('حذف هذا المرفق؟')) return;
+  try {
+    const res = await fetch(`/api/tasks/${id}/attachment/${idx}`, { method: 'DELETE' });
+    const d = await res.json(); if (!d.ok) throw new Error(d.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, d.task);
+    toast('تم حذف المرفق ✓'); refreshAttachments(id);
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 
 // قسم «تذكيراتي» داخل نافذة المهمة (لكل مستخدم)
@@ -1124,7 +1255,7 @@ function openEdit(t) {
   // قوائم «مرتبط بـ» والمسؤولين والاجتماعات المحلية (نسخة قابلة للتعديل)
   state.editLinked = isNew ? [] : ((t.linkedList && t.linkedList.length) ? t.linkedList.slice() : []);
   state.editOwner = isNew ? [] : ((t.owners && t.owners.length) ? t.owners.slice() : []);
-  state.editMeetings = isNew ? [] : (t.meetings || []).map((m) => ({ title: m.title, scheduled: !!m.scheduled }));
+  state.editMeetings = isNew ? [] : (t.meetings || []).map((m) => ({ title: m.title, status: m.status || 'required', datetime: m.datetime || '' }));
   const createdVal = isNew ? todayISO() : (t.createdIso || t.created || '');
   $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
   $('mBody').innerHTML = `<form id="taskForm">
@@ -1165,7 +1296,7 @@ async function saveTask(id) {
   const payload = {};
   new FormData(form).forEach((v, k) => { payload[k] = v; });
   // الاجتماعات و«مرتبط بـ» والمسؤولون من القوائم المحلية (كل شخص بسطر مستقل)
-  payload.meetings = state.editMeetings.map((m) => ({ title: m.title, scheduled: !!m.scheduled }));
+  payload.meetings = state.editMeetings.map((m) => ({ title: m.title, status: m.status || 'required', datetime: m.status === 'scheduled' ? (m.datetime || '') : '' }));
   payload.linkedTo = state.editLinked.join('\n');
   payload.owner = state.editOwner.join('\n');
   // القائمة المنسدلة للمشروع: «إضافة جديد» → استخدم النصّ المُدخَل
@@ -1353,6 +1484,7 @@ state.expanded = localStorage.getItem('eo_expanded') === '1';
 try { state.tableCols = JSON.parse(localStorage.getItem('eo_tablecols_v2') || 'null') || DEFAULT_TABLE_COLS.slice(); } catch { state.tableCols = DEFAULT_TABLE_COLS.slice(); }
 try { state.meetingCols = JSON.parse(localStorage.getItem('eo_meetingcols') || 'null') || DEFAULT_MEETING_COLS.slice(); } catch { state.meetingCols = DEFAULT_MEETING_COLS.slice(); }
 try { state.seenNotif = new Set(JSON.parse(localStorage.getItem('eo_seen_notif') || '[]')); } catch { state.seenNotif = new Set(); }
+try { state.colWidths = JSON.parse(localStorage.getItem('eo_colwidths') || '{}') || {}; } catch { state.colWidths = {}; }
 (function () {
   const cb = $('colsBtn');
   if (cb) cb.onclick = (e) => { e.stopPropagation(); const w = $('colsWrap'); const open = w.classList.contains('open'); document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); if (!open) { buildColsPanel(); w.classList.add('open'); } };

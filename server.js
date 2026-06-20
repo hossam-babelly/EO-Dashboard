@@ -16,6 +16,7 @@ const auth = require('./lib/auth');
 const notify = require('./lib/notify');
 const store = require('./lib/store');
 const calendar = require('./lib/calendar');
+const drive = require('./lib/drive');
 const { TZ } = require('./lib/dates');
 
 // طابع زمني «YYYY-MM-DD HH:MM» بتوقيت دمشق (أرقام لاتينية)
@@ -39,7 +40,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1); // خلف وكيل Render
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '12mb' })); // يتّسع لرفع المرفقات (base64)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
@@ -96,7 +97,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', async (req, res) => {
-  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled });
+  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled });
   if (!(req.session && req.session.user)) return res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
   const user = { ...req.session.user };
   // رمز التقويم الشخصي (للاشتراك في تغذية ICS)
@@ -106,7 +107,7 @@ app.get('/api/me', async (req, res) => {
       if (full) user.calToken = full.token;
     } catch { /* تجاهل */ }
   }
-  res.json({ ok: true, user, storeEnabled: store.enabled });
+  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled });
 });
 
 // قائمة المستخدمين (للاختيار كمسؤول معني) — متاحة لكل مسجّل دخول، تُعيد الاسم والبريد فقط
@@ -219,7 +220,7 @@ function summarize(tasks) {
     byPriority: {},
     byStatus: {},
     byType: {},
-    meetings: { total: 0, scheduled: 0, unscheduled: 0 },
+    meetings: { total: 0, required: 0, scheduled: 0, done: 0 },
   };
   let completionSum = 0;
   for (const t of tasks) {
@@ -234,10 +235,12 @@ function summarize(tasks) {
     s.byStatus[t.status] = (s.byStatus[t.status] || 0) + 1;
     const tk = t.type || '';
     s.byType[tk] = (s.byType[tk] || 0) + 1;
-    // عدّ الاجتماعات لكل اجتماع على حدة (المهمة قد تحوي عدّة اجتماعات)
+    // عدّ الاجتماعات حسب الحالة (مطلوب/مجدول/تم) — المهمة قد تحوي عدّة اجتماعات
     for (const m of (t.meetings || [])) {
       s.meetings.total++;
-      if (m.scheduled) s.meetings.scheduled++; else s.meetings.unscheduled++;
+      if (m.status === 'done') s.meetings.done++;
+      else if (m.status === 'scheduled') s.meetings.scheduled++;
+      else s.meetings.required++;
     }
     completionSum += taskCompletion(t);
   }
@@ -459,6 +462,43 @@ app.delete('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, 
   } catch (err) { console.error('DELETE /api/tasks', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
 
+// ===== المرفقات (رفع إلى Google Drive وحفظ الرابط في عمود «مرفقات») =====
+app.post('/api/tasks/:row/attachment', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    if (!drive.enabled) return res.status(400).json({ ok: false, error: 'المرفقات غير مفعّلة (إعداد Google Drive مطلوب).' });
+    const { name, mime, data } = req.body || {};
+    if (!data) return res.status(400).json({ ok: false, error: 'لا يوجد ملف' });
+    const buffer = Buffer.from(String(data), 'base64');
+    if (!buffer.length) return res.status(400).json({ ok: false, error: 'ملف فارغ' });
+    if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'حجم الملف يتجاوز ٨ ميغابايت' });
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const folderName = `${(t && t.project) || 'مشروع'} - ${(t && t.file) || 'ملف'}`.trim();
+    const up = await drive.uploadFile({ folderName, filename: String(name || 'ملف'), mimeType: mime, buffer });
+    const blocks = sheets.fuBlocks(t ? t.attachments : '');
+    blocks.push(`${up.name}\n${up.url}`);
+    const task = await sheets.updateTask(req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+app.delete('/api/tasks/:row/attachment/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const blocks = sheets.fuBlocks(t ? t.attachments : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= blocks.length) return res.status(400).json({ ok: false, error: 'مرفق غير موجود' });
+    const url = (blocks[idx].split('\n')[1] || '').trim();
+    drive.deleteFile(url).catch(() => { /* تجاهل */ });
+    blocks.splice(idx, 1);
+    const task = await sheets.updateTask(req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache();
+    res.json({ ok: true, task });
+  } catch (err) { console.error('DELETE attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
 // إضافة مهمة جديدة (مع أحداث متابعة اختيارية)
 app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
@@ -574,6 +614,7 @@ app.get('/api/health', (req, res) => {
     canWrite: sheets.canWrite,
     tz: require('./lib/dates').TZ,
     storeEnabled: store.enabled,
+    attachmentsEnabled: drive.enabled,
     mailProvider: notify.emailProvider(),
     notifyEmailSet: !!process.env.NOTIFY_EMAIL,
     node: process.version,         // إصدار Node الفعلي على Render
