@@ -299,11 +299,11 @@ async function notifyOwnersAssigned(req, info, addedNames) {
     if (!added.length) return;
     const users = (await store.getUsersFull()) || [];
     const appUrl = process.env.APP_URL || '';
-    const title = `${info.project || 'مهمة'}${info.file ? ' — ' + info.file : ''}`;
+    const title = esc(`${info.project || 'مهمة'}${info.file ? ' — ' + info.file : ''}`);
     for (const name of added) {
       const u = users.find((x) => String(x.name || '').trim() === name && x.telegramChatId);
       if (!u) continue;
-      const line = `📌 تم تعيينك مسؤولاً عن مهمة: <b>${title}</b> من قِبل ${actor}${info.deadlineRaw ? `\nالموعد: ${info.deadlineRaw}` : ''}`;
+      const line = `📌 تم تعيينك مسؤولاً عن مهمة: <b>${title}</b> من قِبل ${esc(actor)}${info.deadlineRaw ? `\nالموعد: ${esc(info.deadlineRaw)}` : ''}`;
       telegram.sendMessage(u.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`).catch(() => { /* تجاهل */ });
     }
   } catch (e) { console.warn('notifyOwnersAssigned', e.message); }
@@ -729,7 +729,7 @@ app.post('/api/tasks/:row/notify', requireAuth, async (req, res) => {
     if (methods.includes('telegram') && telegram.enabled && store.enabled) {
       try {
         const full = (await store.getUsersFull() || []).find((x) => x.email.toLowerCase() === u.email.toLowerCase());
-        if (full && full.telegramChatId) { const ok = await telegram.sendMessage(full.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`); if (ok) sent.push('telegram'); }
+        if (full && full.telegramChatId) { const ok = await telegram.sendMessage(full.telegramChatId, `${telegram.esc(line)}${appUrl ? '\n' + appUrl : ''}`); if (ok) sent.push('telegram'); }
       } catch (e) { console.warn('notify telegram', e.message); }
     }
     res.json({ ok: true, sent });
@@ -865,6 +865,46 @@ app.get('/api/diag/google', async (req, res) => {
   }
   res.json(out);
 });
+
+// تشخيص تيليجرام (مدير): يكشف الحلقة المعطوبة — التفعيل / الـ webhook / الحسابات المربوطة / إعداد الـ cron
+async function diagTelegram(req, res) {
+  try {
+    const bot = await telegram.getMe();
+    const webhook = await telegram.getWebhookInfo();
+    let linkedUsers = [];
+    if (store.enabled) {
+      try { linkedUsers = ((await store.getUsersFull()) || []).filter((u) => u.telegramChatId).map((u) => ({ name: u.name, email: u.email })); }
+      catch (e) { /* تجاهل */ }
+    }
+    res.json({
+      ok: true,
+      enabled: telegram.enabled,            // هل TELEGRAM_BOT_TOKEN مضبوط؟
+      bot,                                  // username/id البوت أو خطأ التوكن
+      webhook,                              // url + pending + lastErrorMessage (أهم مؤشّر)
+      appUrl: process.env.APP_URL || null,  // يلزم لتسجيل الـ webhook
+      cronSecretSet: !!process.env.CRON_SECRET,
+      storeEnabled: store.enabled,
+      linkedCount: linkedUsers.length,      // كم حساباً مربوطاً فعلاً
+      linkedUsers,
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.get('/api/diag/telegram', requireAuth, requireRole('admin'), diagTelegram);
+
+// إرسال رسالة اختبار إلى حساب المدير الحالي (يعزل مشكلة «الإرسال» عن مشكلة «الجدولة»)
+async function diagTelegramTest(req, res) {
+  try {
+    if (!telegram.enabled) return res.json({ ok: false, error: 'البوت غير مفعّل (TELEGRAM_BOT_TOKEN غير مضبوط)' });
+    if (!store.enabled) return res.json({ ok: false, error: 'التخزين الدائم غير مفعّل' });
+    const me = ((await store.getUsersFull()) || []).find((u) => u.email.toLowerCase() === String(req.session.user.email).toLowerCase());
+    if (!me) return res.json({ ok: false, error: 'تعذّر إيجاد حسابك في التخزين' });
+    if (!me.telegramChatId) return res.json({ ok: false, error: 'حسابك غير مربوط بتيليجرام (لا يوجد chatId). أكمِل الربط: شارك رقمك مع البوت.' });
+    const r = await telegram.trySend(me.telegramChatId, '✅ رسالة اختبار من لوحة الإدارة التنفيذية — إن وصلتك هذه فإنّ إرسال تيليجرام يعمل بشكل سليم.');
+    res.json({ ok: r.ok, error: r.error || null, chatId: me.telegramChatId, sentTo: me.name });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.get('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
+app.post('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
 
 app.listen(PORT, async () => {
   console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
