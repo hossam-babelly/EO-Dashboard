@@ -1,52 +1,23 @@
-services:
-  - type: web
-    name: eo-dashboard
-    runtime: node
-    plan: free
-    buildCommand: npm install
-    startCommand: npm start
-    healthCheckPath: /api/health
-    envVars:
-      # تثبيت إصدار Node على LTS مستقرّ — تفادي Node التجريبي الذي يكسر اتصال Google (Premature close)
-      - key: NODE_VERSION
-        value: 22.12.0
-      - key: NODE_ENV
-        value: production
-      - key: APP_TZ
-        value: Asia/Damascus
-      - key: SESSION_SECRET
-        generateValue: true
-      # القيم السرّية تُضبط يدوياً في لوحة Render (sync:false = لا تُحفظ في الملف)
-      - key: SHEET_ID
-        sync: false
-      - key: GOOGLE_SERVICE_ACCOUNT_JSON
-        sync: false
-      - key: DATA_SHEET_ID
-        sync: false
-      - key: USERS_JSON
-        sync: false
-      - key: CRON_SECRET
-        sync: false
-      - key: APP_URL
-        sync: false
-      # اختياري (التنبيهات)
-      - key: NOTIFY_EMAIL
-        sync: false
-      - key: OWNER_EMAILS
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
-        sync: false
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      - key: VAPID_SUBJECT
-        sync: false
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * أداة توليد مستخدم لـ USERS_JSON.
+ * الاستخدام:
+ *   node scripts/hash-user.js <email> <password> [role] [name]
+ * role: admin | editor | viewer (افتراضي viewer)
+ *
+ * تطبع كائن المستخدم؛ اجمع عدة مستخدمين داخل مصفوفة JSON في متغيّر USERS_JSON.
+ */
+
+const bcrypt = require('bcryptjs');
+
+const [, , email, password, role = 'viewer', ...nameParts] = process.argv;
+if (!email || !password) {
+  console.error('الاستخدام: node scripts/hash-user.js <email> <password> [role] [name]');
+  process.exit(1);
+}
+const name = nameParts.join(' ') || email.split('@')[0];
+const hash = bcrypt.hashSync(password, 10);
+const user = { email, name, role, hash };
+console.log(JSON.stringify(user));

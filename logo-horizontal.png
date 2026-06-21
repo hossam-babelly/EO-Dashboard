@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تسجيل الدخول — EO-Dashboard</title>
+<link rel="icon" type="image/png" href="/assets/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #211d1a 0%, #322c26 100%); padding: 20px; }
+  .login-card { background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(0,0,0,.4); width: 100%; max-width: 390px; overflow: hidden; }
+  .login-top { background: linear-gradient(135deg, #211d1a, #322c26); border-bottom: 3px solid var(--copper); padding: 30px 30px 24px; text-align: center; }
+  .login-logo { width: 116px; height: auto; margin: 0 auto 14px; display: block; }
+  .login-top h1 { font-size: 20px; color: #fff; margin-bottom: 4px; font-weight: 800; }
+  .login-top p { color: var(--champagne); font-size: 13px; font-weight: 600; }
+  .login-body { padding: 28px 30px 32px; }
+  .login-card label { display: block; font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+  .login-card input { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; font-family: inherit; font-size: 14px; margin-bottom: 16px; color: var(--text); }
+  .login-card input:focus { outline: none; border-color: var(--copper); box-shadow: 0 0 0 3px rgba(189,106,67,.14); }
+  .login-card button { width: 100%; padding: 12px; background: var(--copper); color: #fff; border: none; border-radius: 10px; font-family: inherit; font-size: 15px; font-weight: 800; cursor: pointer; transition: .15s; }
+  .login-card button:hover { background: var(--gold-light); }
+  .login-err { background: var(--red-bg); color: var(--red); padding: 10px; border-radius: 9px; font-size: 13px; font-weight: 700; text-align: center; margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+<form class="login-card" id="loginForm">
+  <div class="login-top">
+    <img class="login-logo" src="/assets/logo-mark.png" alt="سنكري القابضة — SANKARI HOLDING">
+    <h1>لوحة الإدارة التنفيذية</h1>
+    <p>مجموعة سنكري القابضة</p>
+  </div>
+  <div class="login-body" id="loginBody">
+    <div class="login-err" id="err"></div>
+    <label for="email">البريد الإلكتروني</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">كلمة المرور</label>
+    <div class="pw-wrap" style="margin-bottom:16px"><input id="password" type="password" autocomplete="current-password" required style="margin-bottom:0"><button type="button" class="pw-eye" data-target="password" aria-label="إظهار كلمة المرور">👁</button></div>
+    <button type="submit" id="btn">دخول</button>
+  </div>
+  <div class="login-body" id="chooserBody" style="display:none">
+    <p style="font-weight:800;color:var(--navy);text-align:center;margin-bottom:16px">اختر البروفايل للدخول</p>
+    <div id="profileChoices" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+</form>
+<script>
+document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
+  const t = document.getElementById(b.dataset.target);
+  if (t) { t.type = t.type === 'password' ? 'text' : 'password'; b.textContent = t.type === 'password' ? '👁' : '🙈'; }
+});
+const form = document.getElementById('loginForm');
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = '... جارٍ الدخول';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.value, password: password.value }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'فشل الدخول');
+    if (data.needProfile && (data.profiles || []).length > 1) {
+      showChooser(data.profiles);
+    } else {
+      location.href = '/';
+    }
+  } catch (e2) {
+    err.textContent = e2.message; err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'دخول';
+  }
+};
+function showChooser(profiles) {
+  document.getElementById('loginBody').style.display = 'none';
+  const box = document.getElementById('profileChoices');
+  box.innerHTML = '';
+  profiles.forEach((p) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = p.label || p.tab;
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: p.tab }) });
+        const d = await r.json(); if (!d.ok) throw new Error(d.error);
+        location.href = '/';
+      } catch (e3) { b.disabled = false; alert('تعذّر: ' + e3.message); }
+    };
+    box.appendChild(b);
+  });
+  document.getElementById('chooserBody').style.display = 'block';
+}
+</script>
+</body>
+</html>
