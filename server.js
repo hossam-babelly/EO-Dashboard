@@ -1,0 +1,26 @@
+{
+  "name": "eo-dashboard",
+  "version": "1.0.0",
+  "description": "EO-Dashboard — لوحة متابعة مهام الإدارة التنفيذية (سنكري القابضة)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "googleapis": "^144.0.0",
+    "nodemailer": "^6.9.14",
+    "web-push": "^3.6.7"
+  },
+  "overrides": {
+    "node-fetch": "2.6.13"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
