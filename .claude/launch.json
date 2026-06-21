@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "eo-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/preview-static.js"],
+      "port": 5173
+    }
+  ]
+}
