@@ -6,7 +6,8 @@ const state = {
   filters: {},
   meta: {},
   me: null,
-  view: 'table',
+  dataType: 'tasks', // tasks | meetings
+  shape: 'table',    // table | kanban | calendar
   time: 'all',
   projects: [],
   owners: [],
@@ -67,6 +68,8 @@ async function fetchMe() {
   const data = await res.json();
   state.me = data.user;
   state.attachmentsEnabled = !!data.attachmentsEnabled;
+  state.profile = data.profile || '';
+  state.profiles = data.profiles || [];
 }
 function renderUser() {
   if (!state.me) return;
@@ -77,6 +80,15 @@ function renderUser() {
   const ub = $('usersBtn'); if (ub) ub.style.display = state.me.role === 'admin' ? '' : 'none';
   // المحرّر/المشاهد: زرّ «حسابي» بدل زرّ المستخدمين
   const ab = $('accountBtn'); if (ab) ab.style.display = (state.me.role !== 'admin' && !state.meta.authDisabled) ? '' : 'none';
+  // مبدّل البروفايل (يظهر لمن لديه أكثر من بروفايل)
+  const ps = $('profileSwitch');
+  if (ps) {
+    const profs = state.profiles || [];
+    if (profs.length > 1) {
+      ps.style.display = '';
+      ps.innerHTML = profs.map((p) => `<option value="${esc(p.tab)}" ${p.tab === state.profile ? 'selected' : ''}>${esc(p.label || p.tab)}</option>`).join('');
+    } else { ps.style.display = 'none'; }
+  }
   const pb = $('pushBtn');
   if ('PushManager' in window) {
     pb.style.display = '';
@@ -408,7 +420,8 @@ function relText(t) {
 
 // ===== KPIs / chips / filters =====
 function syncViewTabs() {
-  document.querySelectorAll('.view-tab[data-view]').forEach((x) => x.classList.toggle('active', x.dataset.view === state.view));
+  document.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('active', x.dataset.shape === state.shape));
+  document.querySelectorAll('[data-data]').forEach((x) => x.classList.toggle('active', x.dataset.data === state.dataType));
 }
 
 function renderKpis() {
@@ -434,9 +447,9 @@ function renderKpis() {
   if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.required, lbl: '🤝 اجتماعات مطلوبة' });
 
   const isActive = (c) =>
-    (c.kind === 'time' && state.view !== 'meetings' && state.time === c.key) ||
+    (c.kind === 'time' && state.dataType !== 'meetings' && state.time === c.key) ||
     (c.kind === 'type' && state.types.includes(c.key)) ||
-    (c.kind === 'meet' && state.view === 'meetings');
+    (c.kind === 'meet' && state.dataType === 'meetings');
 
   $('kpis').innerHTML = cards.map((c) => `
     <div class="kpi ${c.cls || ''} ${isActive(c) ? 'active' : ''}" data-kind="${c.kind}" data-key="${esc(c.key)}">
@@ -445,9 +458,9 @@ function renderKpis() {
   $('kpis').querySelectorAll('.kpi').forEach((el) => {
     el.onclick = () => {
       const { kind, key } = el.dataset;
-      if (kind === 'time') { if (key === '_done') return; if (state.view === 'meetings') state.view = 'table'; state.time = state.time === key ? 'all' : key; }
-      else if (kind === 'type') { if (state.view === 'meetings') state.view = 'table'; const i = state.types.indexOf(key); if (i > -1) state.types.splice(i, 1); else state.types.push(key); }
-      else if (kind === 'meet') { state.view = 'meetings'; state.meetingFilter = 'required'; }
+      if (kind === 'time') { if (key === '_done') return; if (state.dataType === 'meetings') state.dataType = 'tasks'; state.time = state.time === key ? 'all' : key; }
+      else if (kind === 'type') { if (state.dataType === 'meetings') state.dataType = 'tasks'; const i = state.types.indexOf(key); if (i > -1) state.types.splice(i, 1); else state.types.push(key); }
+      else if (kind === 'meet') { state.dataType = 'meetings'; state.meetingFilter = 'required'; }
       render();
     };
   });
@@ -564,7 +577,7 @@ function activeMeetingCols() {
 // لوحة «⚙ الأعمدة» — تتكيّف حسب العرض الحالي (جدول المهام أو جدول الاجتماعات)
 function buildColsPanel() {
   const el = $('colsPanel'); if (!el) return;
-  const meetings = state.view === 'meetings';
+  const meetings = state.dataType === 'meetings';
   const COLS = meetings ? MEETING_COLS : TABLE_COLS;
   const sel = meetings ? state.meetingCols : state.tableCols;
   const lsKey = meetings ? 'eo_meetingcols' : 'eo_tablecols_v2';
@@ -586,13 +599,12 @@ function renderTable() {
   const cols = activeTableCols();
   const wStyle = (k) => state.colWidths[k] ? ` style="width:${state.colWidths[k]}px"` : '';
   const ths = cols.map((c) => `<th data-k="${c.k}"${c.sort ? ` data-sort="${c.sort}"` : ''}${wStyle(c.k)}><span class="th-lbl">${c.label} ${c.sort ? arrow(c.sort) : ''}</span><span class="col-resizer" data-k="${c.k}"></span></th>`).join('');
-  // زر توسيع/طيّ الصف الفردي (في الوضع المضغوط فقط) يُوضع في زاوية أول خلية
-  const hasExpandable = (t) => parseDeliverables(t.deliverable).length > 1 || parseFollowup(t.followup, t.log).length > 1;
+  // زر توسيع/طيّ الصف الفردي (في الوضع المضغوط) — متاح لكل المهام
   const rows = list.map((t) => {
     const exp = state.expandedRows.has(t.id);
     const rowCls = (t.isDone ? 'row-done' : t.isOverdue ? 'row-overdue' : t.isSoon3 ? 'row-soon' : '') + (exp && !state.expanded ? ' row-exp' : '');
     const tds = cols.map((c, ci) => {
-      const toggle = (ci === 0 && !state.expanded && hasExpandable(t))
+      const toggle = (ci === 0 && !state.expanded)
         ? `<button class="row-toggle" data-id="${t.id}" title="${exp ? 'طيّ' : 'توسيع'}">${exp ? '▴' : '▾'}</button>` : '';
       return `<td class="${c.cls || ''}${ci === 0 ? ' rt-cell' : ''}">${c.r(t)}${toggle}</td>`;
     }).join('');
@@ -1045,6 +1057,73 @@ async function setMeetingStatus(id, idx, status, datetime) {
   } catch (e) { toast('تعذّر التحديث: ' + e.message, true); load(true); }
 }
 
+// صفوف الاجتماعات المطابقة للفلاتر (تُستخدم في كانبان/تقويم الاجتماعات)
+function meetingRows() {
+  const rows = [];
+  state.tasks.filter((t) => t.meetings && t.meetings.length && meetingTaskMatches(t))
+    .forEach((t) => (t.meetings || []).forEach((m, idx) => rows.push({ t, m, idx })));
+  return rows;
+}
+
+// ===== Meetings — Kanban (أعمدة حسب الحالة) =====
+const MEETING_KCOLS = ['required', 'scheduled', 'done'];
+function renderMeetingsKanban() {
+  const rows = meetingRows();
+  $('countLine').textContent = `${rows.length} اجتماع` + (canEdit() ? ' — اسحب البطاقة لتغيير الحالة' : '');
+  const byStatus = { required: [], scheduled: [], done: [] };
+  rows.forEach((r) => { (byStatus[r.m.status] || byStatus.required).push(r); });
+  const card = (r) => `<div class="kcard" data-id="${r.t.id}" data-idx="${r.idx}">
+      <div class="kp">🤝 ${esc(r.m.title)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:5px">${esc(r.t.project)}${r.t.file ? ' — ' + esc(r.t.file) : ''}</div>
+      <div class="km"><span>${esc((r.t.owner || '').split('\n')[0])}</span><span class="kdl">${r.m.status === 'scheduled' ? esc(r.m.datetime || '') : ''}</span></div></div>`;
+  $('viewArea').innerHTML = `<div class="kanban kanban-mtg">${MEETING_KCOLS.map((s) => `
+    <div class="kcol"><div class="kcol-head"><span>${MEETING_STATUS[s]}</span><span class="c">${byStatus[s].length}</span></div>
+    <div class="kbody ${canEdit() ? '' : 'disabled'}" data-status="${s}">${byStatus[s].map(card).join('')}</div></div>`).join('')}</div>`;
+  $('viewArea').querySelectorAll('.kcard').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
+  if (canEdit() && window.Sortable) {
+    $('viewArea').querySelectorAll('.kbody').forEach((col) => {
+      Sortable.create(col, {
+        group: 'mtgkanban', animation: 150, ghostClass: 'sortable-ghost',
+        onEnd: async (evt) => {
+          const ns = evt.to.dataset.status; if (evt.from.dataset.status === ns) return;
+          const id = Number(evt.item.dataset.id), idx = Number(evt.item.dataset.idx);
+          const t = state.tasks.find((x) => x.id === id); const m = t && t.meetings[idx];
+          await setMeetingStatus(id, idx, ns, ns === 'scheduled' ? (m && m.datetime) || '' : '');
+        },
+      });
+    });
+  }
+}
+
+// ===== Meetings — Calendar (حسب موعد الاجتماع المجدول) =====
+function renderMeetingsCalendar() {
+  const rows = meetingRows().filter((r) => r.m.status === 'scheduled' && r.m.datetime);
+  if (state.calY == null) { const d = new Date(); state.calY = d.getFullYear(); state.calM = d.getMonth(); }
+  const y = state.calY, m = state.calM;
+  const monthName = new Date(y, m, 1).toLocaleDateString('ar-SY-u-nu-latn', { month: 'long', year: 'numeric' });
+  const startDow = (new Date(y, m, 1).getDay() + 1) % 7;
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const byDay = {};
+  rows.forEach((r) => { const [ty, tm, td] = r.m.datetime.slice(0, 10).split('-').map(Number); if (ty === y && tm === m + 1) (byDay[td] || (byDay[td] = [])).push(r); });
+  const dows = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+  let cells = dows.map((d) => `<div class="cal-dow">${d}</div>`).join('');
+  for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dow = (new Date(y, m, d).getDay() + 1) % 7;
+    const tHtml = (byDay[d] || []).map((r) => `<div class="cal-task" data-id="${r.t.id}" title="${esc(r.t.project)}"><span class="cal-p">🤝 ${esc(r.m.title)}</span><span class="cal-f">${esc((r.m.datetime || '').slice(11))} · ${esc(r.t.project)}</span></div>`).join('');
+    cells += `<div class="cal-cell ${iso === todayStr ? 'today' : ''} ${dow === 6 ? 'fri' : ''}"><div class="d">${d}</div>${tHtml}</div>`;
+  }
+  $('countLine').textContent = `${rows.length} اجتماع مجدول (تظهر الاجتماعات ذات التاريخ فقط)`;
+  $('viewArea').innerHTML = `<div class="table-wrap" style="padding:16px">
+    <div class="cal-head"><button id="calPrev">‹ السابق</button><h3>${monthName}</h3><button id="calNext">التالي ›</button></div>
+    <div class="cal-grid">${cells}</div></div>`;
+  $('calPrev').onclick = () => { state.calM--; if (state.calM < 0) { state.calM = 11; state.calY--; } renderMeetingsCalendar(); };
+  $('calNext').onclick = () => { state.calM++; if (state.calM > 11) { state.calM = 0; state.calY++; } renderMeetingsCalendar(); };
+  $('viewArea').querySelectorAll('.cal-task').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
+}
+
 // ===== Modal: view + edit =====
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
@@ -1451,10 +1530,15 @@ function render() {
   renderKpis(); renderChips(); renderFilters(); renderBell();
   $('addBtn').style.display = canEdit() ? '' : 'none';
   syncViewTabs();
-  if (state.view === 'kanban') renderKanban();
-  else if (state.view === 'calendar') renderCalendar();
-  else if (state.view === 'meetings') renderMeetings();
-  else renderTable();
+  if (state.dataType === 'meetings') {
+    if (state.shape === 'kanban') renderMeetingsKanban();
+    else if (state.shape === 'calendar') renderMeetingsCalendar();
+    else renderMeetings();
+  } else {
+    if (state.shape === 'kanban') renderKanban();
+    else if (state.shape === 'calendar') renderCalendar();
+    else renderTable();
+  }
   $('viewArea').classList.toggle('expanded', state.expanded);
 }
 
@@ -1497,6 +1581,19 @@ try { state.colWidths = JSON.parse(localStorage.getItem('eo_colwidths') || '{}')
 })();
 $('bellBtn').onclick = (e) => { e.stopPropagation(); const p = $('bellPanel'); const opening = !p.classList.contains('open'); p.classList.toggle('open'); if (opening) markNotifSeen(); };
 $('logoutBtn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; };
+// تبديل البروفايل: يضبط الجلسة ثم يعيد تحميل بيانات التبويب الجديد
+(function () {
+  const ps = $('profileSwitch');
+  if (ps) ps.onchange = async () => {
+    try {
+      const r = await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: ps.value }) });
+      const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      state.profile = ps.value; state.expandedRows = new Set();
+      toast('تم التبديل إلى: ' + ps.value);
+      await load(true);
+    } catch (e) { toast('تعذّر التبديل: ' + e.message, true); }
+  };
+})();
 
 // ===== حساب المستخدم (للمحرّر/المشاهد) =====
 function openAccount() {
@@ -1559,11 +1656,11 @@ async function setupPush(interactive) {
 }
 $('pushBtn').onclick = () => setupPush(true);
 document.addEventListener('click', (e) => { if (!e.target.closest('.bell-wrap')) $('bellPanel').classList.remove('open'); });
-document.querySelectorAll('.view-tab[data-view]').forEach((tab) => {
-  tab.onclick = () => {
-    document.querySelectorAll('.view-tab[data-view]').forEach((x) => x.classList.remove('active'));
-    tab.classList.add('active'); state.view = tab.dataset.view; render();
-  };
+document.querySelectorAll('[data-shape]').forEach((tab) => {
+  tab.onclick = () => { state.shape = tab.dataset.shape; render(); };
+});
+document.querySelectorAll('[data-data]').forEach((tab) => {
+  tab.onclick = () => { state.dataType = tab.dataset.data; render(); };
 });
 document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) document.querySelectorAll('.ms.open').forEach((x) => x.classList.remove('open')); });
 let searchTimer;

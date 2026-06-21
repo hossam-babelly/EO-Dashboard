@@ -86,7 +86,9 @@ app.post('/api/login', async (req, res) => {
     const user = await auth.verify(email, password);
     if (!user) return res.status(401).json({ ok: false, error: 'البريد أو كلمة المرور غير صحيحة' });
     req.session.user = user;
-    res.json({ ok: true, user });
+    const profiles = await availableProfilesFor(user);
+    req.session.profile = profiles[0] ? profiles[0].tab : DEFAULT_TAB; // افتراضي (يُغيّره الاختيار)
+    res.json({ ok: true, user, profiles, needProfile: profiles.length > 1 });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -107,7 +109,25 @@ app.get('/api/me', async (req, res) => {
       if (full) user.calToken = full.token;
     } catch { /* تجاهل */ }
   }
-  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled });
+  const profiles = await availableProfilesFor(req.session.user);
+  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, profile: activeTab(req), profiles });
+});
+
+// البروفايلات المتاحة للمستخدم الحالي
+app.get('/api/profiles', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, profiles: await availableProfilesFor(req.session.user), active: activeTab(req) }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// اختيار البروفايل النشط للجلسة (يجب أن يكون ضمن المتاح للمستخدم)
+app.post('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const tab = String((req.body && req.body.profile) || '').trim();
+    const profiles = await availableProfilesFor(req.session.user);
+    if (!profiles.some((p) => p.tab === tab)) return res.status(400).json({ ok: false, error: 'بروفايل غير متاح' });
+    req.session.profile = tab;
+    res.json({ ok: true, profile: tab });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
 // قائمة المستخدمين (للاختيار كمسؤول معني) — متاحة لكل مسجّل دخول، تُعيد الاسم والبريد فقط
@@ -150,11 +170,11 @@ app.get('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) 
 app.post('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
-    const { email, name, firstName, lastName, password, role } = req.body || {};
+    const { email, name, firstName, lastName, password, role, profiles } = req.body || {};
     if (!email || !password) return res.status(400).json({ ok: false, error: 'البريد وكلمة المرور مطلوبان' });
     if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' });
     const hash = await auth.hashPassword(password);
-    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash });
+    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash, profiles: Array.isArray(profiles) ? profiles : [] });
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -170,6 +190,7 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
     if (role != null) { if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' }); patch.role = role; }
     if (active != null) patch.active = !!active;
     if (password) patch.hash = await auth.hashPassword(password);
+    if (req.body && Array.isArray(req.body.profiles)) patch.profiles = req.body.profiles;
     if (newEmail != null && String(newEmail).trim() && String(newEmail).trim().toLowerCase() !== String(req.params.email).toLowerCase()) {
       const ne = String(newEmail).trim().toLowerCase();
       const all = (await store.getUsersFull()) || [];
@@ -181,19 +202,52 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
-// ذاكرة تخزين مؤقتة قصيرة لتقليل طلبات Google API مع إبقاء التحديث شبه لحظي
-let cache = { at: 0, tasks: [] };
+// إدارة البروفايلات (مدير): عرض + إضافة بروفايل جديد (يُنشئ تبويباً جديداً تلقائياً)
+app.get('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, res) => {
+  try { res.json({ ok: true, profiles: await store.getProfiles() }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    if (!sheets.canWrite) return res.status(400).json({ ok: false, error: 'الكتابة على الشيت معطّلة.' });
+    const label = String((req.body && req.body.label) || '').trim();
+    if (!label) return res.status(400).json({ ok: false, error: 'اسم البروفايل مطلوب' });
+    // اسم التبويب = اسم البروفايل
+    await sheets.createProfileTab(label);  // ينشئ التبويب بنفس بنية الجدول
+    const prof = await store.addProfile(label, label);
+    res.json({ ok: true, profile: prof });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// ذاكرة تخزين مؤقتة قصيرة لكل تبويب (بروفايل) لتقليل طلبات Google API
+const DEFAULT_TAB = (store.DEFAULT_PROFILE && store.DEFAULT_PROFILE.tab) || sheets.TAB;
+const caches = {}; // tab → { at, tasks }
 const CACHE_MS = Number(process.env.CACHE_MS || 8000);
 
-async function loadTasks(force = false) {
+// التبويب النشط للطلب = البروفايل المختار في الجلسة (أو الافتراضي)
+function activeTab(req) { return (req && req.session && req.session.profile) || DEFAULT_TAB; }
+
+async function loadTasks(tab, force = false) {
+  const t = tab || DEFAULT_TAB;
   const now = Date.now();
-  if (!force && now - cache.at < CACHE_MS && cache.tasks.length) return cache.tasks;
-  const tasks = await sheets.getTasks();
-  cache = { at: now, tasks };
+  const c = caches[t];
+  if (!force && c && now - c.at < CACHE_MS && c.tasks.length) return c.tasks;
+  const tasks = await sheets.getTasks(t);
+  caches[t] = { at: now, tasks };
   return tasks;
 }
 
-function invalidateCache() { cache = { at: 0, tasks: [] }; }
+function invalidateCache(tab) { if (tab) delete caches[tab]; else Object.keys(caches).forEach((k) => delete caches[k]); }
+
+// قائمة البروفايلات المتاحة لمستخدم (فارغ = الكل)
+async function availableProfilesFor(user) {
+  const all = store.enabled ? await store.getProfiles() : [store.DEFAULT_PROFILE];
+  if (!user || !user.profiles || !user.profiles.length) return all;
+  const set = new Set(user.profiles);
+  const filtered = all.filter((p) => set.has(p.tab));
+  return filtered.length ? filtered : all;
+}
 
 // حارس الكتابة: يمنع التعديل عند غياب صلاحية الكتابة (مفتاح قراءة فقط)
 function requireWrite(req, res, next) {
@@ -261,7 +315,7 @@ function taskCompletion(t) {
 // كل المهام + ملخص + خيارات الفلاتر
 app.get('/api/tasks', requireAuth, async (req, res) => {
   try {
-    const tasks = await loadTasks(req.query.refresh === '1');
+    const tasks = await loadTasks(activeTab(req), req.query.refresh === '1');
     res.json({
       ok: true,
       tasks,
@@ -286,8 +340,8 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
 // تعديل مهمة قائمة (حقول متعددة)
 app.patch('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    const task = await sheets.updateTask(req.params.row, req.body || {});
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, req.body || {});
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) {
     console.error('PATCH /api/tasks', err.message);
@@ -302,8 +356,8 @@ app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWr
     if (!sheets.STATUSES.includes(status)) {
       return res.status(400).json({ ok: false, error: 'حالة غير صالحة' });
     }
-    const task = await sheets.updateTask(req.params.row, { status });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { status });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -315,7 +369,7 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
   try {
     const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim(); // نحفظ أسطر الحدث، ونمنع السطر الفارغ داخله
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const u = req.session && req.session.user;
     const author = authorName(u);
@@ -326,8 +380,8 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
     while (lB.length < fB.length) lB.push('----------');
     fB.push(text);
     lB.push(logLine);
-    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) {
     console.error('POST followup', err.message);
@@ -339,7 +393,7 @@ app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), require
 app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const fB = sheets.fuBlocks(t ? t.followup : '');
     const lB = sheets.fuBlocks(t ? t.log : '');
@@ -368,8 +422,8 @@ app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), r
     const au = isAdmin ? (String(customAuthor || '').trim() || origAuthor) : origAuthor;
     lB[idx] = `[${dt} ${tm} — ${au}]`;
 
-    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('PATCH followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -378,7 +432,7 @@ app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), r
 app.delete('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const fB = sheets.fuBlocks(t ? t.followup : '');
     const lB = sheets.fuBlocks(t ? t.log : '');
@@ -386,8 +440,8 @@ app.delete('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), 
     if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
     fB.splice(idx, 1);
     lB.splice(idx, 1);
-    const task = await sheets.updateTask(req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('DELETE followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -397,12 +451,12 @@ app.post('/api/tasks/:row/deliverable', requireAuth, requireRole('editor'), requ
   try {
     const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     dB.push(text);
-    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('POST deliverable', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -411,26 +465,26 @@ app.patch('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor')
     const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
     if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
     dB[idx] = text;
-    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
 });
 app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
     dB.splice(idx, 1);
-    const task = await sheets.updateTask(req.params.row, { deliverable: dB.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -439,7 +493,7 @@ app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'
 app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
@@ -447,8 +501,8 @@ app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('ed
     dB[idx] = done ? dB[idx].replace(/^✓\s*/, '') : '✓ ' + dB[idx];
     const patch = { deliverable: dB.join('\n\n') };
     if (dB.length && dB.every((b) => /^✓/.test(b))) patch.status = sheets.DONE_STATUS;
-    const task = await sheets.updateTask(req.params.row, patch);
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, patch);
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -456,8 +510,8 @@ app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('ed
 // حذف مهمة (يحذف صفّها من الشيت)
 app.delete('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
-    await sheets.deleteTask(req.params.row);
-    invalidateCache();
+    await sheets.deleteTask(activeTab(req), req.params.row);
+    invalidateCache(activeTab(req));
     res.json({ ok: true });
   } catch (err) { console.error('DELETE /api/tasks', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -471,14 +525,14 @@ app.post('/api/tasks/:row/attachment', requireAuth, requireRole('editor'), requi
     const buffer = Buffer.from(String(data), 'base64');
     if (!buffer.length) return res.status(400).json({ ok: false, error: 'ملف فارغ' });
     if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'حجم الملف يتجاوز ٨ ميغابايت' });
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const folderName = `${(t && t.project) || 'مشروع'} - ${(t && t.file) || 'ملف'}`.trim();
     const up = await drive.uploadFile({ folderName, filename: String(name || 'ملف'), mimeType: mime, buffer });
     const blocks = sheets.fuBlocks(t ? t.attachments : '');
     blocks.push(`${up.name}\n${up.url}`);
-    const task = await sheets.updateTask(req.params.row, { attachments: blocks.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('POST attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -486,15 +540,15 @@ app.post('/api/tasks/:row/attachment', requireAuth, requireRole('editor'), requi
 app.delete('/api/tasks/:row/attachment/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const blocks = sheets.fuBlocks(t ? t.attachments : '');
     if (!Number.isInteger(idx) || idx < 0 || idx >= blocks.length) return res.status(400).json({ ok: false, error: 'مرفق غير موجود' });
     const url = (blocks[idx].split('\n')[1] || '').trim();
     drive.deleteFile(url).catch(() => { /* تجاهل */ });
     blocks.splice(idx, 1);
-    const task = await sheets.updateTask(req.params.row, { attachments: blocks.join('\n\n') });
-    invalidateCache();
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('DELETE attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -512,8 +566,8 @@ app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (
       body.followup = events.join('\n\n');
       body.log = events.map(() => `[${stamp} — ${author}]`).join('\n\n');
     }
-    await sheets.addTask(body);
-    invalidateCache();
+    await sheets.addTask(activeTab(req), body);
+    invalidateCache(activeTab(req));
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/tasks', err.message);
@@ -561,7 +615,7 @@ app.get('/api/calendar/:token.ics', async (req, res) => {
   try {
     const user = await store.getUserByToken(req.params.token);
     if (!user) return res.status(404).send('NOT FOUND');
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(DEFAULT_TAB);
     const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
     const reminders = await store.getReminders(user.email);
     res.set('Content-Type', 'text/calendar; charset=utf-8');
@@ -577,7 +631,7 @@ async function runDailyDigest(req, res) {
     return res.status(401).json({ ok: false, error: 'رمز غير صالح' });
   }
   try {
-    const tasks = await loadTasks(true);
+    const tasks = await loadTasks(activeTab(req), true);
     const appUrl = process.env.APP_URL || '';
     const digest = await notify.sendDailyDigest(tasks, appUrl);
     // تذكيرات لكل مستخدم/مهمة حسب تفضيلاتهم
@@ -645,8 +699,9 @@ app.listen(PORT, async () => {
   console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
   if (sheets.canWrite) {
     try {
-      await sheets.ensureColumns();
-      console.log('تم التأكد من عمودَي «الحالة» و«تمت جدولة الاجتماع».');
+      const profs = store.enabled ? await store.getProfiles() : [{ tab: DEFAULT_TAB }];
+      for (const p of profs) { try { await sheets.ensureColumns(p.tab); } catch (e) { console.warn('ensureColumns', p.tab, e.message); } }
+      console.log('تم التأكد من الأعمدة المُدارة لكل البروفايلات.');
     } catch (e) {
       console.warn('تعذّر إنشاء الأعمدة المُدارة:', e.message);
     }

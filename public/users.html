@@ -25,6 +25,16 @@
   <div id="notice"></div>
 
   <div class="card">
+    <h2>🗂️ البروفايلات</h2>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">كل بروفايل = تبويب مستقلّ في ملف المهام. إضافة بروفايل تُنشئ تبويباً جديداً بنفس بنية الجدول تلقائياً.</p>
+    <div id="profilesList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="fld" style="flex:1;min-width:200px"><label>اسم البروفايل الجديد</label><input type="text" id="newProfileName" placeholder="مثال: ممثل المالك"></div>
+      <button class="btn btn-save" id="addProfileBtn" type="button">➕ إضافة بروفايل</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>➕ إضافة مستخدم</h2>
     <form class="u-form" id="addForm">
       <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
@@ -34,6 +44,7 @@
         <div class="pw-wrap"><input type="password" name="password" id="addPw" required placeholder="••••••"><button type="button" class="pw-eye" data-target="addPw" aria-label="إظهار كلمة المرور">👁</button></div>
       </div>
       <div class="fld"><label>الدور</label><select name="role"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
+      <div class="fld" style="grid-column:1/-1"><label>البروفايلات المتاحة (بلا تحديد = الكل)</label><div id="addProfiles" class="prof-checks"></div></div>
       <button class="btn btn-save" type="submit">حفظ</button>
     </form>
     <p style="color:var(--muted);font-size:12.5px;margin-top:10px">البريد هو اسم الدخول، وإليه تُرسل تنبيهات المهام. الأدوار: <b>مدير</b> (كل شيء + إدارة المستخدمين) • <b>محرّر</b> (تعديل المهام) • <b>مشاهد</b> (عرض + تذكيرات شخصية).</p>
@@ -58,6 +69,7 @@
         <div class="field"><label>الاسم الأخير</label><input id="umLast" type="text"></div>
       </div>
       <div class="field"><label>الدور</label><select id="umRole"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
+      <div class="field"><label>البروفايلات المتاحة (بلا تحديد = الكل)</label><div id="umProfiles" class="prof-checks"></div></div>
       <div class="field"><label>كلمة المرور (اتركها فارغة لعدم التغيير)</label>
         <div class="pw-wrap"><input id="umPw" type="password" placeholder="••••••"><button type="button" class="pw-eye" data-target="umPw" aria-label="إظهار كلمة المرور">👁</button></div>
       </div>
@@ -70,8 +82,37 @@
 const $ = (s) => document.querySelector(s);
 const ROLES = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' };
 let USERS = [];
+let PROFILES = [];
 let editingEmail = null;
 function notice(msg, err) { $('#notice').innerHTML = `<div class="card" style="border-inline-start:4px solid ${err ? 'var(--red)' : 'var(--green)'}">${msg}</div>`; setTimeout(() => $('#notice').innerHTML = '', 4000); }
+const escp = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function loadProfiles() {
+  try {
+    const data = await (await fetch('/api/admin/profiles')).json();
+    PROFILES = data.profiles || [];
+  } catch { PROFILES = []; }
+  $('#profilesList').innerHTML = PROFILES.map((p) => `<span class="role-badge role-editor">🗂️ ${escp(p.label || p.tab)}</span>`).join('') || '<span style="color:var(--muted)">لا بروفايلات</span>';
+  renderProfileChecks('#addProfiles', []);
+}
+function renderProfileChecks(sel, selected) {
+  const set = new Set(selected || []);
+  document.querySelector(sel).innerHTML = PROFILES.map((p) => `<label class="prof-check"><input type="checkbox" value="${escp(p.tab)}" ${set.has(p.tab) ? 'checked' : ''}> ${escp(p.label || p.tab)}</label>`).join('') || '<span style="color:var(--muted);font-size:12.5px">لا بروفايلات</span>';
+}
+function readProfileChecks(sel) { return [...document.querySelectorAll(sel + ' input:checked')].map((x) => x.value); }
+
+$('#addProfileBtn').onclick = async () => {
+  const inp = $('#newProfileName'); const label = inp.value.trim();
+  if (!label) { notice('اكتب اسم البروفايل', true); return; }
+  const btn = $('#addProfileBtn'); btn.disabled = true; btn.textContent = '... إضافة';
+  try {
+    const res = await fetch('/api/admin/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    notice('تمت إضافة البروفايل وإنشاء تبويبه ✓'); inp.value = ''; await loadProfiles();
+  } catch (e) { notice('خطأ: ' + e.message, true); }
+  btn.disabled = false; btn.textContent = '➕ إضافة بروفايل';
+};
 
 async function loadUsers() {
   const res = await fetch('/api/admin/users');
@@ -108,6 +149,7 @@ function openEditUser(email) {
   $('#umLast').value = u.lastName || '';
   $('#umRole').value = u.role || 'viewer';
   $('#umPw').value = '';
+  renderProfileChecks('#umProfiles', u.profiles || []);
   $('#uModalBack').classList.add('open');
 }
 function closeEditUser() { $('#uModalBack').classList.remove('open'); editingEmail = null; }
@@ -121,9 +163,10 @@ async function patchUser(email, patch) {
 $('#addForm').onsubmit = async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target); const body = {}; fd.forEach((v, k) => body[k] = v);
+  body.profiles = readProfileChecks('#addProfiles');
   const res = await fetch('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (data.ok) { notice('تمت إضافة المستخدم ✓'); e.target.reset(); loadUsers(); } else notice('خطأ: ' + data.error, true);
+  if (data.ok) { notice('تمت إضافة المستخدم ✓'); e.target.reset(); renderProfileChecks('#addProfiles', []); loadUsers(); } else notice('خطأ: ' + data.error, true);
 };
 
 document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
@@ -136,7 +179,7 @@ $('#umCancel').onclick = closeEditUser;
 $('#uModalBack').onclick = (e) => { if (e.target === $('#uModalBack')) closeEditUser(); };
 $('#umSave').onclick = async () => {
   if (!editingEmail) return;
-  const body = { email: $('#umEmail').value.trim(), firstName: $('#umFirst').value.trim(), lastName: $('#umLast').value.trim(), role: $('#umRole').value };
+  const body = { email: $('#umEmail').value.trim(), firstName: $('#umFirst').value.trim(), lastName: $('#umLast').value.trim(), role: $('#umRole').value, profiles: readProfileChecks('#umProfiles') };
   const pw = $('#umPw').value;
   if (pw) body.password = pw;
   const btn = $('#umSave'); btn.disabled = true; btn.textContent = '... حفظ';
@@ -147,6 +190,7 @@ $('#umSave').onclick = async () => {
   else notice('خطأ: ' + (data.error || ''), true);
 };
 
+loadProfiles();
 loadUsers();
 </script>
 </body>

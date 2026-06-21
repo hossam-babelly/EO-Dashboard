@@ -65,6 +65,8 @@ header {
   display: inline-flex; align-items: center; gap: 7px;
 }
 .user-chip { font-size: 13px; font-weight: 700; background: rgba(216,196,176,.16); color: #f3ece2; padding: 7px 12px; border-radius: 9px; }
+.profile-switch { font-family: inherit; font-size: 13px; font-weight: 700; background: var(--copper); color: #fff; border: none; border-radius: 9px; padding: 8px 10px; cursor: pointer; }
+.profile-switch option { color: var(--text); }
 .user-chip .role { color: var(--champagne); opacity: .8; font-size: 11px; margin-inline-start: 5px; }
 .btn-gold { background: var(--copper); color: #fff; }
 .btn-gold:hover { background: var(--gold-light); }
@@ -146,7 +148,11 @@ main { padding: 22px 28px 60px; max-width: 1500px; margin: 0 auto; }
 .filters .reset { margin-inline-start: auto; }
 
 /* ===== View tabs ===== */
-.views { display: flex; gap: 6px; margin-bottom: 14px; }
+.views { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+.view-group { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
+.view-group .view-tab { border: none; background: transparent; padding: 7px 14px; }
+.view-group .view-tab.active { background: var(--navy); color: #fff; }
+#dataTabs .view-tab.active { background: var(--copper); }
 .view-tab {
   font-family: inherit; cursor: pointer; border: 1px solid var(--border);
   background: var(--surface); padding: 9px 18px; border-radius: 10px;
@@ -305,6 +311,7 @@ td.mt-ctrl .mt-dt { display: inline-block; margin-top: 5px; margin-inline-start:
 .rep-cols { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 18px; padding: 10px 12px; background: var(--section-bg); border: 1px solid var(--border); border-radius: 10px; }
 .rep-col { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .rep-col input { width: 15px; height: 15px; accent-color: var(--copper); }
+.rep-viewinfo { font-size: 13px; font-weight: 800; color: var(--copper-deep); background: var(--section-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; text-align: center; }
 .rep-layout { display: flex; gap: 8px; margin-bottom: 16px; }
 .rep-lay { flex: 1; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); border-radius: 10px; padding: 9px 6px; transition: .15s; }
 .rep-lay:hover { border-color: var(--copper); color: var(--copper-deep); }
@@ -464,4 +471,7 @@ td.mt-ctrl .mt-dt { display: inline-block; margin-top: 5px; margin-inline-start:
 .role-admin { background: var(--red-bg); color: var(--red); }
 .role-editor { background: var(--blue-bg); color: var(--blue); }
 .role-viewer { background: var(--green-bg); color: var(--green); }
+.prof-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 10px; background: var(--section-bg); border: 1px solid var(--border); border-radius: 9px; }
+.prof-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer; }
+.prof-check input { width: 16px; height: 16px; accent-color: var(--copper); }
 @media (max-width: 760px) { .u-form { grid-template-columns: 1fr 1fr; } }

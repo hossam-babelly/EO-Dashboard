@@ -175,7 +175,77 @@ async function paginate(rows, COLS, logo) {
 }
 
 // ===== شكل التقرير: جدول (افتراضي) / كانبان / تقويم =====
-let reportLayout = 'table';
+// التقرير يتبع العرض الحالي: نوع المعلومات (مهام/اجتماعات) + شكلها (جدول/كانبان/تقويم)
+function curShape() { return (typeof state !== 'undefined' && state.shape) || 'table'; }
+function curData() { return (typeof state !== 'undefined' && state.dataType) || 'tasks'; }
+function meetReportRows() { return (typeof meetingRows === 'function') ? meetingRows() : []; }
+function hasReportData() { return curData() === 'meetings' ? meetReportRows().length : reportTasks().length; }
+const M_STATUS_R = { required: 'مطلوب', scheduled: 'مجدول', done: 'تم' };
+function rptWrap(inner, logo, count) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">${headerBlock(logo, count)}${inner}<div style="padding:0 24px 10px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div></div>`;
+}
+function tdCss() { return `padding:7px 6px;font-size:11.5px;border:1px solid ${RB.line};vertical-align:top;text-align:right;white-space:pre-line`; }
+
+// جدول الاجتماعات
+function meetingsTableHTML(rows, logo) {
+  const th = ['اسم الاجتماع', 'المشروع', 'الملف', 'المسؤول', 'موعد الاجتماع', 'حالة الاجتماع'];
+  const head = th.map((h) => `<th style="background:${RB.ink};color:${RB.champagne};padding:8px 6px;font-size:12px;border:1px solid ${RB.copperDeep};text-align:right">${esc(h)}</th>`).join('');
+  const body = rows.map((r, i) => `<tr style="background:${i % 2 ? '#faf5ee' : '#fff'};page-break-inside:avoid">
+      <td style="${tdCss()};font-weight:700;color:${RB.copperDeep}">🤝 ${esc(r.m.title)}</td>
+      <td style="${tdCss()}">${esc(r.t.project)}</td>
+      <td style="${tdCss()}">${esc(r.t.file)}</td>
+      <td style="${tdCss()}">${esc(r.t.owner)}</td>
+      <td style="${tdCss()}">${r.m.status === 'scheduled' ? esc(r.m.datetime || '') : '—'}</td>
+      <td style="${tdCss()};font-weight:700">${M_STATUS_R[r.m.status] || ''}</td></tr>`).join('') || `<tr><td colspan="6" style="${tdCss()};text-align:center;color:${RB.muted}">لا اجتماعات</td></tr>`;
+  return rptWrap(`<div style="padding:12px 24px 4px"><table style="width:100%;border-collapse:collapse;border:1px solid ${RB.copperDeep}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`, logo, rows.length);
+}
+// كانبان الاجتماعات
+function meetingsKanbanHTML(rows, logo) {
+  const cols = ['required', 'scheduled', 'done'];
+  const by = { required: [], scheduled: [], done: [] };
+  rows.forEach((r) => { (by[r.m.status] || by.required).push(r); });
+  const card = (r) => `<div style="border:1px solid ${RB.line};border-inline-start:4px solid ${RB.copper};border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff">
+      <div style="font-weight:800;color:${RB.ink};font-size:12.5px;margin-bottom:4px">🤝 ${esc(r.m.title)}</div>
+      <div style="font-size:11.5px;color:${RB.ink}">${esc(r.t.project)}${r.t.file ? ' — ' + esc(r.t.file) : ''}</div>
+      <div style="font-size:11px;color:${RB.muted};margin-top:4px">${r.m.status === 'scheduled' ? esc(r.m.datetime || '') + ' · ' : ''}${esc((r.t.owner || '').split('\n')[0])}</div></div>`;
+  const colHtml = cols.map((s) => `<div style="flex:1;min-width:0;background:#faf6f0;border:1px solid ${RB.line};border-radius:10px;padding:8px">
+      <div style="font-weight:800;color:${RB.ink};padding:6px 4px;border-bottom:2px solid ${RB.copper};margin-bottom:8px;display:flex;justify-content:space-between"><span>${M_STATUS_R[s]}</span><span style="color:${RB.copper}">${by[s].length}</span></div>
+      ${by[s].map(card).join('') || `<div style="color:${RB.muted};font-size:11px;text-align:center;padding:10px">—</div>`}</div>`).join('');
+  return rptWrap(`<div style="display:flex;gap:10px;padding:14px 18px;align-items:flex-start">${colHtml}</div>`, logo, rows.length);
+}
+// تقويم الاجتماعات (المجدولة فقط)
+function meetingsCalendarHTML(rows, logo) {
+  rows = rows.filter((r) => r.m.status === 'scheduled' && r.m.datetime);
+  let y = state.calY, m = state.calM;
+  if (y == null) { const d = new Date(); y = d.getFullYear(); m = d.getMonth(); }
+  const monthName = new Date(y, m, 1).toLocaleDateString('ar-SY-u-nu-latn', { month: 'long', year: 'numeric' });
+  const startDow = (new Date(y, m, 1).getDay() + 1) % 7;
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const byDay = {};
+  rows.forEach((r) => { const [ty, tm, td] = r.m.datetime.slice(0, 10).split('-').map(Number); if (ty === y && tm === m + 1) (byDay[td] || (byDay[td] = [])).push(r); });
+  const dows = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+  let cells = dows.map((d) => `<div style="text-align:center;font-weight:800;color:${RB.muted};font-size:11px;padding:4px">${d}</div>`).join('');
+  for (let i = 0; i < startDow; i++) cells += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const items = (byDay[d] || []).map((r) => `<div style="font-size:9.5px;background:${RB.copper};color:#fff;border-radius:4px;padding:2px 4px;margin-bottom:2px;overflow:hidden;line-height:1.35"><div style="font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🤝 ${esc(r.m.title)}</div><div style="opacity:.9">${esc((r.m.datetime || '').slice(11))} · ${esc(r.t.project)}</div></div>`).join('');
+    cells += `<div style="border:1px solid ${RB.line};border-radius:6px;min-height:62px;padding:4px"><div style="font-size:10px;font-weight:800;color:${RB.muted};margin-bottom:2px">${d}</div>${items}</div>`;
+  }
+  return rptWrap(`<div style="text-align:center;font-size:16px;font-weight:800;color:${RB.ink};padding:10px">${esc(monthName)}</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;padding:0 18px 14px">${cells}</div>`, logo, rows.length);
+}
+
+// اختيار قالب HTML حسب العرض الحالي (لكل الأشكال عدا جدول المهام الذي له مسار مرقّم خاص)
+function buildLayoutHTML(logo) {
+  const shape = curShape(), data = curData();
+  if (data === 'meetings') {
+    const rows = meetReportRows();
+    if (shape === 'kanban') return meetingsKanbanHTML(rows, logo);
+    if (shape === 'calendar') return meetingsCalendarHTML(rows, logo);
+    return meetingsTableHTML(rows, logo);
+  }
+  const rows = reportTasks();
+  if (shape === 'kanban') return kanbanHTML(rows, logo);
+  return calendarHTML(rows, logo);
+}
 
 // تحويل عنصر HTML إلى canvas (للكانبان/التقويم)
 async function renderHtmlCanvas(html) {
@@ -259,9 +329,7 @@ function calendarHTML(rows, logo) {
 
 async function exportLayoutPDF() {
   const logo = await logoSmall(34);
-  const rows = reportTasks();
-  const html = reportLayout === 'kanban' ? kanbanHTML(rows, logo) : calendarHTML(rows, logo);
-  const canvas = await renderHtmlCanvas(html);
+  const canvas = await renderHtmlCanvas(buildLayoutHTML(logo));
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
   addCanvasPaged(pdf, canvas, true);
@@ -270,9 +338,7 @@ async function exportLayoutPDF() {
 
 async function exportLayoutWord() {
   const logo = await logoSmall(34);
-  const rows = reportTasks();
-  const html = reportLayout === 'kanban' ? kanbanHTML(rows, logo) : calendarHTML(rows, logo);
-  const canvas = await renderHtmlCanvas(html);
+  const canvas = await renderHtmlCanvas(buildLayoutHTML(logo));
   const DOC_W = 1040, h = Math.round(DOC_W * canvas.height / canvas.width);
   const img = `<div><img src="${canvas.toDataURL('image/jpeg', 0.95)}" width="${DOC_W}" height="${h}"></div>`;
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>تقرير المهام</title>`
@@ -283,7 +349,7 @@ async function exportLayoutWord() {
 
 // PDF: نرسم كل صفحة كصورة مستقلّة ونضيفها لصفحة PDF — لا قصّ، مهام كاملة، ترويسة مكرّرة
 async function exportPDF() {
-  if (reportLayout !== 'table') return exportLayoutPDF();
+  if (!(curData() === 'tasks' && curShape() === 'table')) return exportLayoutPDF();
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const logo = await logoSmall(34);
@@ -309,7 +375,7 @@ async function exportPDF() {
 
 // Word: نضع نفس صور صفحات الـ PDF (كل صفحة صورة كاملة) فيصبح مطابقاً للـ PDF بصرياً
 async function exportWord() {
-  if (reportLayout !== 'table') return exportLayoutWord();
+  if (!(curData() === 'tasks' && curShape() === 'table')) return exportLayoutWord();
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const logo = await logoSmall(34);
@@ -336,6 +402,7 @@ async function exportWord() {
 }
 
 async function exportExcel() {
+  if (!(curData() === 'tasks' && curShape() === 'table')) { toast('تصدير Excel متاح لجدول المهام فقط', true); return; }
   const rows = reportTasks().map(reportRow);
   const COLS = activeCols();
   const wb = new ExcelJS.Workbook();
@@ -410,24 +477,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const open = document.getElementById('reportBtn');
   const back = document.getElementById('reportModalBack');
   const close = () => back && back.classList.remove('open');
+  const colsWrap = document.getElementById('reportColsWrap');
+  const excelBtnEl = document.getElementById('reportExcel');
+  const info = document.getElementById('reportViewInfo');
+  const SHAPE_AR = { table: 'جدول', kanban: 'كانبان', calendar: 'تقويم' };
   if (open && back) open.onclick = () => {
-    if (!reportTasks().length) { toast('لا توجد مهام معروضة لتوليد التقرير', true); return; }
+    if (!hasReportData()) { toast('لا توجد بيانات معروضة لتوليد التقرير', true); return; }
+    // التقرير يتبع العرض الحالي؛ الأعمدة و Excel لجدول المهام فقط
+    const isTaskTable = curData() === 'tasks' && curShape() === 'table';
+    if (colsWrap) colsWrap.style.display = isTaskTable ? '' : 'none';
+    if (excelBtnEl) excelBtnEl.style.display = isTaskTable ? '' : 'none';
+    if (info) info.textContent = `سيُصدَّر حسب العرض الحالي: ${curData() === 'meetings' ? 'الاجتماعات' : 'المهام'} — ${SHAPE_AR[curShape()] || 'جدول'}`;
     back.classList.add('open');
   };
   const cl = document.getElementById('reportClose'); if (cl) cl.onclick = close;
   if (back) back.onclick = (e) => { if (e.target === back) close(); };
-  // اختيار شكل التقرير: جدول/كانبان/تقويم (الأعمدة و Excel للجدول فقط)
-  const layWrap = document.getElementById('reportLayout');
-  const colsWrap = document.getElementById('reportColsWrap');
-  const excelBtnEl = document.getElementById('reportExcel');
-  if (layWrap) layWrap.querySelectorAll('.rep-lay').forEach((b) => b.onclick = () => {
-    layWrap.querySelectorAll('.rep-lay').forEach((x) => x.classList.remove('active'));
-    b.classList.add('active');
-    reportLayout = b.dataset.layout;
-    const isTable = reportLayout === 'table';
-    if (colsWrap) colsWrap.style.display = isTable ? '' : 'none';
-    if (excelBtnEl) excelBtnEl.style.display = isTable ? '' : 'none';
-  });
   const pdf = document.getElementById('reportPdf'); if (pdf) pdf.onclick = runExport(pdf, exportPDF, 'PDF');
   const word = document.getElementById('reportWord'); if (word) word.onclick = runExport(word, exportWord, 'Word');
   const excel = document.getElementById('reportExcel'); if (excel) excel.onclick = runExport(excel, exportExcel, 'Excel');

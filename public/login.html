@@ -32,13 +32,17 @@
     <h1>لوحة الإدارة التنفيذية</h1>
     <p>مجموعة سنكري القابضة</p>
   </div>
-  <div class="login-body">
+  <div class="login-body" id="loginBody">
     <div class="login-err" id="err"></div>
     <label for="email">البريد الإلكتروني</label>
     <input id="email" type="email" autocomplete="username" required>
     <label for="password">كلمة المرور</label>
     <div class="pw-wrap" style="margin-bottom:16px"><input id="password" type="password" autocomplete="current-password" required style="margin-bottom:0"><button type="button" class="pw-eye" data-target="password" aria-label="إظهار كلمة المرور">👁</button></div>
     <button type="submit" id="btn">دخول</button>
+  </div>
+  <div class="login-body" id="chooserBody" style="display:none">
+    <p style="font-weight:800;color:var(--navy);text-align:center;margin-bottom:16px">اختر البروفايل للدخول</p>
+    <div id="profileChoices" style="display:flex;flex-direction:column;gap:10px"></div>
   </div>
 </form>
 <script>
@@ -60,12 +64,35 @@ form.onsubmit = async (e) => {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'فشل الدخول');
-    location.href = '/';
+    if (data.needProfile && (data.profiles || []).length > 1) {
+      showChooser(data.profiles);
+    } else {
+      location.href = '/';
+    }
   } catch (e2) {
     err.textContent = e2.message; err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'دخول';
   }
 };
+function showChooser(profiles) {
+  document.getElementById('loginBody').style.display = 'none';
+  const box = document.getElementById('profileChoices');
+  box.innerHTML = '';
+  profiles.forEach((p) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = p.label || p.tab;
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: p.tab }) });
+        const d = await r.json(); if (!d.ok) throw new Error(d.error);
+        location.href = '/';
+      } catch (e3) { b.disabled = false; alert('تعذّر: ' + e3.message); }
+    };
+    box.appendChild(b);
+  });
+  document.getElementById('chooserBody').style.display = 'block';
+}
 </script>
 </body>
 </html>
