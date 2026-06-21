@@ -68,6 +68,8 @@ async function fetchMe() {
   const data = await res.json();
   state.me = data.user;
   state.attachmentsEnabled = !!data.attachmentsEnabled;
+  state.telegramEnabled = !!data.telegramEnabled;
+  state.telegramBot = data.telegramBot || '';
   state.profile = data.profile || '';
   state.profiles = data.profiles || [];
 }
@@ -119,6 +121,7 @@ const REMINDER_METHODS = [
   { key: 'email', label: '📧 بريد إلكتروني' },
   { key: 'push', label: '🔔 إشعار متصفح/حاسوب' },
   { key: 'calendar', label: '🗓️ تقويم الحاسوب' },
+  { key: 'telegram', label: '✈️ تيليجرام' },
 ];
 const REMINDER_OFFSETS = [
   { key: 'morning', label: 'صباح يوم المهمة' },
@@ -1601,7 +1604,20 @@ function openAccount() {
   $('acctEmail').value = state.me.email || '';
   $('acctFirst').value = state.me.firstName || '';
   $('acctLast').value = state.me.lastName || '';
+  $('acctPhone').value = state.me.phone || '';
   $('acctPw').value = '';
+  // قسم تيليجرام: حالة الربط + كيفية الربط
+  const tg = $('acctTelegram');
+  if (tg) {
+    if (!state.telegramEnabled) { tg.style.display = 'none'; }
+    else {
+      tg.style.display = '';
+      const bot = state.telegramBot ? `<a href="https://t.me/${esc(state.telegramBot)}" target="_blank" rel="noopener">@${esc(state.telegramBot)}</a>` : 'بوت اللوحة على تيليجرام';
+      tg.innerHTML = state.me.telegramLinked
+        ? '✅ حساب تيليجرام مربوط — ستصلك تذكيراتك على تيليجرام عند اختيارها.'
+        : `✈️ <b>لتفعيل تذكير تيليجرام:</b> احفظ رقمك أعلاه، ثم افتح ${bot} واضغط «📱 مشاركة رقمي» لربط حسابك (مرّة واحدة).`;
+    }
+  }
   $('acctModalBack').classList.add('open');
 }
 function closeAccount() { $('acctModalBack').classList.remove('open'); }
@@ -1612,13 +1628,14 @@ function closeAccount() { $('acctModalBack').classList.remove('open'); }
   const eye = $('acctEye'); if (eye) eye.onclick = () => { const i = $('acctPw'); i.type = i.type === 'password' ? 'text' : 'password'; eye.textContent = i.type === 'password' ? '👁' : '🙈'; };
   const sv = $('acctSave');
   if (sv) sv.onclick = async () => {
-    const body = { firstName: $('acctFirst').value.trim(), lastName: $('acctLast').value.trim() };
+    const body = { firstName: $('acctFirst').value.trim(), lastName: $('acctLast').value.trim(), phone: $('acctPhone').value.trim() };
     const pw = $('acctPw').value; if (pw) body.password = pw;
     sv.disabled = true; sv.textContent = '... حفظ';
     try {
       const res = await fetch('/api/account', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!data.ok) throw new Error(data.error);
       if (data.user) { state.me.name = data.user.name; state.me.firstName = data.user.firstName; state.me.lastName = body.lastName; }
+      state.me.phone = body.phone;
       toast('تم حفظ معلومات حسابك ✓'); closeAccount(); renderUser();
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
     sv.disabled = false; sv.textContent = '💾 حفظ';

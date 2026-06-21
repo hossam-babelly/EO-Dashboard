@@ -40,6 +40,7 @@
       <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
       <div class="fld"><label>الاسم الأول</label><input type="text" name="firstName" required placeholder="مثال: حسام"></div>
       <div class="fld"><label>الاسم الأخير</label><input type="text" name="lastName" placeholder="مثال: بابللي"></div>
+      <div class="fld"><label>رقم الهاتف (تيليجرام)</label><input type="tel" name="phone" dir="ltr" placeholder="+963…"></div>
       <div class="fld"><label>كلمة المرور</label>
         <div class="pw-wrap"><input type="password" name="password" id="addPw" required placeholder="••••••"><button type="button" class="pw-eye" data-target="addPw" aria-label="إظهار كلمة المرور">👁</button></div>
       </div>
@@ -68,6 +69,7 @@
         <div class="field"><label>الاسم الأول</label><input id="umFirst" type="text"></div>
         <div class="field"><label>الاسم الأخير</label><input id="umLast" type="text"></div>
       </div>
+      <div class="field"><label>رقم الهاتف (مع رمز الدولة — للتذكير عبر تيليجرام)</label><input id="umPhone" type="tel" dir="ltr" placeholder="+963956770724"></div>
       <div class="field"><label>الدور</label><select id="umRole"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
       <div class="field"><label>البروفايلات المتاحة (بلا تحديد = الكل)</label><div id="umProfiles" class="prof-checks"></div></div>
       <div class="field"><label>كلمة المرور (اتركها فارغة لعدم التغيير)</label>
@@ -148,6 +150,7 @@ function openEditUser(email) {
   $('#umFirst').value = u.firstName || '';
   $('#umLast').value = u.lastName || '';
   $('#umRole').value = u.role || 'viewer';
+  $('#umPhone').value = u.phone || '';
   $('#umPw').value = '';
   renderProfileChecks('#umProfiles', u.profiles || []);
   $('#uModalBack').classList.add('open');
@@ -179,7 +182,7 @@ $('#umCancel').onclick = closeEditUser;
 $('#uModalBack').onclick = (e) => { if (e.target === $('#uModalBack')) closeEditUser(); };
 $('#umSave').onclick = async () => {
   if (!editingEmail) return;
-  const body = { email: $('#umEmail').value.trim(), firstName: $('#umFirst').value.trim(), lastName: $('#umLast').value.trim(), role: $('#umRole').value, profiles: readProfileChecks('#umProfiles') };
+  const body = { email: $('#umEmail').value.trim(), firstName: $('#umFirst').value.trim(), lastName: $('#umLast').value.trim(), role: $('#umRole').value, phone: $('#umPhone').value.trim(), profiles: readProfileChecks('#umProfiles') };
   const pw = $('#umPw').value;
   if (pw) body.password = pw;
   const btn = $('#umSave'); btn.disabled = true; btn.textContent = '... حفظ';

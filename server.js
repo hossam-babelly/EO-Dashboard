@@ -17,6 +17,7 @@ const notify = require('./lib/notify');
 const store = require('./lib/store');
 const calendar = require('./lib/calendar');
 const drive = require('./lib/drive');
+const telegram = require('./lib/telegram');
 const { TZ } = require('./lib/dates');
 
 // طابع زمني «YYYY-MM-DD HH:MM» بتوقيت دمشق (أرقام لاتينية)
@@ -33,7 +34,7 @@ function authorName(u) {
 }
 
 const ROLES = ['viewer', 'editor', 'admin'];
-const REMINDER_METHODS = ['email', 'push', 'calendar'];
+const REMINDER_METHODS = ['email', 'push', 'calendar', 'telegram'];
 const REMINDER_OFFSETS = ['morning', '1d', '3d', '7d'];
 
 const app = express();
@@ -99,18 +100,18 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', async (req, res) => {
-  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled });
+  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '' });
   if (!(req.session && req.session.user)) return res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
   const user = { ...req.session.user };
-  // رمز التقويم الشخصي (للاشتراك في تغذية ICS)
+  // رمز التقويم الشخصي + حالة ربط تيليجرام
   if (store.enabled) {
     try {
       const full = (await store.getUsersFull()).find((u) => u.email.toLowerCase() === user.email.toLowerCase());
-      if (full) user.calToken = full.token;
+      if (full) { user.calToken = full.token; user.phone = full.phone || user.phone || ''; user.telegramLinked = !!full.telegramChatId; }
     } catch { /* تجاهل */ }
   }
   const profiles = await availableProfilesFor(req.session.user);
-  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, profile: activeTab(req), profiles });
+  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '', profile: activeTab(req), profiles });
 });
 
 // البروفايلات المتاحة للمستخدم الحالي
@@ -144,11 +145,13 @@ app.patch('/api/account', requireAuth, async (req, res) => {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
     const me = req.session.user;
     const patch = {};
-    const { firstName, lastName, password } = req.body || {};
+    const { firstName, lastName, password, phone } = req.body || {};
     if (firstName != null) patch.firstName = String(firstName).trim();
     if (lastName != null) patch.lastName = String(lastName).trim();
+    if (phone != null) patch.phone = String(phone).trim();
     if (password) patch.hash = await auth.hashPassword(password);
     await store.updateUser(String(me.email).toLowerCase(), patch);
+    if (phone != null) me.phone = String(phone).trim();
     // تحديث الجلسة بالاسم الجديد
     if (patch.firstName != null || patch.lastName != null) {
       const fn = patch.firstName != null ? patch.firstName : me.firstName;
@@ -170,11 +173,11 @@ app.get('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) 
 app.post('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
-    const { email, name, firstName, lastName, password, role, profiles } = req.body || {};
+    const { email, name, firstName, lastName, password, role, profiles, phone } = req.body || {};
     if (!email || !password) return res.status(400).json({ ok: false, error: 'البريد وكلمة المرور مطلوبان' });
     if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' });
     const hash = await auth.hashPassword(password);
-    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash, profiles: Array.isArray(profiles) ? profiles : [] });
+    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash, profiles: Array.isArray(profiles) ? profiles : [], phone });
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -191,6 +194,7 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
     if (active != null) patch.active = !!active;
     if (password) patch.hash = await auth.hashPassword(password);
     if (req.body && Array.isArray(req.body.profiles)) patch.profiles = req.body.profiles;
+    if (req.body && req.body.phone != null) patch.phone = String(req.body.phone).trim();
     if (newEmail != null && String(newEmail).trim() && String(newEmail).trim().toLowerCase() !== String(req.params.email).toLowerCase()) {
       const ne = String(newEmail).trim().toLowerCase();
       const all = (await store.getUsersFull()) || [];
@@ -624,6 +628,29 @@ app.get('/api/calendar/:token.ics', async (req, res) => {
   } catch (e) { res.status(500).send('ERROR: ' + e.message); }
 });
 
+// ===== Telegram webhook: ربط رقم المستخدم بحسابه عند مشاركته رقمه مع البوت =====
+app.post('/api/telegram/webhook', async (req, res) => {
+  if (process.env.TELEGRAM_WEBHOOK_SECRET && req.get('x-telegram-bot-api-secret-token') !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    return res.sendStatus(403);
+  }
+  res.sendStatus(200); // ردّ سريع لتيليجرام
+  try {
+    const msg = (req.body && req.body.message) || null;
+    if (!msg) return;
+    const chatId = msg.chat && msg.chat.id;
+    if (!chatId) return;
+    if (msg.contact && msg.contact.phone_number) {
+      const phone = telegram.normPhone(msg.contact.phone_number);
+      const linked = store.enabled ? await store.linkTelegram(phone, chatId) : null;
+      await telegram.sendMessage(chatId, linked
+        ? `✅ تم ربط رقمك بحساب «${linked.name}». ستصلك تذكيرات المهام هنا.`
+        : '⚠️ لم نجد مستخدماً بهذا الرقم على اللوحة. تأكّد من إدخال رقمك (مع رمز الدولة) في حسابك، ثم أعد المشاركة.');
+    } else {
+      await telegram.sendWelcome(chatId);
+    }
+  } catch (e) { console.warn('telegram webhook:', e.message); }
+});
+
 // المهمة المجدولة: ملخص يومي عبر البريد و Push (يستدعيها GitHub Actions)
 async function runDailyDigest(req, res) {
   const secret = req.get('x-cron-secret') || req.query.secret;
@@ -707,4 +734,8 @@ app.listen(PORT, async () => {
     }
   }
   console.log(`التخزين الدائم (المستخدمون/التذكيرات): ${store.enabled ? 'مفعّل' : 'معطّل — USERS_JSON فقط'}`);
+  // تسجيل webhook تيليجرام تلقائياً (لاستقبال ربط الأرقام)
+  if (telegram.enabled && process.env.APP_URL) {
+    telegram.setWebhook(`${process.env.APP_URL.replace(/\/$/, '')}/api/telegram/webhook`, process.env.TELEGRAM_WEBHOOK_SECRET).catch((e) => console.warn('telegram webhook reg:', e.message));
+  }
 });
