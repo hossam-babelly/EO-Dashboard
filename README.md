@@ -47,6 +47,8 @@ EO-Dashboard/
 - **بريد يومي:** اضبط `SMTP_*` و`NOTIFY_EMAIL` (واختيارياً `OWNER_EMAILS`).
 - **Web Push:** ولّد المفاتيح `node scripts/gen-vapid.js` واضبط `VAPID_*`.
 - **الجدولة:** يستدعي [GitHub Actions](.github/workflows/daily-digest.yml) نقطة `/api/cron/daily-digest` يومياً (يحتاج سرّي `APP_URL` و`CRON_SECRET` في المستودع).
+- **تذكيرات بالوقت الدقيق (بريد/تيليجرام دون فتح اللوحة):** يستدعي [workflow التذكيرات](.github/workflows/reminders.yml) نقطة `/api/cron/reminders` كل ٥ دقائق فتُرسل التذكيرات المستحقة في أوقاتها المضبوطة. التواريخ تُحفظ في تبويب `reminders` بملف الـ Data، وتُمنَع التكرارات عبر تبويب `sent`. التوقيت بتوقيت دمشق (UTC+3 ثابت)؛ خيارات اختيارية: `REMINDER_GRACE_MIN` (نافذة السماح للتذكيرات المتأخرة، الافتراضي 120 دقيقة) و`TZ_OFFSET_MIN` (الافتراضي 180).
+  - **لدقّة أعلى (كل دقيقة):** الحد الأدنى لجدولة GitHub هو ٥ دقائق وقد يتأخر وقت الذروة. للحصول على دقّة دقيقة واحدة أنشئ مهمة مجانية على [cron-job.org](https://cron-job.org): العنوان `https://<تطبيقك>.onrender.com/api/cron/reminders`، الطريقة POST، أضف ترويسة `x-cron-secret` بقيمة `CRON_SECRET`، والفاصل كل دقيقة. (هذا أيضاً يبقي خادم Render المجاني مستيقظاً.)
 
 ## ☁️ النشر على Render
 - استخدم [`render.yaml`](render.yaml) أو أنشئ Web Service يدوياً: `buildCommand: npm install`، `startCommand: npm start`.

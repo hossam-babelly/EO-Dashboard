@@ -28,6 +28,8 @@ function nowStamp() {
   return `${date} ${time}`;
 }
 
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
 // اسم المستخدم الكامل المستخدَم في سجلّ الأحداث (الاسم الكامل لا الأول فقط)
 function authorName(u) {
   return (u && (String(u.name || '').trim() || [u.firstName, u.lastName].filter(Boolean).join(' ').trim())) || 'مستخدم';
@@ -593,24 +595,62 @@ app.post('/api/push/subscribe', requireAuth, async (req, res) => {
 // ===== التذكيرات (لكل مستخدم/مهمة) =====
 app.get('/api/reminders', requireAuth, async (req, res) => {
   try {
-    const email = req.session?.user?.email;
+    let email = req.session?.user?.email;
+    // المدير يستطيع جلب تذكيرات مستخدم آخر عبر ?user=
+    if (req.query.user && auth.hasRole(req.session.user, 'admin')) email = String(req.query.user).toLowerCase();
     if (!store.enabled || !email) return res.json({ ok: true, reminders: {}, storeEnabled: store.enabled });
     res.json({ ok: true, reminders: await store.getReminders(email), methods: REMINDER_METHODS, offsets: REMINDER_OFFSETS });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// تطبيع مصفوفة التوقيتات [{t,count,every}]
+function sanitizeTimes(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((x) => ({ t: /^\d{1,2}:\d{2}$/.test(String(x && x.t)) ? x.t : '', count: Math.min(20, Math.max(1, parseInt(x && x.count, 10) || 1)), every: Math.min(720, Math.max(0, parseInt(x && x.every, 10) || 0)) }))
+    .filter((x) => x.t);
+}
+
 app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
-    const email = req.session.user.email;
+    let email = req.session.user.email;
+    // المدير يضبط تذكيراً لمستخدم آخر عبر body.user
+    if (req.body.user && auth.hasRole(req.session.user, 'admin')) email = String(req.body.user).toLowerCase();
     const methods = (req.body.methods || []).filter((m) => REMINDER_METHODS.includes(m));
-    const offsets = (req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
+    const days = (req.body.days || req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
     const dates = (req.body.dates || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
-    const time = /^\d{1,2}:\d{2}$/.test(String(req.body.time || '')) ? req.body.time : '';
-    const repeatCount = Math.min(20, Math.max(0, parseInt(req.body.repeatCount, 10) || 0));
-    const repeatEvery = Math.min(720, Math.max(0, parseInt(req.body.repeatEvery, 10) || 0));
-    await store.setReminder(email, req.params.row, methods, offsets, dates, time, repeatCount, repeatEvery);
+    const times = sanitizeTimes(req.body.times);
+    await store.setReminder(email, req.params.row, methods, days, dates, times);
     res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// إطلاق تذكير لحظي للمستخدم الحالي (بريد/تيليجرام) — يستدعيه محرّك التذكير عميلياً في الوقت المضبوط
+app.post('/api/tasks/:row/notify', requireAuth, async (req, res) => {
+  try {
+    const methods = (req.body.methods || []).filter((m) => ['email', 'telegram'].includes(m));
+    if (!methods.length) return res.json({ ok: true, sent: [] });
+    const tasks = await loadTasks(activeTab(req));
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    if (!t) return res.status(404).json({ ok: false, error: 'مهمة غير موجودة' });
+    const u = req.session.user;
+    const isOwner = (t.owners || []).map((o) => o.trim()).includes(String(u.name || '').trim());
+    const ownerNote = (!isOwner && t.owner) ? ` — المسؤول المعني: ${t.owner.replace(/\n+/g, '، ')}` : '';
+    const title = `${t.project}${t.file ? ' — ' + t.file : ''}`;
+    const line = `🔔 تذكير بمهمة: ${title}${ownerNote}${t.deadlineRaw ? ` (الموعد: ${t.deadlineRaw})` : ''}`;
+    const appUrl = process.env.APP_URL || '';
+    const sent = [];
+    if (methods.includes('email') && notify.emailEnabled()) {
+      try { await notify.sendEmail({ to: u.email, subject: `تذكير: ${t.project}`, html: `<div style="font-family:Cairo,Arial,sans-serif;direction:rtl;color:#2b2823">${esc(line)}${appUrl ? `<p style="margin-top:14px"><a href="${appUrl}" style="background:#bd6a43;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">فتح اللوحة</a></p>` : ''}</div>` }); sent.push('email'); }
+      catch (e) { console.warn('notify email', e.message); }
+    }
+    if (methods.includes('telegram') && telegram.enabled && store.enabled) {
+      try {
+        const full = (await store.getUsersFull() || []).find((x) => x.email.toLowerCase() === u.email.toLowerCase());
+        if (full && full.telegramChatId) { const ok = await telegram.sendMessage(full.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`); if (ok) sent.push('telegram'); }
+      } catch (e) { console.warn('notify telegram', e.message); }
+    }
+    res.json({ ok: true, sent });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
@@ -661,13 +701,8 @@ async function runDailyDigest(req, res) {
     const tasks = await loadTasks(activeTab(req), true);
     const appUrl = process.env.APP_URL || '';
     const digest = await notify.sendDailyDigest(tasks, appUrl);
-    // تذكيرات لكل مستخدم/مهمة حسب تفضيلاتهم
-    let reminders = { emails: 0, push: 0 };
-    if (store.enabled) {
-      const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
-      reminders = await notify.sendDueReminders(byRow, await store.getAllReminders(), appUrl, store);
-    }
-    res.json({ ok: true, mail: { enabled: notify.emailEnabled(), provider: notify.emailProvider() }, digest, reminders });
+    // ملاحظة: تذكيرات المهام بالتاريخ/الوقت تُطلَق عميلياً في أوقاتها المضبوطة (لا من الـ cron)
+    res.json({ ok: true, mail: { enabled: notify.emailEnabled(), provider: notify.emailProvider() }, digest });
   } catch (e) {
     console.error('daily-digest', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -675,6 +710,33 @@ async function runDailyDigest(req, res) {
 }
 app.post('/api/cron/daily-digest', runDailyDigest);
 app.get('/api/cron/daily-digest', runDailyDigest);
+
+// نبضة التذكيرات بالوقت الدقيق: يستدعيها مجدول خارجي كل دقيقة/خمس دقائق فتصل التذكيرات دون فتح اللوحة
+async function runReminderTick(req, res) {
+  const secret = req.get('x-cron-secret') || req.query.secret;
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ ok: false, error: 'رمز غير صالح' });
+  }
+  try {
+    if (!store.enabled) return res.json({ ok: true, skipped: 'store-disabled' });
+    const reminders = await store.getAllReminders();
+    // خريطة الصف→المهمة عبر كل البروفايلات (البروفايل الافتراضي له الأولوية عند تطابق رقم الصف)
+    const profiles = await store.getProfiles();
+    const tasksByRow = {};
+    for (const p of profiles) {
+      try { const tasks = await loadTasks(p.tab, true); for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+      catch (e) { console.warn('reminder-tick tab', p.tab, e.message); }
+    }
+    const appUrl = process.env.APP_URL || '';
+    const result = await notify.sendScheduledReminders(tasksByRow, reminders, appUrl, store);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('reminder-tick', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+}
+app.post('/api/cron/reminders', runReminderTick);
+app.get('/api/cron/reminders', runReminderTick);
 
 // نسخة node-fetch الفعلية المثبّتة (للتشخيص) — نبحث في المواقع المحتملة داخل node_modules
 function pkgVersion(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')).version; } catch { return null; } }

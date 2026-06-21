@@ -124,7 +124,7 @@ const REMINDER_METHODS = [
   { key: 'telegram', label: '✈️ تيليجرام' },
 ];
 const REMINDER_OFFSETS = [
-  { key: 'morning', label: 'صباح يوم المهمة' },
+  { key: 'morning', label: 'موعد المهمة' },
   { key: '1d', label: 'قبل يوم' },
   { key: '3d', label: 'قبل 3 أيام' },
   { key: '7d', label: 'قبل أسبوع' },
@@ -1131,6 +1131,7 @@ function renderMeetingsCalendar() {
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
+  resetRemContext();
   $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
   const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
   const meetingField = (t.meetings && t.meetings.length)
@@ -1201,45 +1202,70 @@ async function deleteAttachment(id, idx) {
 }
 
 // قسم «تذكيراتي» داخل نافذة المهمة (لكل مستخدم)
+// تهيئة سياق تذكيرات المهمة عند فتحها (المستخدم المُحدَّد + خريطة تذكيراته)
+function resetRemContext() { state.remUser = state.me ? state.me.email : ''; state.remMap = state.reminders || {}; }
+function remUserName() {
+  if (!state.me) return '';
+  if (state.remUser === state.me.email) return state.me.name;
+  const u = (state.users || []).find((x) => x.email === state.remUser);
+  return u ? u.name : state.remUser;
+}
+// التفضيل الافتراضي: المسؤول المعني يحصل على إشعار متصفح قبل يوم الساعة 09:00 (قابل للتعديل/الإلغاء)
+function remDefaultPref(t) {
+  const isOwner = (t.owners || []).map((o) => o.trim()).includes(String(remUserName() || '').trim());
+  return isOwner
+    ? { methods: ['push'], days: ['1d'], dates: [], times: [{ t: '09:00', count: 1, every: 0 }] }
+    : { methods: [], days: [], dates: [], times: [] };
+}
+function remTimeRow(tm) {
+  tm = tm || {};
+  return `<div class="rem-time-row">
+    <input type="time" class="rt-t" value="${esc(tm.t || '09:00')}">
+    <span>كرّر</span><input type="number" class="rt-count" min="1" max="20" value="${esc(tm.count || 1)}" title="عدد مرات التكرار">
+    <span>مرّة، كل</span><input type="number" class="rt-every" min="0" max="720" value="${esc(tm.every || 0)}" title="فترة التكرار بالدقائق">
+    <span>دقيقة</span><button type="button" class="rt-del" title="حذف التوقيت">✕</button>
+  </div>`;
+}
 function reminderSection(t) {
   if (!state.storeEnabled) {
-    return `<div class="rem-box"><label class="rem-title">🔔 تذكيراتي</label>
+    return `<div id="remSection" class="rem-box"><label class="rem-title">🔔 التذكيرات</label>
       <div style="color:var(--muted);font-size:13px">ميزة التذكيرات تتطلب تفعيل التخزين الدائم (DATA_SHEET_ID).</div></div>`;
   }
-  const pref = state.reminders[String(t.id)] || { methods: [], offsets: [], dates: [], time: '', repeatCount: '', repeatEvery: '' };
-  const chk = (arr, item) => arr.includes(item.key) ? 'checked' : '';
+  const saved = (state.remMap || {})[String(t.id)];
+  const pref = saved || remDefaultPref(t);
+  const chk = (arr, item) => (arr || []).includes(item.key) ? 'checked' : '';
   const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
-  const offsets = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="offset" value="${o.key}" ${chk(pref.offsets, o)}> ${o.label}</label>`).join('');
+  const days = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="day" value="${o.key}" ${chk(pref.days, o)}> ${o.label}</label>`).join('');
   const datesHtml = (pref.dates || []).map((d) => remDateChip(d)).join('');
-  // تنبيه افتراضي: المسؤول المعني يصله إشعار متصفح قبل يوم عند دخوله — حتى دون ضبط يدوي
-  const isMine = state.me && (t.owners || []).includes(state.me.name);
-  const defaultHint = isMine ? '<div class="rem-cal" style="margin-top:0;margin-bottom:8px;color:var(--green)">✓ أنت المسؤول: سيصلك إشعار متصفح <b>قبل يوم</b> من الموعد افتراضياً عند دخولك. يمكنك تخصيص الطرق/الأوقات أدناه.</div>' : '';
+  const timesHtml = (pref.times && pref.times.length ? pref.times : [{ t: '09:00', count: 1, every: 0 }]).map(remTimeRow).join('');
+  const userPicker = isAdmin()
+    ? `<div class="rem-group"><span class="rem-sub">إعدادات المستخدم:</span>
+        <select id="remUserSel">${(state.users || []).map((u) => `<option value="${esc(u.email)}" ${u.email === state.remUser ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>`
+    : '';
   const calUrl = state.me && state.me.calToken ? `${location.origin}/api/calendar/${state.me.calToken}.ics` : '';
   const calHint = calUrl
-    ? `<div class="rem-cal">لإضافة مهامك إلى تقويم حاسوبك، اشترك بهذا الرابط مرة واحدة:
+    ? `<div class="rem-cal">لإضافة المهام إلى تقويم الحاسوب، اشترك بهذا الرابط مرة واحدة:
         <div class="rem-cal-row"><input id="calUrl" readonly value="${esc(calUrl)}"><button class="btn btn-cancel" id="calCopy" type="button">نسخ</button></div></div>`
     : '';
-  return `<div class="rem-box">
-    <label class="rem-title">🔔 تذكيراتي لهذه المهمة</label>
-    ${defaultHint}
+  return `<div id="remSection" class="rem-box">
+    <label class="rem-title">🔔 تذكيرات هذه المهمة</label>
+    ${userPicker}
     <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
-    <div class="rem-group"><span class="rem-sub">توقيت التذكير:</span>${offsets}</div>
-    <div class="rem-group"><span class="rem-sub">وقت التنبيه:</span>
-      <input type="time" id="remTime" value="${esc(pref.time || '09:00')}" style="width:auto">
-      <span class="rem-sub" style="min-width:auto">التكرار:</span>
-      <input type="number" id="remRepeatCount" min="1" max="20" value="${esc(pref.repeatCount || '1')}" style="width:64px" title="عدد مرات التكرار">
-      <span style="font-size:12.5px;color:var(--muted)">مرّة، كل</span>
-      <input type="number" id="remRepeatEvery" min="0" max="720" value="${esc(pref.repeatEvery || '0')}" style="width:70px" title="الدقائق بين التكرارات">
-      <span style="font-size:12.5px;color:var(--muted)">دقيقة</span>
-    </div>
-    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">تواريخ ثابتة:</span>
+    <div class="rem-group"><span class="rem-sub">أيام التذكير:</span>${days}</div>
+    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">+ تواريخ ثابتة:</span>
       <div style="flex:1">
         <div id="remDates" class="rem-dates">${datesHtml}</div>
         <div class="rem-cal-row" style="margin-top:6px"><input type="date" id="remDateInput"><button class="btn btn-cancel" id="remDateAdd" type="button">➕ أضف تاريخاً</button></div>
       </div>
     </div>
+    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">توقيت التذكير (سوريا):</span>
+      <div style="flex:1">
+        <div id="remTimesList">${timesHtml}</div>
+        <button class="btn btn-cancel" id="remTimeAdd" type="button" style="margin-top:4px">➕ أضف توقيتاً</button>
+      </div>
+    </div>
     <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">💾 حفظ التذكير</button>
-    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">يُطلَق إشعار المتصفح أثناء فتحك للوحة بحسابك. التوقيت الدقيق والتكرار يعملان واللوحة مفتوحة.</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">تُطلَق التذكيرات بكل الطرق المختارة في الأيام والأوقات المحدّدة، أثناء فتح المستلِم للوحة بحسابه.</div>
     ${calHint}
   </div>`;
 }
@@ -1247,8 +1273,19 @@ function reminderSection(t) {
 function remDateChip(d) {
   return `<span class="rem-date" data-date="${esc(d)}">${esc(d)} <button type="button" class="rem-date-x" data-date="${esc(d)}" aria-label="حذف">✕</button></span>`;
 }
+function refreshReminderSection(t) { const el = $('remSection'); if (el) { el.outerHTML = reminderSection(t); bindReminderSection(t); } }
 function bindReminderSection(t) {
   if (!state.storeEnabled) return;
+  // مبدّل المستخدم (المدير): جلب تذكيرات المستخدم المختار لهذه المهمة
+  const usel = $('remUserSel');
+  if (usel) usel.onchange = async () => {
+    const email = usel.value;
+    try {
+      if (email === state.me.email) { state.remUser = email; state.remMap = state.reminders; }
+      else { const d = await (await fetch('/api/reminders?user=' + encodeURIComponent(email))).json(); state.remUser = email; state.remMap = d.ok ? (d.reminders || {}) : {}; }
+      refreshReminderSection(t);
+    } catch (e) { toast('تعذّر جلب إعدادات المستخدم: ' + e.message, true); }
+  };
   const datesBox = $('remDates');
   const dateAdd = $('remDateAdd');
   if (dateAdd) dateAdd.onclick = () => {
@@ -1259,19 +1296,30 @@ function bindReminderSection(t) {
     if (inp) inp.value = '';
   };
   if (datesBox) datesBox.onclick = (e) => { const x = e.target.closest('.rem-date-x'); if (x) x.closest('.rem-date').remove(); };
+  // قائمة التوقيتات: إضافة/حذف
+  const timesList = $('remTimesList');
+  const timeAdd = $('remTimeAdd');
+  if (timeAdd) timeAdd.onclick = () => { timesList.insertAdjacentHTML('beforeend', remTimeRow({ t: '09:00', count: 1, every: 0 })); };
+  if (timesList) timesList.onclick = (e) => { const x = e.target.closest('.rt-del'); if (x) x.closest('.rem-time-row').remove(); };
   const save = $('remSave');
   if (save) save.onclick = async () => {
     const methods = [...document.querySelectorAll('[data-rem="method"]:checked')].map((x) => x.value);
-    const offsets = [...document.querySelectorAll('[data-rem="offset"]:checked')].map((x) => x.value);
+    const daysSel = [...document.querySelectorAll('[data-rem="day"]:checked')].map((x) => x.value);
     const dates = [...(datesBox ? datesBox.querySelectorAll('.rem-date') : [])].map((x) => x.dataset.date);
-    const time = $('remTime') ? $('remTime').value : '';
-    const repeatCount = $('remRepeatCount') ? $('remRepeatCount').value : '';
-    const repeatEvery = $('remRepeatEvery') ? $('remRepeatEvery').value : '';
+    const times = [...document.querySelectorAll('#remTimesList .rem-time-row')].map((r) => ({
+      t: r.querySelector('.rt-t').value,
+      count: Number(r.querySelector('.rt-count').value) || 1,
+      every: Number(r.querySelector('.rt-every').value) || 0,
+    })).filter((x) => /^\d{1,2}:\d{2}$/.test(x.t));
     save.disabled = true; save.textContent = '... حفظ';
     try {
-      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ methods, offsets, dates, time, repeatCount, repeatEvery }) });
+      const body = { methods, days: daysSel, dates, times };
+      if (state.remUser && state.remUser !== state.me.email) body.user = state.remUser;
+      const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!data.ok) throw new Error(data.error);
-      state.reminders[String(t.id)] = { methods, offsets, dates, time, repeatCount, repeatEvery };
+      const pref = { methods, days: daysSel, dates, times };
+      (state.remMap || (state.remMap = {}))[String(t.id)] = pref;
+      if (state.remUser === state.me.email) state.reminders[String(t.id)] = pref;
       toast('تم حفظ التذكير ✓');
       scheduleReminders();
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
@@ -1436,58 +1484,55 @@ function showLocalNotif(title, body) {
   } catch { /* تجاهل */ }
 }
 
-// تاريخ التذكير = (الموعد − عدد الأيام) عند الساعة المحدّدة
-function reminderFireDate(deadlineIso, days, time) {
-  const [y, m, d] = deadlineIso.split('-').map(Number);
-  const [hh, mm] = String(time || REM_DEFAULT_TIME).split(':').map(Number);
-  return new Date(y, m - 1, d - days, hh || 9, mm || 0, 0, 0);
-}
-
-// أحداث التذكير المستحقّة للمستخدم الحالي (افتراضي للمسؤول + التذكيرات المضبوطة يدوياً)
+// أحداث التذكير المستحقّة للمستخدم الحالي (افتراضي للمسؤول + التذكيرات المضبوطة) — كل الطرق تخضع للأيام والأوقات
 function reminderEvents() {
   const me = state.me; if (!me) return [];
+  const myName = String(me.name || '').trim();
   const events = [];
   for (const t of state.tasks) {
-    if (t.isDone || !t.deadlineIso) continue;
-    const pref = (state.reminders || {})[String(t.id)];
-    const isMine = (t.owners || []).includes(me.name);
-    let offsets, time, count, every, on;
-    if (pref && (pref.methods || []).length) {
-      on = (pref.methods || []).includes('push'); // إشعار المتصفح
-      offsets = pref.offsets || [];
-      time = pref.time || REM_DEFAULT_TIME;
-      count = Math.max(1, Number(pref.repeatCount) || 1);
-      every = Math.max(0, Number(pref.repeatEvery) || 0);
-    } else if (isMine) {
-      on = true; offsets = ['1d']; time = REM_DEFAULT_TIME; count = 1; every = 0; // الافتراضي
-    } else continue;
-    if (!on || !offsets.length) continue;
-    const body = `${t.project}${t.file ? ' — ' + t.file : ''} (${relText(t)})`;
-    for (const off of offsets) {
-      const days = REM_OFFSET_DAYS[off]; if (days == null) continue;
-      const base = reminderFireDate(t.deadlineIso, days, time);
-      for (let i = 0; i < count; i++) {
-        events.push({ taskId: t.id, fireAt: new Date(base.getTime() + i * every * 60000), tag: `${off}_${i}`, title: 'تذكير بمهمة', body });
-      }
+    if (t.isDone) continue;
+    const isOwner = (t.owners || []).map((o) => o.trim()).includes(myName);
+    let pref = (state.reminders || {})[String(t.id)];
+    if (!pref && isOwner) pref = { methods: ['push'], days: ['1d'], dates: [], times: [{ t: '09:00', count: 1, every: 0 }] };
+    if (!pref || !(pref.methods || []).length) continue;
+    const times = (pref.times && pref.times.length) ? pref.times : [{ t: '09:00', count: 1, every: 0 }];
+    const ownerNote = (!isOwner && t.owner) ? ` — المسؤول: ${t.owner.split('\n')[0]}` : '';
+    const body = `${t.project}${t.file ? ' — ' + t.file : ''}${ownerNote}`;
+    // تواريخ الإطلاق = (الموعد − أيام التذكير) + التواريخ الثابتة
+    const dayDates = [];
+    for (const off of (pref.days || [])) { if (REM_OFFSET_DAYS[off] == null || !t.deadlineIso) continue; const [y, m, d] = t.deadlineIso.split('-').map(Number); dayDates.push(new Date(y, m - 1, d - REM_OFFSET_DAYS[off])); }
+    for (const fd of (pref.dates || [])) { if (/^\d{4}-\d{2}-\d{2}$/.test(fd)) { const [y, m, d] = fd.split('-').map(Number); dayDates.push(new Date(y, m - 1, d)); } }
+    for (const dd of dayDates) {
+      times.forEach((tm, ti) => {
+        const [hh, mm] = String(tm.t || '09:00').split(':').map(Number);
+        const base = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate(), hh || 0, mm || 0, 0, 0);
+        const count = Math.max(1, Number(tm.count) || 1), every = Math.max(0, Number(tm.every) || 0);
+        for (let i = 0; i < count; i++) {
+          events.push({ taskId: t.id, fireAt: new Date(base.getTime() + i * every * 60000), tag: `${dd.toISOString().slice(0, 10)}_${ti}_${i}`, body, methods: pref.methods });
+        }
+      });
     }
   }
   return events;
 }
 
+// إطلاق حدث: إشعار فوري داخل المتصفح فقط (أثناء فتح اللوحة).
+// البريد/تيليجرام/Push يرسلها الخادم عبر نبضة cron حتى دون فتح اللوحة (لتفادي الإرسال المزدوج).
+function fireEvent(ev) {
+  if ((ev.methods || []).includes('push')) showLocalNotif('🔔 تذكير بمهمة', ev.body);
+}
+
 // يُطلق المستحقّ الآن (عند الدخول) ويجدول القادم خلال اليوم ما دامت اللوحة مفتوحة — مع منع التكرار عبر localStorage
 function scheduleReminders() {
   _remTimers.forEach(clearTimeout); _remTimers = [];
-  if (!('Notification' in window) || Notification.permission !== 'granted' || !state.me) return;
+  if (!state.me) return;
   const now = Date.now();
   for (const ev of reminderEvents()) {
-    const key = `eo_rem_${state.me.email || ''}_${ev.taskId}_${ev.tag}_${ev.fireAt.toISOString().slice(0, 10)}`;
+    const key = `eo_rem_${state.me.email || ''}_${ev.taskId}_${ev.tag}`;
     if (localStorage.getItem(key)) continue;
     const delay = ev.fireAt.getTime() - now;
-    if (delay <= 0 && delay > -24 * 3600 * 1000) {
-      showLocalNotif(ev.title, ev.body); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ }
-    } else if (delay > 0 && delay < 24 * 3600 * 1000) {
-      _remTimers.push(setTimeout(() => { showLocalNotif(ev.title, ev.body); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ } }, delay));
-    }
+    if (delay <= 0 && delay > -12 * 3600 * 1000) { fireEvent(ev); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ } }
+    else if (delay > 0 && delay < 24 * 3600 * 1000) { _remTimers.push(setTimeout(() => { fireEvent(ev); try { localStorage.setItem(key, '1'); } catch { /* تجاهل */ } }, delay)); }
   }
 }
 
