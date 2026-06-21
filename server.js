@@ -906,6 +906,26 @@ async function diagTelegramTest(req, res) {
 app.get('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
 app.post('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
 
+// تشخيص جدولة التذكيرات (مدير): محاكاة جافة تكشف لكل تذكير هل يُنتج لحظة إطلاق مستحقّة الآن ولماذا.
+// افتراضياً يحلّل تذكيراتك؛ ?all=1 لكل المستخدمين، أو ?user=email لمستخدم محدّد.
+app.get('/api/diag/reminders', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.json({ ok: false, error: 'التخزين الدائم غير مفعّل' });
+    let reminders = await store.getAllReminders();
+    const scope = req.query.all === '1' ? null : (req.query.user ? String(req.query.user).toLowerCase() : String(req.session.user.email).toLowerCase());
+    if (scope) reminders = reminders.filter((r) => String(r.email).toLowerCase() === scope);
+    // خريطة الصف→المهمة عبر كل البروفايلات (نفس منطق نبضة الـ cron)
+    const profiles = await store.getProfiles();
+    const tasksByRow = {};
+    for (const p of profiles) {
+      try { const tasks = await loadTasks(p.tab, true); for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+      catch (e) { console.warn('diag/reminders tab', p.tab, e.message); }
+    }
+    const analysis = await notify.analyzeReminders(tasksByRow, reminders, store);
+    res.json({ ok: true, scope: scope || 'كل المستخدمين', ...analysis });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.listen(PORT, async () => {
   console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
   if (sheets.canWrite) {
