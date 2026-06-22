@@ -254,6 +254,20 @@ app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
+// إرسال تجريبي فوري للّوحات اليومية (مدير): يتجاوز التوقيت ومنع التكرار، ولا يعطّل الإرسال المجدول
+app.post('/api/admin/digest/test', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const profiles = await store.getProfiles();
+    const tasksByProfile = {};
+    for (const p of profiles) {
+      try { tasksByProfile[p.tab] = await loadTasks(p.tab, true); }
+      catch (e) { console.warn('digest-test tab', p.tab, e.message); }
+    }
+    const result = await notify.sendDailyBoards(profiles, tasksByProfile, store, process.env.APP_URL || '', { force: true });
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ذاكرة تخزين مؤقتة قصيرة لكل تبويب (بروفايل) لتقليل طلبات Google API
 const DEFAULT_TAB = (store.DEFAULT_PROFILE && store.DEFAULT_PROFILE.tab) || sheets.TAB;

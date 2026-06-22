@@ -40,6 +40,7 @@
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
       <div class="fld"><label>توقيت الإرسال اليومي (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
       <button class="btn btn-save" id="saveDigestBtn" type="button">💾 حفظ الإعدادات</button>
+      <button class="btn btn-gold" id="testDigestBtn" type="button">📤 إرسال تجريبي الآن</button>
     </div>
     <div class="rep-cols-title">مستلِم اللوحة الشاملة لكل بروفايل:</div>
     <div id="digestRecipients" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -236,6 +237,19 @@ $('#saveDigestBtn').onclick = async () => {
     if (data.ok) notice('تم حفظ إعدادات اللوحات اليومية ✓'); else notice('خطأ: ' + data.error, true);
   } catch (e) { notice('خطأ: ' + e.message, true); }
   btn.disabled = false; btn.textContent = '💾 حفظ الإعدادات';
+};
+$('#testDigestBtn').onclick = async () => {
+  if (!confirm('سيُرسَل الآن فوراً إلى المستلِمين والمسؤولين المحدّدين (بريد + تيليجرام)، متجاوزاً التوقيت ومنع التكرار. متابعة؟')) return;
+  const btn = $('#testDigestBtn'); btn.disabled = true; btn.textContent = '... إرسال';
+  try {
+    const res = await fetch('/api/admin/digest/test', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      const errs = (data.errors && data.errors.length) ? ' — أخطاء: ' + data.errors.join(' | ') : '';
+      notice(`تم الإرسال التجريبي: ${data.boards || 0} لوحة (بريد ${data.email || 0} · تيليجرام ${data.telegram || 0})${errs}`, !!errs);
+    } else notice('خطأ: ' + (data.error || ''), true);
+  } catch (e) { notice('خطأ: ' + e.message, true); }
+  btn.disabled = false; btn.textContent = '📤 إرسال تجريبي الآن';
 };
 
 loadProfiles();
