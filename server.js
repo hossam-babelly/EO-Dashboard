@@ -226,6 +226,31 @@ app.post('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, r
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
+// إعداد اللوحات اليومية (مدير): توقيت الإرسال العام + مستلِم اللوحة الشاملة لكل بروفايل
+app.get('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const time = store.enabled ? await store.getSetting('digestTime', '') : '';
+    const profiles = await store.getProfiles();
+    const users = (await auth.listUsers()).filter((u) => u.active !== false).map((u) => ({ name: u.name, email: u.email }));
+    res.json({ ok: true, time: time || '', profiles, users, storeEnabled: store.enabled });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const { time, recipients } = req.body || {};
+    if (time != null) {
+      const t = String(time).trim();
+      if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
+      await store.setSetting('digestTime', t);
+    }
+    if (recipients && typeof recipients === 'object') {
+      for (const [tab, email] of Object.entries(recipients)) await store.setProfileDigest(tab, String(email || '').trim());
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
 // ذاكرة تخزين مؤقتة قصيرة لكل تبويب (بروفايل) لتقليل طلبات Google API
 const DEFAULT_TAB = (store.DEFAULT_PROFILE && store.DEFAULT_PROFILE.tab) || sheets.TAB;
 const caches = {}; // tab → { at, tasks }
@@ -805,16 +830,21 @@ async function runReminderTick(req, res) {
   try {
     if (!store.enabled) return res.json({ ok: true, skipped: 'store-disabled' });
     const reminders = await store.getAllReminders();
-    // خريطة الصف→المهمة عبر كل البروفايلات (البروفايل الافتراضي له الأولوية عند تطابق رقم الصف)
+    // خريطة الصف→المهمة عبر كل البروفايلات (البروفايل الافتراضي له الأولوية) + مهام كل بروفايل على حدة (للّوحات)
     const profiles = await store.getProfiles();
     const tasksByRow = {};
+    const tasksByProfile = {};
     for (const p of profiles) {
-      try { const tasks = await loadTasks(p.tab, true); for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+      try { const tasks = await loadTasks(p.tab, true); tasksByProfile[p.tab] = tasks; for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
       catch (e) { console.warn('reminder-tick tab', p.tab, e.message); }
     }
     const appUrl = process.env.APP_URL || '';
     const result = await notify.sendScheduledReminders(tasksByRow, reminders, appUrl, store);
-    res.json({ ok: true, ...result });
+    // اللوحات اليومية في توقيتها المضبوط (مرّة/يوم)
+    let boards = { skipped: 'n/a' };
+    try { boards = await notify.sendDailyBoards(profiles, tasksByProfile, store, appUrl); }
+    catch (e) { console.warn('daily-boards', e.message); boards = { error: e.message }; }
+    res.json({ ok: true, ...result, boards });
   } catch (e) {
     console.error('reminder-tick', e.message);
     res.status(500).json({ ok: false, error: e.message });

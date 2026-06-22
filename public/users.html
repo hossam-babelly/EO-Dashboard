@@ -35,6 +35,17 @@
   </div>
 
   <div class="card">
+    <h2>📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)</h2>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">تُرسَل تلقائياً يومياً عبر البريد وتيليجرام: <b>لوحة مخصّصة</b> لكل مسؤول معني بمهامه، و<b>لوحة شاملة</b> لكل بروفايل (مهام الجميع مُجمَّعة حسب المسؤول) تُرسَل للمستخدم المحدّد أدناه. (اتركها فارغة لإيقاف الإرسال.)</p>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+      <div class="fld"><label>توقيت الإرسال اليومي (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
+      <button class="btn btn-save" id="saveDigestBtn" type="button">💾 حفظ الإعدادات</button>
+    </div>
+    <div class="rep-cols-title">مستلِم اللوحة الشاملة لكل بروفايل:</div>
+    <div id="digestRecipients" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+
+  <div class="card">
     <h2>➕ إضافة مستخدم</h2>
     <form class="u-form" id="addForm">
       <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
@@ -111,7 +122,7 @@ $('#addProfileBtn').onclick = async () => {
     const res = await fetch('/api/admin/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
-    notice('تمت إضافة البروفايل وإنشاء تبويبه ✓'); inp.value = ''; await loadProfiles();
+    notice('تمت إضافة البروفايل وإنشاء تبويبه ✓'); inp.value = ''; await loadProfiles(); await loadDigest();
   } catch (e) { notice('خطأ: ' + e.message, true); }
   btn.disabled = false; btn.textContent = '➕ إضافة بروفايل';
 };
@@ -193,8 +204,37 @@ $('#umSave').onclick = async () => {
   else notice('خطأ: ' + (data.error || ''), true);
 };
 
+// ===== اللوحات اليومية =====
+let DIGEST_USERS = [];
+async function loadDigest() {
+  try {
+    const data = await (await fetch('/api/admin/digest')).json();
+    if (!data.ok) return;
+    DIGEST_USERS = data.users || [];
+    $('#digestTime').value = data.time || '';
+    const opts = (sel) => '<option value="">— بلا —</option>' + DIGEST_USERS.map((u) => `<option value="${escp(u.email)}" ${u.email === sel ? 'selected' : ''}>${escp(u.name)} (${escp(u.email)})</option>`).join('');
+    $('#digestRecipients').innerHTML = (data.profiles || []).map((p) => `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="role-badge role-editor" style="min-width:130px">🗂️ ${escp(p.label || p.tab)}</span>
+        <select data-tab="${escp(p.tab)}" class="digest-rcpt" style="flex:1;min-width:240px;padding:8px;border:1px solid var(--border);border-radius:9px">${opts(p.digestTo || '')}</select>
+      </div>`).join('') || '<span style="color:var(--muted)">لا بروفايلات</span>';
+  } catch { /* تجاهل */ }
+}
+$('#saveDigestBtn').onclick = async () => {
+  const recipients = {};
+  document.querySelectorAll('.digest-rcpt').forEach((s) => { recipients[s.dataset.tab] = s.value; });
+  const btn = $('#saveDigestBtn'); btn.disabled = true; btn.textContent = '... حفظ';
+  try {
+    const res = await fetch('/api/admin/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: $('#digestTime').value, recipients }) });
+    const data = await res.json();
+    if (data.ok) notice('تم حفظ إعدادات اللوحات اليومية ✓'); else notice('خطأ: ' + data.error, true);
+  } catch (e) { notice('خطأ: ' + e.message, true); }
+  btn.disabled = false; btn.textContent = '💾 حفظ الإعدادات';
+};
+
 loadProfiles();
 loadUsers();
+loadDigest();
 </script>
 </body>
 </html>

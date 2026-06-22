@@ -1284,7 +1284,7 @@ function remUserName() {
 function remDefaultPref(t) {
   const isOwner = (t.owners || []).map((o) => o.trim()).includes(String(remUserName() || '').trim());
   return isOwner
-    ? { methods: ['push'], days: ['1d'], dates: [], times: [{ t: '09:00', count: 1, every: 0 }] }
+    ? { methods: ['telegram'], days: ['1d'], dates: [], times: [{ t: '10:00', count: 1, every: 0 }] }
     : { methods: [], days: [], dates: [], times: [] };
 }
 // تسمية «أيام التذكير» — «موعد المهمة» للمهمة، و«موعد الاجتماع» لتذكير اجتماع
@@ -1594,7 +1594,7 @@ function reminderEvents() {
     if (t.isDone) continue;
     const isOwner = (t.owners || []).map((o) => o.trim()).includes(myName);
     let pref = (state.reminders || {})[String(t.id)];
-    if (!pref && isOwner) pref = { methods: ['push'], days: ['1d'], dates: [], times: [{ t: '09:00', count: 1, every: 0 }] };
+    if (!pref && isOwner) pref = { methods: ['telegram'], days: ['1d'], dates: [], times: [{ t: '10:00', count: 1, every: 0 }] };
     if (!pref || !(pref.methods || []).length) continue;
     const times = (pref.times && pref.times.length) ? pref.times : [{ t: '09:00', count: 1, every: 0 }];
     const ownerNote = (!isOwner && t.owner) ? ` — المسؤول: ${t.owner.split('\n')[0]}` : '';
