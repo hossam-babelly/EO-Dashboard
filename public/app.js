@@ -1481,7 +1481,11 @@ function openEdit(t) {
   </form>`;
   $('mBody').querySelectorAll('select[id$="Sel"]').forEach((sel) => {
     const ne = document.getElementById(sel.id.replace(/Sel$/, 'New'));
-    if (ne) sel.onchange = () => { ne.style.display = sel.value === '__new__' ? '' : 'none'; if (sel.value === '__new__') ne.focus(); };
+    if (ne) {
+      const sync = () => { ne.style.display = sel.value === '__new__' ? '' : 'none'; };
+      sel.onchange = () => { sync(); if (sel.value === '__new__') ne.focus(); };
+      sync(); // ضبط الحالة الأولية — مهمّ للبروفايل الفارغ حيث «إضافة جديد» هي الخيار الوحيد المُختار تلقائياً
+    }
   });
   const dlMode = $('dlMode');
   if (dlMode) {
