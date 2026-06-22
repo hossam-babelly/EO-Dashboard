@@ -212,17 +212,23 @@ async function loadDigest() {
     if (!data.ok) return;
     DIGEST_USERS = data.users || [];
     $('#digestTime').value = data.time || '';
-    const opts = (sel) => '<option value="">— بلا —</option>' + DIGEST_USERS.map((u) => `<option value="${escp(u.email)}" ${u.email === sel ? 'selected' : ''}>${escp(u.name)} (${escp(u.email)})</option>`).join('');
-    $('#digestRecipients').innerHTML = (data.profiles || []).map((p) => `
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span class="role-badge role-editor" style="min-width:130px">🗂️ ${escp(p.label || p.tab)}</span>
-        <select data-tab="${escp(p.tab)}" class="digest-rcpt" style="flex:1;min-width:240px;padding:8px;border:1px solid var(--border);border-radius:9px">${opts(p.digestTo || '')}</select>
-      </div>`).join('') || '<span style="color:var(--muted)">لا بروفايلات</span>';
+    $('#digestRecipients').innerHTML = (data.profiles || []).map((p) => {
+      const selected = new Set(String(p.digestTo || '').split(',').map((s) => s.trim()).filter(Boolean));
+      const checks = DIGEST_USERS.length
+        ? DIGEST_USERS.map((u) => `<label class="prof-check"><input type="checkbox" value="${escp(u.email)}" ${selected.has(u.email) ? 'checked' : ''}> ${escp(u.name)}</label>`).join('')
+        : '<span style="color:var(--muted);font-size:12.5px">لا مستخدمون</span>';
+      return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+        <div style="font-weight:800;color:var(--navy);margin-bottom:8px">🗂️ ${escp(p.label || p.tab)}</div>
+        <div class="prof-checks digest-rcpt" data-tab="${escp(p.tab)}">${checks}</div>
+      </div>`;
+    }).join('') || '<span style="color:var(--muted)">لا بروفايلات</span>';
   } catch { /* تجاهل */ }
 }
 $('#saveDigestBtn').onclick = async () => {
   const recipients = {};
-  document.querySelectorAll('.digest-rcpt').forEach((s) => { recipients[s.dataset.tab] = s.value; });
+  document.querySelectorAll('#digestRecipients .digest-rcpt[data-tab]').forEach((box) => {
+    recipients[box.dataset.tab] = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+  });
   const btn = $('#saveDigestBtn'); btn.disabled = true; btn.textContent = '... حفظ';
   try {
     const res = await fetch('/api/admin/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: $('#digestTime').value, recipients }) });

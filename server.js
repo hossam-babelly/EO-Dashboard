@@ -245,7 +245,11 @@ app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res
       await store.setSetting('digestTime', t);
     }
     if (recipients && typeof recipients === 'object') {
-      for (const [tab, email] of Object.entries(recipients)) await store.setProfileDigest(tab, String(email || '').trim());
+      // قيمة كل بروفايل = مصفوفة بُرُد (أو نصّ مفصول بفواصل) → تُخزَّن مفصولة بفواصل
+      for (const [tab, val] of Object.entries(recipients)) {
+        const list = Array.isArray(val) ? val : String(val || '').split(',');
+        await store.setProfileDigest(tab, list.map((s) => String(s).trim()).filter(Boolean).join(','));
+      }
     }
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
