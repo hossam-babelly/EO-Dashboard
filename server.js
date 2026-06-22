@@ -943,6 +943,31 @@ async function diagTelegramTest(req, res) {
 app.get('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
 app.post('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
 
+// تشخيص البريد (مدير): هل البريد مُهيّأ؟ وأيّ مزوّد؟
+app.get('/api/diag/email', requireAuth, requireRole('admin'), (req, res) => {
+  res.json({
+    ok: true,
+    enabled: notify.emailEnabled(),
+    provider: notify.emailProvider(),  // gmail | brevo | smtp | none
+    gmail: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN),
+    brevo: !!process.env.BREVO_API_KEY,
+    smtp: !!process.env.SMTP_HOST,
+    sender: process.env.GMAIL_SENDER || process.env.SENDER_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || null,
+    notifyEmail: process.env.NOTIFY_EMAIL || null,
+  });
+});
+// إرسال بريد اختبار إلى المدير الحالي (أو ?to=) — يُرجع الخطأ الفعلي إن فشل
+async function diagEmailTest(req, res) {
+  try {
+    if (!notify.emailEnabled()) return res.json({ ok: false, error: 'البريد غير مُهيّأ على الخادم (لم يُضبط Gmail/Brevo/SMTP)' });
+    const to = (req.query.to && String(req.query.to).trim()) || req.session.user.email;
+    await notify.sendEmail({ to, subject: 'اختبار بريد — لوحة الإدارة التنفيذية', html: '<div style="font-family:Cairo,Arial,sans-serif;direction:rtl;color:#2b2823">✅ إن وصلتك هذه الرسالة فإنّ إرسال البريد يعمل بشكل سليم. إن لم تجدها في الوارد فابحث في مجلد <b>الرسائل غير المرغوب فيها (Spam)</b>.</div>' });
+    res.json({ ok: true, sentTo: to, provider: notify.emailProvider() });
+  } catch (e) { res.json({ ok: false, error: e.message, provider: notify.emailProvider() }); }
+}
+app.get('/api/diag/email/test', requireAuth, requireRole('admin'), diagEmailTest);
+app.post('/api/diag/email/test', requireAuth, requireRole('admin'), diagEmailTest);
+
 // تشخيص جدولة التذكيرات (مدير): محاكاة جافة تكشف لكل تذكير هل يُنتج لحظة إطلاق مستحقّة الآن ولماذا.
 // افتراضياً يحلّل تذكيراتك؛ ?all=1 لكل المستخدمين، أو ?user=email لمستخدم محدّد.
 app.get('/api/diag/reminders', requireAuth, requireRole('admin'), async (req, res) => {
