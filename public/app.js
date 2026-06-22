@@ -1200,6 +1200,7 @@ function renderMeetingsCalendar() {
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
+  closeMeetingReminder(); // تفريغ لوحة تذكير الاجتماع لتفادي تعارض مُعرّفات لوحتَي التذكير
   resetRemContext();
   $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
   const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
@@ -1457,6 +1458,7 @@ function pickField(label, name, values, value, multiline) {
 
 function openEdit(t) {
   const isNew = !t;
+  closeMeetingReminder(); // تفريغ لوحة تذكير الاجتماع لتفادي تعارض المُعرّفات
   t = t || { project: '', file: '', type: '', linkedTo: '', linkedList: [], owner: '', owners: [], deliverable: '', deadlineRaw: '', priority: 'متوسطة', status: 'لم تبدأ', followup: '', notes: '', created: '', createdIso: '', meetings: [] };
   if (isNew) { state.newDv = []; state.newEv = []; }
   // قوائم «مرتبط بـ» والمسؤولين والاجتماعات المحلية (نسخة قابلة للتعديل)
@@ -1549,12 +1551,13 @@ async function removeTask(id) {
   } catch (e) { toast('تعذّر الحذف: ' + e.message, true); }
 }
 
-function closeModal() { $('modalBack').classList.remove('open'); }
+function closeModal() { $('modalBack').classList.remove('open'); $('mBody').innerHTML = ''; }
 
 // نافذة تذكير اجتماع محدّد (تُفتح من زرّ الجرس في قائمة الاجتماعات) — تعيد استخدام لوحة التذكير نفسها
 function openMeetingReminder(taskId, mIdx) {
   const t = state.tasks.find((x) => x.id === taskId); if (!t) return;
   const m = (t.meetings || [])[mIdx]; if (!m) return;
+  closeModal(); // تفريغ لوحة تذكير المهمة لتفادي تعارض مُعرّفات لوحتَي التذكير
   resetRemContext();
   $('mtgRemTitle').textContent = `🔔 تذكير الاجتماع: ${m.title}`;
   const when = m.datetime
@@ -1566,7 +1569,7 @@ function openMeetingReminder(taskId, mIdx) {
   bindReminderSection(t, mIdx);
   $('mtgRemBack').classList.add('open');
 }
-function closeMeetingReminder() { $('mtgRemBack').classList.remove('open'); }
+function closeMeetingReminder() { $('mtgRemBack').classList.remove('open'); $('mtgRemBody').innerHTML = ''; }
 
 // ===== محرّك تذكيرات المهام (إشعارات المتصفح أثناء فتح اللوحة) =====
 const REM_OFFSET_DAYS = { morning: 0, '1d': 1, '3d': 3, '7d': 7 };
@@ -1831,4 +1834,4 @@ $('mClose').onclick = closeModal;
 // لا تُغلق نافذة المهمة بالنقر خارجها — فقط عبر زر ✕ (حفاظاً على التعديلات غير المحفوظة)
 
 load();
-setInterval(() => { if (!$('modalBack').classList.contains('open')) load(true); }, 30000);
+setInterval(() => { if (!$('modalBack').classList.contains('open') && !$('mtgRemBack').classList.contains('open')) load(true); }, 30000);
