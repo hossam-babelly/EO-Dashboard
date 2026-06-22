@@ -702,7 +702,10 @@ app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
     const days = (req.body.days || req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
     const dates = (req.body.dates || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
     const times = sanitizeTimes(req.body.times);
-    await store.setReminder(email, req.params.row, methods, days, dates, times);
+    // فهرس الاجتماع (اختياري): إن وُجد فهو تذكير اجتماع يُحسب نسبةً لموعد ذلك الاجتماع
+    const mi = parseInt(req.body.meeting, 10);
+    const meeting = (req.body.meeting != null && req.body.meeting !== '' && Number.isInteger(mi) && mi >= 0) ? String(mi) : '';
+    await store.setReminder(email, req.params.row, methods, days, dates, times, meeting);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });

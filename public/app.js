@@ -1074,21 +1074,28 @@ function renderMeetings() {
 
   const cols = activeMeetingCols();
   const editable = canEdit();
-  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (editable ? '<th>تغيير الحالة</th>' : '');
+  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (state.storeEnabled ? '<th>تذكير</th>' : '') + (editable ? '<th>تغيير الحالة</th>' : '');
   const body = rows.map((row) => {
     const { t, m, idx } = row;
     const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(row)}</td>`).join('');
+    // زرّ تذكير لكل اجتماع (متاح لكل مستخدم — يضبط تذكيره الخاص)
+    const remPref = state.reminders && state.reminders[`${t.id}#m${idx}`];
+    const remSet = remPref && (remPref.methods || []).length;
+    const bellCell = state.storeEnabled
+      ? `<td class="mt-rem"><button class="mtg-bell${remSet ? ' on' : ''}" data-id="${t.id}" data-idx="${idx}" title="${remSet ? 'تذكير مضبوط — تعديل' : 'ضبط تذكير لهذا الاجتماع'}">🔔</button></td>`
+      : '';
     const ctrl = editable ? `<td class="mt-ctrl">
         <select class="mt-status" data-id="${t.id}" data-idx="${idx}">${Object.entries(MEETING_STATUS).map(([k, l]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <input type="datetime-local" class="mt-dt" data-id="${t.id}" data-idx="${idx}" value="${esc(dtToInput(m.datetime))}" style="${m.status === 'scheduled' ? '' : 'display:none'}">
       </td>` : '';
-    return `<tr class="${m.status === 'done' ? 'row-done' : ''}" data-id="${t.id}">${tds}${ctrl}</tr>`;
+    return `<tr class="${m.status === 'done' ? 'row-done' : ''}" data-id="${t.id}">${tds}${bellCell}${ctrl}</tr>`;
   }).join('');
   $('viewArea').innerHTML = `<div class="mtg-filter chips">${fchips}</div>${dateBar}<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${body}</tbody></table></div>`;
   bindMeetingFilter();
   $('viewArea').querySelectorAll('tbody tr').forEach((tr) => {
-    tr.onclick = (e) => { if (e.target.closest('.mt-ctrl')) return; openModal(Number(tr.dataset.id)); };
+    tr.onclick = (e) => { if (e.target.closest('.mt-ctrl') || e.target.closest('.mt-rem')) return; openModal(Number(tr.dataset.id)); };
   });
+  $('viewArea').querySelectorAll('.mtg-bell').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openMeetingReminder(Number(b.dataset.id), Number(b.dataset.idx)); });
   // تغيير حالة اجتماع من العرض مباشرةً
   $('viewArea').querySelectorAll('.mt-status').forEach((s) => s.onchange = async () => {
     const id = Number(s.dataset.id), idx = Number(s.dataset.idx);
@@ -1279,6 +1286,11 @@ function remDefaultPref(t) {
     ? { methods: ['push'], days: ['1d'], dates: [], times: [{ t: '09:00', count: 1, every: 0 }] }
     : { methods: [], days: [], dates: [], times: [] };
 }
+// تسمية «أيام التذكير» — «موعد المهمة» للمهمة، و«موعد الاجتماع» لتذكير اجتماع
+function offsetLabel(o, mIdx) {
+  if (mIdx != null && o.key === 'morning') return 'موعد الاجتماع';
+  return o.label;
+}
 function remTimeRow(tm) {
   tm = tm || {};
   return `<div class="rem-time-row">
@@ -1288,16 +1300,17 @@ function remTimeRow(tm) {
     <span>دقيقة</span><button type="button" class="rt-del" title="حذف التوقيت">✕</button>
   </div>`;
 }
-function reminderSection(t) {
+function reminderSection(t, mIdx) {
   if (!state.storeEnabled) {
     return `<div id="remSection" class="rem-box"><label class="rem-title">🔔 التذكيرات</label>
       <div style="color:var(--muted);font-size:13px">ميزة التذكيرات تتطلب تفعيل التخزين الدائم (DATA_SHEET_ID).</div></div>`;
   }
-  const saved = (state.remMap || {})[String(t.id)];
-  const pref = saved || remDefaultPref(t);
+  const remKey = (mIdx == null) ? String(t.id) : `${t.id}#m${mIdx}`;
+  const saved = (state.remMap || {})[remKey];
+  const pref = saved || (mIdx == null ? remDefaultPref(t) : { methods: [], days: [], dates: [], times: [] });
   const chk = (arr, item) => (arr || []).includes(item.key) ? 'checked' : '';
   const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
-  const days = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="day" value="${o.key}" ${chk(pref.days, o)}> ${o.label}</label>`).join('');
+  const days = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="day" value="${o.key}" ${chk(pref.days, o)}> ${offsetLabel(o, mIdx)}</label>`).join('');
   const datesHtml = (pref.dates || []).map((d) => remDateChip(d)).join('');
   const timesHtml = (pref.times && pref.times.length ? pref.times : [{ t: '09:00', count: 1, every: 0 }]).map(remTimeRow).join('');
   const userPicker = isAdmin()
@@ -1310,7 +1323,7 @@ function reminderSection(t) {
         <div class="rem-cal-row"><input id="calUrl" readonly value="${esc(calUrl)}"><button class="btn btn-cancel" id="calCopy" type="button">نسخ</button></div></div>`
     : '';
   return `<div id="remSection" class="rem-box">
-    <label class="rem-title">🔔 تذكيرات هذه المهمة</label>
+    <label class="rem-title">${mIdx == null ? '🔔 تذكيرات هذه المهمة' : '🔔 تذكير هذا الاجتماع'}</label>
     ${userPicker}
     <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
     <div class="rem-group"><span class="rem-sub">أيام التذكير:</span>${days}</div>
@@ -1335,17 +1348,17 @@ function reminderSection(t) {
 function remDateChip(d) {
   return `<span class="rem-date" data-date="${esc(d)}">${esc(d)} <button type="button" class="rem-date-x" data-date="${esc(d)}" aria-label="حذف">✕</button></span>`;
 }
-function refreshReminderSection(t) { const el = $('remSection'); if (el) { el.outerHTML = reminderSection(t); bindReminderSection(t); } }
-function bindReminderSection(t) {
+function refreshReminderSection(t, mIdx) { const el = $('remSection'); if (el) { el.outerHTML = reminderSection(t, mIdx); bindReminderSection(t, mIdx); } }
+function bindReminderSection(t, mIdx) {
   if (!state.storeEnabled) return;
-  // مبدّل المستخدم (المدير): جلب تذكيرات المستخدم المختار لهذه المهمة
+  // مبدّل المستخدم (المدير): جلب تذكيرات المستخدم المختار لهذه المهمة/الاجتماع
   const usel = $('remUserSel');
   if (usel) usel.onchange = async () => {
     const email = usel.value;
     try {
       if (email === state.me.email) { state.remUser = email; state.remMap = state.reminders; }
       else { const d = await (await fetch('/api/reminders?user=' + encodeURIComponent(email))).json(); state.remUser = email; state.remMap = d.ok ? (d.reminders || {}) : {}; }
-      refreshReminderSection(t);
+      refreshReminderSection(t, mIdx);
     } catch (e) { toast('تعذّر جلب إعدادات المستخدم: ' + e.message, true); }
   };
   const datesBox = $('remDates');
@@ -1376,14 +1389,16 @@ function bindReminderSection(t) {
     save.disabled = true; save.textContent = '... حفظ';
     try {
       const body = { methods, days: daysSel, dates, times };
+      if (mIdx != null) body.meeting = mIdx;
       if (state.remUser && state.remUser !== state.me.email) body.user = state.remUser;
       const res = await fetch(`/api/tasks/${t.id}/reminder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!data.ok) throw new Error(data.error);
       const pref = { methods, days: daysSel, dates, times };
-      (state.remMap || (state.remMap = {}))[String(t.id)] = pref;
-      if (state.remUser === state.me.email) state.reminders[String(t.id)] = pref;
+      const remKey = (mIdx == null) ? String(t.id) : `${t.id}#m${mIdx}`;
+      (state.remMap || (state.remMap = {}))[remKey] = pref;
+      if (state.remUser === state.me.email) state.reminders[remKey] = pref;
       toast('تم حفظ التذكير ✓');
-      scheduleReminders();
+      if (mIdx == null) scheduleReminders(); else render();
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
     save.disabled = false; save.textContent = '💾 حفظ التذكير';
   };
@@ -1535,6 +1550,23 @@ async function removeTask(id) {
 }
 
 function closeModal() { $('modalBack').classList.remove('open'); }
+
+// نافذة تذكير اجتماع محدّد (تُفتح من زرّ الجرس في قائمة الاجتماعات) — تعيد استخدام لوحة التذكير نفسها
+function openMeetingReminder(taskId, mIdx) {
+  const t = state.tasks.find((x) => x.id === taskId); if (!t) return;
+  const m = (t.meetings || [])[mIdx]; if (!m) return;
+  resetRemContext();
+  $('mtgRemTitle').textContent = `🔔 تذكير الاجتماع: ${m.title}`;
+  const when = m.datetime
+    ? `موعد الاجتماع: <b>${esc(m.datetime)}</b>`
+    : 'الاجتماع غير مجدول (بلا تاريخ) — استخدم «تواريخ ثابتة» لضبط التذكير';
+  $('mtgRemBody').innerHTML =
+    `<div class="field"><label>الاجتماع</label><div class="val">${esc(m.title)} — <span style="color:var(--muted)">${when}</span></div></div>` +
+    reminderSection(t, mIdx);
+  bindReminderSection(t, mIdx);
+  $('mtgRemBack').classList.add('open');
+}
+function closeMeetingReminder() { $('mtgRemBack').classList.remove('open'); }
 
 // ===== محرّك تذكيرات المهام (إشعارات المتصفح أثناء فتح اللوحة) =====
 const REM_OFFSET_DAYS = { morning: 0, '1d': 1, '3d': 3, '7d': 7 };
@@ -1795,6 +1827,7 @@ let searchTimer;
 $('fSearch').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value; render(); }, 200); };
 $('resetBtn').onclick = () => { Object.assign(state, { time: 'all', projects: [], owners: [], linked: [], priorities: [], statuses: [], types: [], search: '' }); $('fSearch').value = ''; render(); };
 $('mClose').onclick = closeModal;
+(function () { const c = $('mtgRemClose'); if (c) c.onclick = closeMeetingReminder; const b = $('mtgRemBack'); if (b) b.onclick = (e) => { if (e.target === b) closeMeetingReminder(); }; })();
 // لا تُغلق نافذة المهمة بالنقر خارجها — فقط عبر زر ✕ (حفاظاً على التعديلات غير المحفوظة)
 
 load();
