@@ -1,95 +1,57 @@
 'use strict';
 
-/**
- * رفع مرفقات المهام إلى Google Drive (عبر OAuth لحساب Gmail المخصّص).
- * - يُفعَّل عند توفّر GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + (DRIVE_REFRESH_TOKEN أو GMAIL_REFRESH_TOKEN بنطاق Drive).
- * - الملفات تُرفع داخل مجلّد جذر «EO-Dashboard Attachments» (أو ATTACH_FOLDER_ID)،
- *   وداخله مجلّد فرعي لكل مهمة باسم «المشروع - الملف».
- * - نستخدم OAuth (لا حساب الخدمة) لأن حسابات الخدمة بلا سعة تخزين على Drive في حسابات Gmail الشخصية.
- */
+const bcrypt = require('bcryptjs');
+const store = require('./store');
 
-const { google } = require('googleapis');
-const { Readable } = require('stream');
+const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
+const firstTokenOf = (s) => String(s || '').trim().split(/\s+/)[0] || '';
+const restTokensOf = (s) => String(s || '').trim().split(/\s+/).slice(1).join(' ');
 
-const ROOT_NAME = 'EO-Dashboard Attachments';
-const enabled = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && (process.env.DRIVE_REFRESH_TOKEN || process.env.GMAIL_REFRESH_TOKEN));
-
-let _drive;
-function api() {
-  if (_drive) return _drive;
-  const o = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET);
-  o.setCredentials({ refresh_token: process.env.DRIVE_REFRESH_TOKEN || process.env.GMAIL_REFRESH_TOKEN });
-  _drive = google.drive({ version: 'v3', auth: o });
-  return _drive;
-}
-
-// إعادة المحاولة عند انقطاعات Google العابرة
-function isTransient(err) {
-  const msg = String((err && (err.message || err.code)) || '').toLowerCase();
-  const status = err && err.response && err.response.status;
-  return /premature close|socket hang up|econnreset|etimedout|eai_again|enotfound|fetch failed|network|epipe|timeout/.test(msg)
-    || [429, 500, 502, 503, 504].includes(Number(status));
-}
-async function withRetry(fn, tries = 3) {
-  let last;
-  for (let i = 0; i < tries; i++) {
-    try { return await fn(); } catch (e) { last = e; if (i === tries - 1 || !isTransient(e)) throw e; await new Promise((r) => setTimeout(r, 350 * Math.pow(2, i))); }
+/** مستخدمو البديل من متغيّر البيئة USERS_JSON (عند تعطّل التخزين الدائم). */
+function envUsers() {
+  let users = [];
+  if (process.env.USERS_JSON) {
+    try { users = JSON.parse(process.env.USERS_JSON); if (!Array.isArray(users)) users = []; } catch (e) { console.error('USERS_JSON غير صالح:', e.message); }
   }
-  throw last;
+  if (!users.length && process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD_HASH) {
+    users = [{ email: process.env.ADMIN_EMAIL, name: 'المدير', role: 'admin', hash: process.env.ADMIN_PASSWORD_HASH }];
+  }
+  return users.map((u) => ({ ...u, active: u.active !== false }));
 }
 
-const q = (s) => String(s).replace(/['\\]/g, '\\$&'); // تهريب للاستعلام
-
-let _rootId;
-async function rootFolderId() {
-  if (process.env.ATTACH_FOLDER_ID) return process.env.ATTACH_FOLDER_ID;
-  if (_rootId) return _rootId;
-  const query = `name='${q(ROOT_NAME)}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
-  const list = await withRetry(() => api().files.list({ q: query, fields: 'files(id)', spaces: 'drive' }));
-  if (list.data.files && list.data.files.length) { _rootId = list.data.files[0].id; return _rootId; }
-  const created = await withRetry(() => api().files.create({ requestBody: { name: ROOT_NAME, mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' }));
-  _rootId = created.data.id;
-  return _rootId;
+/** كل المستخدمين: من التخزين الدائم إن فُعّل، وإلا من البيئة. */
+async function allUsers() {
+  if (store.enabled) {
+    const rows = await store.getUsersFull();
+    if (rows && rows.length) return rows;
+  }
+  return envUsers();
 }
 
-// مجلّد المهمة «المشروع - الملف» (يُنشأ إن لم يوجد)
-async function ensureSubfolder(name) {
-  const root = await rootFolderId();
-  const safe = String(name || 'مرفقات').trim() || 'مرفقات';
-  const query = `name='${q(safe)}' and mimeType='application/vnd.google-apps.folder' and '${q(root)}' in parents and trashed=false`;
-  const list = await withRetry(() => api().files.list({ q: query, fields: 'files(id)', spaces: 'drive' }));
-  if (list.data.files && list.data.files.length) return list.data.files[0].id;
-  const created = await withRetry(() => api().files.create({ requestBody: { name: safe, mimeType: 'application/vnd.google-apps.folder', parents: [root] }, fields: 'id' }));
-  return created.data.id;
+const authEnabled = () => store.enabled || envUsers().length > 0;
+
+async function verify(email, password) {
+  const users = await allUsers();
+  const u = users.find((x) => String(x.email).toLowerCase() === String(email || '').toLowerCase().trim());
+  if (!u || !u.hash || u.active === false) return null;
+  const ok = await bcrypt.compare(String(password || ''), u.hash);
+  if (!ok) return null;
+  const name = u.name || u.email;
+  return { email: u.email, name, firstName: u.firstName || firstTokenOf(name), lastName: u.lastName || restTokensOf(name), role: u.role || 'viewer', profiles: u.profiles || [], phone: u.phone || '' };
 }
 
-async function uploadFile({ folderName, filename, mimeType, buffer }) {
-  if (!enabled) throw new Error('DRIVE_DISABLED');
-  const folderId = await ensureSubfolder(folderName);
-  const created = await withRetry(() => api().files.create({
-    requestBody: { name: filename || 'ملف', parents: [folderId] },
-    media: { mimeType: mimeType || 'application/octet-stream', body: Readable.from(buffer) },
-    fields: 'id, name, webViewLink',
-  }));
-  // إتاحة الفتح لأي شخص يملك الرابط (الرابط نفسه سرّي ومحفوظ في الشيت)
-  try { await withRetry(() => api().permissions.create({ fileId: created.data.id, requestBody: { role: 'reader', type: 'anyone' } })); }
-  catch (e) { console.warn('drive permission:', e.message); }
-  return { id: created.data.id, name: created.data.name, url: created.data.webViewLink || `https://drive.google.com/file/d/${created.data.id}/view` };
+function hasRole(user, min) {
+  return !!user && (ROLE_RANK[user.role] || 0) >= (ROLE_RANK[min] || 99);
 }
 
-// استخراج معرّف الملف من رابط Drive
-function fileIdFromUrl(url) {
-  const s = String(url || '');
-  const m = s.match(/\/d\/([^/]+)/) || s.match(/[?&]id=([^&]+)/);
-  return m ? m[1] : '';
+async function listUsers() {
+  const users = await allUsers();
+  return users.map((u) => {
+    const name = u.name || u.email;
+    return { email: u.email, name, firstName: u.firstName || firstTokenOf(name), lastName: u.lastName || '', role: u.role || 'viewer', active: u.active !== false, profiles: u.profiles || [], phone: u.phone || '', telegramChatId: u.telegramChatId || '' };
+  });
 }
 
-async function deleteFile(url) {
-  if (!enabled) return;
-  const id = fileIdFromUrl(url);
-  if (!id) return;
-  try { await withRetry(() => api().files.delete({ fileId: id })); }
-  catch (e) { console.warn('drive delete:', e.message); }
-}
+const hashPassword = (pw) => bcrypt.hash(String(pw), 10);
 
-module.exports = { enabled, uploadFile, deleteFile };
+module.exports = { allUsers, listUsers, verify, hasRole, authEnabled, hashPassword, ROLE_RANK, storeEnabled: () => store.enabled };

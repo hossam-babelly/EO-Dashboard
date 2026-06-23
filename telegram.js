@@ -1,310 +1,95 @@
 'use strict';
 
 /**
- * طبقة تخزين دائم لبيانات المنصة (مستخدمون/تذكيرات/اشتراكات Push)
- * في ملف Google Sheet خاص ومنفصل عن ملف المهام، عبر نفس حساب الخدمة.
- *
- * يُفعّل عند ضبط DATA_SHEET_ID + GOOGLE_SERVICE_ACCOUNT_JSON.
- * عند غيابهما: المستخدمون يُقرأون من USERS_JSON (قراءة فقط)، والتذكيرات/Push في الذاكرة.
+ * رفع مرفقات المهام إلى Google Drive (عبر OAuth لحساب Gmail المخصّص).
+ * - يُفعَّل عند توفّر GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + (DRIVE_REFRESH_TOKEN أو GMAIL_REFRESH_TOKEN بنطاق Drive).
+ * - الملفات تُرفع داخل مجلّد جذر «EO-Dashboard Attachments» (أو ATTACH_FOLDER_ID)،
+ *   وداخله مجلّد فرعي لكل مهمة باسم «المشروع - الملف».
+ * - نستخدم OAuth (لا حساب الخدمة) لأن حسابات الخدمة بلا سعة تخزين على Drive في حسابات Gmail الشخصية.
  */
 
 const { google } = require('googleapis');
-const crypto = require('crypto');
+const { Readable } = require('stream');
 
-const DATA_SHEET_ID = process.env.DATA_SHEET_ID || '';
-const hasSA = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-const enabled = !!(DATA_SHEET_ID && hasSA);
+const ROOT_NAME = 'EO-Dashboard Attachments';
+const enabled = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && (process.env.DRIVE_REFRESH_TOKEN || process.env.GMAIL_REFRESH_TOKEN));
 
-const TABS = {
-  users: { title: 'users', header: ['email', 'name', 'role', 'hash', 'active', 'token', 'createdAt', 'firstName', 'lastName', 'profiles', 'phone', 'telegramChatId'] },
-  reminders: { title: 'reminders', header: ['email', 'taskRow', 'methods', 'offsets', 'updatedAt', 'dates', 'time', 'repeatCount', 'repeatEvery', 'times'] },
-  push: { title: 'push', header: ['email', 'endpoint', 'subscription'] },
-  profiles: { title: 'profiles', header: ['tab', 'label'] },
-  sent: { title: 'sent', header: ['key', 'sentAt'] },
-};
-
-// البروفايل الأول الافتراضي — اسم التبويب = اسم البروفايل بالضبط
-const DEF_TAB = process.env.SHEET_TAB || 'لوحة الإدارة التنفيذية';
-const DEFAULT_PROFILE = { tab: DEF_TAB, label: DEF_TAB };
-
-const firstToken = (s) => String(s || '').trim().split(/\s+/)[0] || '';
-const restTokens = (s) => String(s || '').trim().split(/\s+/).slice(1).join(' ');
-const normPhone = (s) => String(s || '').replace(/\D/g, '');
-
-let _sheets;
+let _drive;
 function api() {
-  if (_sheets) return _sheets;
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-  _sheets = google.sheets({ version: 'v4', auth });
-  return _sheets;
+  if (_drive) return _drive;
+  const o = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET);
+  o.setCredentials({ refresh_token: process.env.DRIVE_REFRESH_TOKEN || process.env.GMAIL_REFRESH_TOKEN });
+  _drive = google.drive({ version: 'v3', auth: o });
+  return _drive;
 }
 
-// إعادة المحاولة عند انقطاعات Google العابرة (Premature close / إعادة ضبط الاتصال / مهلة)
+// إعادة المحاولة عند انقطاعات Google العابرة
 function isTransient(err) {
   const msg = String((err && (err.message || err.code)) || '').toLowerCase();
   const status = err && err.response && err.response.status;
-  return /premature close|socket hang up|econnreset|etimedout|eai_again|enotfound|fetch failed|network|epipe|timeout|read econn/.test(msg)
+  return /premature close|socket hang up|econnreset|etimedout|eai_again|enotfound|fetch failed|network|epipe|timeout/.test(msg)
     || [429, 500, 502, 503, 504].includes(Number(status));
 }
-async function withRetry(fn, tries = 4) {
+async function withRetry(fn, tries = 3) {
   let last;
   for (let i = 0; i < tries; i++) {
-    try { return await fn(); }
-    catch (e) {
-      last = e;
-      if (i === tries - 1 || !isTransient(e)) throw e;
-      console.warn('store: انقطاع عابر مع Google، إعادة المحاولة', i + 1, '-', e.message);
-      await new Promise((r) => setTimeout(r, 350 * Math.pow(2, i))); // 350ms, 700ms, 1400ms
-    }
+    try { return await fn(); } catch (e) { last = e; if (i === tries - 1 || !isTransient(e)) throw e; await new Promise((r) => setTimeout(r, 350 * Math.pow(2, i))); }
   }
   throw last;
 }
 
-// ===== تهيئة التبويبات =====
-let _initDone = false;
-async function ensureTabs() {
-  if (!enabled || _initDone) return;
-  const meta = await withRetry(() => api().spreadsheets.get({ spreadsheetId: DATA_SHEET_ID, fields: 'sheets.properties.title' }));
-  const existing = new Set((meta.data.sheets || []).map((s) => s.properties.title));
-  const requests = [];
-  for (const t of Object.values(TABS)) {
-    if (!existing.has(t.title)) requests.push({ addSheet: { properties: { title: t.title } } });
-  }
-  if (requests.length) {
-    await withRetry(() => api().spreadsheets.batchUpdate({ spreadsheetId: DATA_SHEET_ID, requestBody: { requests } }));
-  }
-  // كتابة/ترقية صف العناوين لكل تبويب (يضيف الأعمدة الجديدة للتبويبات القائمة دون المساس بالبيانات)
-  for (const t of Object.values(TABS)) {
-    const r = await withRetry(() => api().spreadsheets.values.get({ spreadsheetId: DATA_SHEET_ID, range: `${t.title}!A1:Z1` }));
-    const cur = (r.data.values && r.data.values[0]) || [];
-    if (cur.length < t.header.length) {
-      await withRetry(() => api().spreadsheets.values.update({
-        spreadsheetId: DATA_SHEET_ID, range: `${t.title}!A1`, valueInputOption: 'RAW',
-        requestBody: { values: [t.header] },
-      }));
-    }
-  }
-  _initDone = true;
+const q = (s) => String(s).replace(/['\\]/g, '\\$&'); // تهريب للاستعلام
+
+let _rootId;
+async function rootFolderId() {
+  if (process.env.ATTACH_FOLDER_ID) return process.env.ATTACH_FOLDER_ID;
+  if (_rootId) return _rootId;
+  const query = `name='${q(ROOT_NAME)}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
+  const list = await withRetry(() => api().files.list({ q: query, fields: 'files(id)', spaces: 'drive' }));
+  if (list.data.files && list.data.files.length) { _rootId = list.data.files[0].id; return _rootId; }
+  const created = await withRetry(() => api().files.create({ requestBody: { name: ROOT_NAME, mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' }));
+  _rootId = created.data.id;
+  return _rootId;
 }
 
-async function readRows(tab) {
-  await ensureTabs();
-  const r = await withRetry(() => api().spreadsheets.values.get({ spreadsheetId: DATA_SHEET_ID, range: `${tab}!A2:Z10000` }));
-  return r.data.values || [];
+// مجلّد المهمة «المشروع - الملف» (يُنشأ إن لم يوجد)
+async function ensureSubfolder(name) {
+  const root = await rootFolderId();
+  const safe = String(name || 'مرفقات').trim() || 'مرفقات';
+  const query = `name='${q(safe)}' and mimeType='application/vnd.google-apps.folder' and '${q(root)}' in parents and trashed=false`;
+  const list = await withRetry(() => api().files.list({ q: query, fields: 'files(id)', spaces: 'drive' }));
+  if (list.data.files && list.data.files.length) return list.data.files[0].id;
+  const created = await withRetry(() => api().files.create({ requestBody: { name: safe, mimeType: 'application/vnd.google-apps.folder', parents: [root] }, fields: 'id' }));
+  return created.data.id;
 }
 
-// ===== المستخدمون =====
-function rowToUser(r) {
-  const name = r[1] || r[0] || '';
-  return {
-    email: (r[0] || '').trim(),
-    name,
-    role: r[2] || 'viewer',
-    hash: r[3] || '',
-    active: String(r[4]).toUpperCase() !== 'FALSE',
-    token: r[5] || '',
-    firstName: r[7] || firstToken(name),
-    lastName: r[8] || restTokens(name),
-    profiles: (r[9] || '').split(',').map((s) => s.trim()).filter(Boolean),
-    phone: (r[10] || '').trim(),
-    telegramChatId: (r[11] || '').trim(),
-  };
-}
-
-let _userCache = { at: 0, rows: [] };
-async function getUsersFull() {
-  if (!enabled) return null; // المنادي يستخدم البديل (USERS_JSON)
-  const now = Date.now();
-  if (now - _userCache.at < 5000 && _userCache.rows.length) return _userCache.rows;
-  const rows = (await readRows('users')).map(rowToUser).filter((u) => u.email);
-  _userCache = { at: now, rows };
-  return rows;
-}
-
-function invalidateUsers() { _userCache = { at: 0, rows: [] }; }
-
-async function findUserRowIndex(email) {
-  const rows = await readRows('users');
-  const idx = rows.findIndex((r) => (r[0] || '').trim().toLowerCase() === email.toLowerCase());
-  return idx === -1 ? -1 : idx + 2; // رقم الصف الفعلي
-}
-
-async function addUser({ email, name, firstName, lastName, role, hash, profiles, phone }) {
-  if (!enabled) throw new Error('STORE_DISABLED');
-  const existing = await findUserRowIndex(email);
-  if (existing !== -1) throw new Error('المستخدم موجود مسبقاً');
-  const fn = (firstName || '').trim();
-  const ln = (lastName || '').trim();
-  const full = (name || `${fn} ${ln}`.trim()) || email;
-  const token = crypto.randomBytes(18).toString('hex');
-  const prof = Array.isArray(profiles) ? profiles.join(',') : (profiles || '');
-  await withRetry(() => api().spreadsheets.values.append({
-    spreadsheetId: DATA_SHEET_ID, range: 'users!A2', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [[email, full, role || 'viewer', hash, 'TRUE', token, new Date().toISOString(), fn, ln, prof, (phone || '').trim(), '']] },
+async function uploadFile({ folderName, filename, mimeType, buffer }) {
+  if (!enabled) throw new Error('DRIVE_DISABLED');
+  const folderId = await ensureSubfolder(folderName);
+  const created = await withRetry(() => api().files.create({
+    requestBody: { name: filename || 'ملف', parents: [folderId] },
+    media: { mimeType: mimeType || 'application/octet-stream', body: Readable.from(buffer) },
+    fields: 'id, name, webViewLink',
   }));
-  invalidateUsers();
-  return { email, name: full, firstName: fn, lastName: ln, role, token };
+  // إتاحة الفتح لأي شخص يملك الرابط (الرابط نفسه سرّي ومحفوظ في الشيت)
+  try { await withRetry(() => api().permissions.create({ fileId: created.data.id, requestBody: { role: 'reader', type: 'anyone' } })); }
+  catch (e) { console.warn('drive permission:', e.message); }
+  return { id: created.data.id, name: created.data.name, url: created.data.webViewLink || `https://drive.google.com/file/d/${created.data.id}/view` };
 }
 
-async function updateUser(email, patch) {
-  if (!enabled) throw new Error('STORE_DISABLED');
-  const row = await findUserRowIndex(email);
-  if (row === -1) throw new Error('غير موجود');
-  const cur = (await withRetry(() => api().spreadsheets.values.get({ spreadsheetId: DATA_SHEET_ID, range: `users!A${row}:L${row}` }))).data.values?.[0] || [];
-  while (cur.length < 12) cur.push('');
-  const map = { email: 0, name: 1, role: 2, hash: 3, active: 4, firstName: 7, lastName: 8, profiles: 9, phone: 10, telegramChatId: 11 };
-  for (const [k, v] of Object.entries(patch)) {
-    if (!(k in map)) continue;
-    if (k === 'profiles') cur[9] = Array.isArray(v) ? v.join(',') : (v || '');
-    else cur[map[k]] = typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : v;
-  }
-  // مزامنة الاسم الكامل عند تغيير الاسم الأول/الأخير
-  if ('firstName' in patch || 'lastName' in patch) cur[1] = `${cur[7] || ''} ${cur[8] || ''}`.trim() || cur[1];
-  await withRetry(() => api().spreadsheets.values.update({ spreadsheetId: DATA_SHEET_ID, range: `users!A${row}:L${row}`, valueInputOption: 'RAW', requestBody: { values: [cur] } }));
-  invalidateUsers();
-  return true;
+// استخراج معرّف الملف من رابط Drive
+function fileIdFromUrl(url) {
+  const s = String(url || '');
+  const m = s.match(/\/d\/([^/]+)/) || s.match(/[?&]id=([^&]+)/);
+  return m ? m[1] : '';
 }
 
-// ربط رقم تيليجرام (من البوت) بحساب المستخدم المطابق رقمه — يحفظ chat_id
-async function linkTelegram(phoneDigits, chatId) {
-  if (!enabled || !phoneDigits) return null;
-  const rows = await readRows('users');
-  let idx = rows.findIndex((r) => normPhone(r[10]) === phoneDigits);
-  // مطابقة احتياطية: تطابق نهاية الرقم (في حال نقص/زيادة رمز الدولة)
-  if (idx === -1) idx = rows.findIndex((r) => { const p = normPhone(r[10]); return p && p.length >= 8 && (p.endsWith(phoneDigits) || phoneDigits.endsWith(p)); });
-  if (idx === -1) return null;
-  const row = idx + 2;
-  const cur = (await withRetry(() => api().spreadsheets.values.get({ spreadsheetId: DATA_SHEET_ID, range: `users!A${row}:L${row}` }))).data.values?.[0] || [];
-  while (cur.length < 12) cur.push('');
-  cur[11] = String(chatId);
-  await withRetry(() => api().spreadsheets.values.update({ spreadsheetId: DATA_SHEET_ID, range: `users!A${row}:L${row}`, valueInputOption: 'RAW', requestBody: { values: [cur] } }));
-  invalidateUsers();
-  return { name: rows[idx][1] || rows[idx][0], email: rows[idx][0] };
+async function deleteFile(url) {
+  if (!enabled) return;
+  const id = fileIdFromUrl(url);
+  if (!id) return;
+  try { await withRetry(() => api().files.delete({ fileId: id })); }
+  catch (e) { console.warn('drive delete:', e.message); }
 }
 
-// ===== البروفايلات =====
-async function getProfiles() {
-  if (!enabled) return [DEFAULT_PROFILE];
-  const rows = await readRows('profiles');
-  const list = rows.map((r) => ({ tab: (r[0] || '').trim(), label: (r[1] || r[0] || '').trim() })).filter((p) => p.tab);
-  // نضمن وجود البروفايل الأول دائماً في الأعلى
-  if (!list.some((p) => p.tab === DEFAULT_PROFILE.tab)) list.unshift({ ...DEFAULT_PROFILE });
-  return list;
-}
-
-async function addProfile(tab, label) {
-  if (!enabled) throw new Error('STORE_DISABLED');
-  const name = String(tab || '').trim();
-  if (!name) throw new Error('اسم البروفايل مطلوب');
-  const list = await getProfiles();
-  if (list.some((p) => p.tab === name)) throw new Error('البروفايل موجود مسبقاً');
-  await withRetry(() => api().spreadsheets.values.append({
-    spreadsheetId: DATA_SHEET_ID, range: 'profiles!A2', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [[name, String(label || name).trim()]] },
-  }));
-  return { tab: name, label: String(label || name).trim() };
-}
-
-async function getUserByToken(token) {
-  if (!enabled || !token) return null;
-  const rows = await getUsersFull();
-  return rows.find((u) => u.token === token && u.active) || null;
-}
-
-// ===== التذكيرات =====
-// تحليل التوقيتات: JSON [{t,count,every}] (الجديد) أو حقول مفردة قديمة (توافق)
-function parseTimes(timesJson, oldTime, oldCount, oldEvery) {
-  if (timesJson) { try { const a = JSON.parse(timesJson); if (Array.isArray(a)) return a.map((x) => ({ t: x.t || '', count: Number(x.count) || 1, every: Number(x.every) || 0 })).filter((x) => x.t); } catch { /* تجاهل */ } }
-  if (oldTime) return [{ t: oldTime, count: Number(oldCount) || 1, every: Number(oldEvery) || 0 }];
-  return [];
-}
-function rowToReminder(r) {
-  return {
-    methods: (r[2] || '').split(',').filter(Boolean),
-    days: (r[3] || '').split(',').filter(Boolean),
-    dates: (r[5] || '').split(',').filter(Boolean),
-    times: parseTimes(r[9], r[6], r[7], r[8]),
-  };
-}
-async function getReminders(email) {
-  if (!enabled) return {};
-  const rows = await readRows('reminders');
-  const out = {};
-  rows.forEach((r) => { if ((r[0] || '').toLowerCase() === email.toLowerCase()) out[r[1]] = rowToReminder(r); });
-  return out;
-}
-
-async function getAllReminders() {
-  if (!enabled) return [];
-  const rows = await readRows('reminders');
-  return rows.map((r) => ({ email: r[0], taskRow: String(r[1]), ...rowToReminder(r) })).filter((x) => x.email && x.taskRow);
-}
-
-async function setReminder(email, taskRow, methods, days, dates, times) {
-  if (!enabled) throw new Error('STORE_DISABLED');
-  const rows = await readRows('reminders');
-  const idx = rows.findIndex((r) => (r[0] || '').toLowerCase() === email.toLowerCase() && String(r[1]) === String(taskRow));
-  const timesJson = JSON.stringify(Array.isArray(times) ? times : []);
-  // العمود J = times؛ نُفرّغ الحقول المفردة القديمة (G/H/I)
-  const value = [email, String(taskRow), methods.join(','), days.join(','), new Date().toISOString(), (dates || []).join(','), '', '', '', timesJson];
-  if (idx === -1) {
-    await withRetry(() => api().spreadsheets.values.append({ spreadsheetId: DATA_SHEET_ID, range: 'reminders!A2', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [value] } }));
-  } else {
-    const row = idx + 2;
-    await withRetry(() => api().spreadsheets.values.update({ spreadsheetId: DATA_SHEET_ID, range: `reminders!A${row}:J${row}`, valueInputOption: 'RAW', requestBody: { values: [value] } }));
-  }
-  return true;
-}
-
-// ===== اشتراكات Push =====
-async function savePush(email, sub) {
-  if (!enabled || !sub || !sub.endpoint) return;
-  const rows = await readRows('push');
-  const idx = rows.findIndex((r) => r[1] === sub.endpoint);
-  const value = [email, sub.endpoint, JSON.stringify(sub)];
-  if (idx === -1) await withRetry(() => api().spreadsheets.values.append({ spreadsheetId: DATA_SHEET_ID, range: 'push!A2', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [value] } }));
-  else { const row = idx + 2; await withRetry(() => api().spreadsheets.values.update({ spreadsheetId: DATA_SHEET_ID, range: `push!A${row}:C${row}`, valueInputOption: 'RAW', requestBody: { values: [value] } })); }
-}
-
-async function getPushByEmail(email) {
-  if (!enabled) return [];
-  const rows = await readRows('push');
-  return rows.filter((r) => (r[0] || '').toLowerCase() === email.toLowerCase()).map((r) => { try { return JSON.parse(r[2]); } catch { return null; } }).filter(Boolean);
-}
-
-// ===== سجل ما أُرسل (لمنع تكرار التذكيرات عبر نبضات الـ cron المتكررة) =====
-// مفتاح فريد لكل ظهور تذكير؛ يُقلَّم تلقائياً ما تجاوز 3 أيام لمنع تضخّم التبويب.
-async function getSentKeys() {
-  if (!enabled) return new Set();
-  const rows = await readRows('sent');
-  const cutoff = Date.now() - 3 * 86400000;
-  const recent = []; let hasStale = false;
-  for (const r of rows) { const ts = Date.parse(r[1] || ''); if (isFinite(ts) && ts < cutoff) { hasStale = true; continue; } recent.push(r); }
-  if (hasStale) {
-    try {
-      await withRetry(() => api().spreadsheets.values.clear({ spreadsheetId: DATA_SHEET_ID, range: 'sent!A2:B100000' }));
-      if (recent.length) await withRetry(() => api().spreadsheets.values.update({ spreadsheetId: DATA_SHEET_ID, range: 'sent!A2', valueInputOption: 'RAW', requestBody: { values: recent } }));
-    } catch (e) { console.warn('store: تقليم سجل الإرسال', e.message); }
-  }
-  return new Set(recent.map((r) => r[0]).filter(Boolean));
-}
-
-async function markSent(keys) {
-  if (!enabled || !keys || !keys.length) return;
-  const now = new Date().toISOString();
-  await withRetry(() => api().spreadsheets.values.append({
-    spreadsheetId: DATA_SHEET_ID, range: 'sent!A2', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: keys.map((k) => [String(k), now]) },
-  }));
-}
-
-module.exports = {
-  enabled, DATA_SHEET_ID, DEFAULT_PROFILE,
-  getUsersFull, addUser, updateUser, getUserByToken, invalidateUsers,
-  getReminders, getAllReminders, setReminder,
-  savePush, getPushByEmail,
-  getProfiles, addProfile,
-  linkTelegram,
-  getSentKeys, markSent,
-};
+module.exports = { enabled, uploadFile, deleteFile };
