@@ -29,22 +29,23 @@
 <form class="login-card" id="loginForm">
   <div class="login-top">
     <img class="login-logo" src="/assets/logo-mark.png" alt="سنكري القابضة — SANKARI HOLDING">
-    <h1>لوحة الإدارة التنفيذية</h1>
-    <p>مجموعة سنكري القابضة</p>
+    <h1 data-i18n="لوحة الإدارة التنفيذية">لوحة الإدارة التنفيذية</h1>
+    <p data-i18n="مجموعة سنكري القابضة">مجموعة سنكري القابضة</p>
   </div>
   <div class="login-body" id="loginBody">
     <div class="login-err" id="err"></div>
-    <label for="email">البريد الإلكتروني</label>
+    <label for="email" data-i18n="البريد الإلكتروني">البريد الإلكتروني</label>
     <input id="email" type="email" autocomplete="username" required>
-    <label for="password">كلمة المرور</label>
+    <label for="password" data-i18n="كلمة المرور">كلمة المرور</label>
     <div class="pw-wrap" style="margin-bottom:16px"><input id="password" type="password" autocomplete="current-password" required style="margin-bottom:0"><button type="button" class="pw-eye" data-target="password" aria-label="إظهار كلمة المرور">👁</button></div>
-    <button type="submit" id="btn">دخول</button>
+    <button type="submit" id="btn" data-i18n="دخول">دخول</button>
   </div>
   <div class="login-body" id="chooserBody" style="display:none">
-    <p style="font-weight:800;color:var(--navy);text-align:center;margin-bottom:16px">اختر البروفايل للدخول</p>
+    <p style="font-weight:800;color:var(--navy);text-align:center;margin-bottom:16px" data-i18n="اختر البروفايل للدخول">اختر البروفايل للدخول</p>
     <div id="profileChoices" style="display:flex;flex-direction:column;gap:10px"></div>
   </div>
 </form>
+<script src="/i18n.js"></script>
 <script>
 document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
   const t = document.getElementById(b.dataset.target);

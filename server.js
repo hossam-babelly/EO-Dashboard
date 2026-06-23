@@ -1,65 +1,1021 @@
-# ===== EO-Dashboard — متغيّرات البيئة =====
-# انسخ هذا الملف إلى .env واملأ القيم (في الإنتاج اضبطها على Render).
+'use strict';
 
-# معرّف ملف Google Sheets
-SHEET_ID=1GaGuwrOioQi8CKhxzJGmYemRPD1dso8ASoa_pQI-Ky8
+// فرض ترتيب IPv4 أولاً في حلّ DNS — يعالج انقطاع الاتصال بخوادم Google
+// (oauth2.googleapis.com / sheets.googleapis.com) عبر IPv6 المعطّل على بعض الاستضافات
+// الذي يظهر كخطأ «Premature close / ECONNRESET». يجب أن يسبق أي اتصال شبكي.
+try { require('dns').setDefaultResultOrder('ipv4first'); } catch (e) { /* إصدار Node لا يدعمه */ }
 
-# اسم التبويب المصدر (افتراضي: الملخص التنفيذي)
-# SHEET_TAB=الملخص التنفيذي
+require('dotenv').config();
 
-# --- القراءة فقط (للتطوير): مفتاح API ---
-GOOGLE_API_KEY=
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
+const session = require('express-session');
+const sheets = require('./lib/sheets');
+const auth = require('./lib/auth');
+const notify = require('./lib/notify');
+const store = require('./lib/store');
+const calendar = require('./lib/calendar');
+const drive = require('./lib/drive');
+const telegram = require('./lib/telegram');
+const { TZ } = require('./lib/dates');
 
-# --- القراءة + الكتابة (الإنتاج): محتوى ملف Service Account JSON كاملاً في سطر واحد ---
-GOOGLE_SERVICE_ACCOUNT_JSON=
+// طابع زمني «YYYY-MM-DD HH:MM» بتوقيت دمشق (أرقام لاتينية)
+function nowStamp() {
+  const d = new Date();
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  return `${date} ${time}`;
+}
 
-# --- ملف بيانات خاص ومنفصل (مستخدمون/تذكيرات/اشتراكات Push) — يُشارَك مع حساب الخدمة ---
-DATA_SHEET_ID=
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-# المنطقة الزمنية وحسابات الأسبوع
-APP_TZ=Asia/Damascus
+// اسم المستخدم الكامل المستخدَم في سجلّ الأحداث (الاسم الكامل لا الأول فقط)
+function authorName(u) {
+  return (u && (String(u.name || '').trim() || [u.firstName, u.lastName].filter(Boolean).join(' ').trim())) || 'مستخدم';
+}
 
-# المنفذ
-PORT=3000
+const ROLES = ['viewer', 'editor', 'admin'];
+const REMINDER_METHODS = ['email', 'push', 'calendar', 'telegram'];
+const REMINDER_OFFSETS = ['morning', '1d', '3d', '7d'];
 
-# مدة التخزين المؤقت للقراءة (مللي ثانية)
-CACHE_MS=8000
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-# ===== المصادقة =====
-# سرّ توقيع الجلسات (غيّره لقيمة عشوائية طويلة)
-SESSION_SECRET=
-# مستخدمو المنصة (مصفوفة JSON) — ولّدهم عبر: node scripts/hash-user.js <email> <pass> <role> <name>
-USERS_JSON=
+app.set('trust proxy', 1); // خلف وكيل Render
+app.use(express.json({ limit: '12mb' })); // يتّسع لرفع المرفقات (base64)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
+}));
 
-# ===== التنبيهات: البريد =====
-# الموصى به (بلا DNS، بلا تعليق): Gmail API عبر OAuth — يعمل على Render
-GMAIL_CLIENT_ID=
-GMAIL_CLIENT_SECRET=
-GMAIL_REFRESH_TOKEN=
-GMAIL_SENDER=
-SENDER_NAME=لوحة الإدارة التنفيذية
-# (بديل) Brevo عبر API
-BREVO_API_KEY=
-SENDER_EMAIL=
-# المستلم الرئيسي للملخص اليومي
-NOTIFY_EMAIL=
-# (بديل) SMTP تقليدي — لا يعمل على Render المجاني (منافذ 587/465 محجوبة)
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-# (اختياري) خريطة المسؤول→الإيميل: {"الدكتور نورس":"x@y.com","عمر فتحي":"..."}
-OWNER_EMAILS=
+// صفحات عامة لا تتطلب دخولاً
+const PUBLIC_FILES = new Set(['/login.html', '/styles.css']);
 
-# ===== التنبيهات: Web Push =====
-# ولّدها عبر: node scripts/gen-vapid.js
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
-VAPID_SUBJECT=mailto:admin@sankari-holding.com
+// بوابة الصفحة الرئيسية: تحويل لتسجيل الدخول عند تفعيل المصادقة وعدم وجود جلسة
+app.get('/', (req, res, next) => {
+  if (auth.authEnabled() && !(req.session && req.session.user)) {
+    return res.redirect('/login.html');
+  }
+  next();
+});
 
-# ===== المهمة المجدولة =====
-# رمز سرّي يحمي نقطة /api/cron/daily-digest (نفس قيمته في GitHub Secret)
-CRON_SECRET=
-# رابط التطبيق المنشور (للروابط داخل الإيميل)
-APP_URL=
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ===== المصادقة =====
+function requireAuth(req, res, next) {
+  if (!auth.authEnabled()) return next(); // إن لم تُضبط حسابات، يبقى مفتوحاً
+  if (req.session && req.session.user) return next();
+  res.status(401).json({ ok: false, error: 'يجب تسجيل الدخول' });
+}
+function requireRole(min) {
+  return (req, res, next) => {
+    if (!auth.authEnabled()) return next();
+    if (auth.hasRole(req.session.user, min)) return next();
+    res.status(403).json({ ok: false, error: 'صلاحيتك لا تسمح بهذا الإجراء' });
+  };
+}
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const user = await auth.verify(email, password);
+    if (!user) return res.status(401).json({ ok: false, error: 'البريد أو كلمة المرور غير صحيحة' });
+    req.session.user = user;
+    const profiles = await availableProfilesFor(user);
+    req.session.profile = profiles[0] ? profiles[0].tab : DEFAULT_TAB; // افتراضي (يُغيّره الاختيار)
+    res.json({ ok: true, user, profiles, needProfile: profiles.length > 1 });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/me', async (req, res) => {
+  if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '' });
+  if (!(req.session && req.session.user)) return res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
+  const user = { ...req.session.user };
+  // رمز التقويم الشخصي + حالة ربط تيليجرام
+  if (store.enabled) {
+    try {
+      const full = (await store.getUsersFull()).find((u) => u.email.toLowerCase() === user.email.toLowerCase());
+      if (full) { user.calToken = full.token; user.phone = full.phone || user.phone || ''; user.telegramLinked = !!full.telegramChatId; }
+    } catch { /* تجاهل */ }
+  }
+  const profiles = await availableProfilesFor(req.session.user);
+  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '', profile: activeTab(req), profiles });
+});
+
+// البروفايلات المتاحة للمستخدم الحالي
+app.get('/api/profiles', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, profiles: await availableProfilesFor(req.session.user), active: activeTab(req) }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// اختيار البروفايل النشط للجلسة (يجب أن يكون ضمن المتاح للمستخدم)
+app.post('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const tab = String((req.body && req.body.profile) || '').trim();
+    const profiles = await availableProfilesFor(req.session.user);
+    if (!profiles.some((p) => p.tab === tab)) return res.status(400).json({ ok: false, error: 'بروفايل غير متاح' });
+    req.session.profile = tab;
+    res.json({ ok: true, profile: tab });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// قائمة المستخدمين (للاختيار كمسؤول معني) — متاحة لكل مسجّل دخول، تُعيد الاسم والبريد فقط
+app.get('/api/users/list', requireAuth, async (req, res) => {
+  try {
+    const users = (await auth.listUsers()).filter((u) => u.active !== false);
+    res.json({ ok: true, users: users.map((u) => ({ name: u.name, email: u.email, firstName: u.firstName, lastName: u.lastName })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// تعديل المستخدم لحسابه هو (الاسم + كلمة المرور) — لا يمسّ الدور ولا التفعيل
+app.patch('/api/account', requireAuth, async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const me = req.session.user;
+    const patch = {};
+    const { firstName, lastName, password, phone } = req.body || {};
+    if (firstName != null) patch.firstName = String(firstName).trim();
+    if (lastName != null) patch.lastName = String(lastName).trim();
+    if (phone != null) patch.phone = String(phone).trim();
+    if (password) patch.hash = await auth.hashPassword(password);
+    await store.updateUser(String(me.email).toLowerCase(), patch);
+    if (phone != null) me.phone = String(phone).trim();
+    // تحديث الجلسة بالاسم الجديد
+    if (patch.firstName != null || patch.lastName != null) {
+      const fn = patch.firstName != null ? patch.firstName : me.firstName;
+      const ln = patch.lastName != null ? patch.lastName : (me.lastName || '');
+      me.firstName = fn;
+      me.name = `${fn} ${ln}`.trim() || me.name;
+      req.session.user = me;
+    }
+    res.json({ ok: true, user: { name: me.name, firstName: me.firstName, role: me.role, email: me.email } });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// ===== إدارة المستخدمين (مدير) =====
+app.get('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
+  try { res.json({ ok: true, users: await auth.listUsers(), storeEnabled: store.enabled }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/admin/users', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const { email, name, firstName, lastName, password, role, profiles, phone } = req.body || {};
+    if (!email || !password) return res.status(400).json({ ok: false, error: 'البريد وكلمة المرور مطلوبان' });
+    if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' });
+    const hash = await auth.hashPassword(password);
+    await store.addUser({ email: String(email).trim().toLowerCase(), name, firstName, lastName, role, hash, profiles: Array.isArray(profiles) ? profiles : [], phone });
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const patch = {};
+    const { name, firstName, lastName, role, active, password, email: newEmail } = req.body || {};
+    if (name != null) patch.name = name;
+    if (firstName != null) patch.firstName = firstName;
+    if (lastName != null) patch.lastName = lastName;
+    if (role != null) { if (!ROLES.includes(role)) return res.status(400).json({ ok: false, error: 'دور غير صالح' }); patch.role = role; }
+    if (active != null) patch.active = !!active;
+    if (password) patch.hash = await auth.hashPassword(password);
+    if (req.body && Array.isArray(req.body.profiles)) patch.profiles = req.body.profiles;
+    if (req.body && req.body.phone != null) patch.phone = String(req.body.phone).trim();
+    if (newEmail != null && String(newEmail).trim() && String(newEmail).trim().toLowerCase() !== String(req.params.email).toLowerCase()) {
+      const ne = String(newEmail).trim().toLowerCase();
+      const all = (await store.getUsersFull()) || [];
+      if (all.some((u) => u.email.toLowerCase() === ne)) return res.status(400).json({ ok: false, error: 'البريد الجديد مستخدم مسبقاً' });
+      patch.email = ne;
+    }
+    await store.updateUser(String(req.params.email).toLowerCase(), patch);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// إدارة البروفايلات (مدير): عرض + إضافة بروفايل جديد (يُنشئ تبويباً جديداً تلقائياً)
+app.get('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, res) => {
+  try { res.json({ ok: true, profiles: await store.getProfiles() }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    if (!sheets.canWrite) return res.status(400).json({ ok: false, error: 'الكتابة على الشيت معطّلة.' });
+    const label = String((req.body && req.body.label) || '').trim();
+    if (!label) return res.status(400).json({ ok: false, error: 'اسم البروفايل مطلوب' });
+    // اسم التبويب = اسم البروفايل
+    await sheets.createProfileTab(label);  // ينشئ التبويب بنفس بنية الجدول
+    const prof = await store.addProfile(label, label);
+    res.json({ ok: true, profile: prof });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// إعداد اللوحات اليومية (مدير): توقيت الإرسال العام + مستلِم اللوحة الشاملة لكل بروفايل
+app.get('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const time = store.enabled ? await store.getSetting('digestTime', '') : '';
+    const profiles = await store.getProfiles();
+    const users = (await auth.listUsers()).filter((u) => u.active !== false).map((u) => ({ name: u.name, email: u.email }));
+    res.json({ ok: true, time: time || '', profiles, users, storeEnabled: store.enabled });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const { time, recipients } = req.body || {};
+    if (time != null) {
+      const t = String(time).trim();
+      if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
+      await store.setSetting('digestTime', t);
+    }
+    if (recipients && typeof recipients === 'object') {
+      // قيمة كل بروفايل = مصفوفة بُرُد (أو نصّ مفصول بفواصل) → تُخزَّن مفصولة بفواصل
+      for (const [tab, val] of Object.entries(recipients)) {
+        const list = Array.isArray(val) ? val : String(val || '').split(',');
+        await store.setProfileDigest(tab, list.map((s) => String(s).trim()).filter(Boolean).join(','));
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+// إرسال تجريبي فوري للّوحات اليومية (مدير): يتجاوز التوقيت ومنع التكرار، ولا يعطّل الإرسال المجدول
+app.post('/api/admin/digest/test', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const profiles = await store.getProfiles();
+    const tasksByProfile = {};
+    for (const p of profiles) {
+      try { tasksByProfile[p.tab] = await loadTasks(p.tab, true); }
+      catch (e) { console.warn('digest-test tab', p.tab, e.message); }
+    }
+    const result = await notify.sendDailyBoards(profiles, tasksByProfile, store, process.env.APP_URL || '', { force: true });
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ذاكرة تخزين مؤقتة قصيرة لكل تبويب (بروفايل) لتقليل طلبات Google API
+const DEFAULT_TAB = (store.DEFAULT_PROFILE && store.DEFAULT_PROFILE.tab) || sheets.TAB;
+const caches = {}; // tab → { at, tasks }
+const CACHE_MS = Number(process.env.CACHE_MS || 8000);
+
+// التبويب النشط للطلب = البروفايل المختار في الجلسة (أو الافتراضي)
+function activeTab(req) { return (req && req.session && req.session.profile) || DEFAULT_TAB; }
+
+async function loadTasks(tab, force = false) {
+  const t = tab || DEFAULT_TAB;
+  const now = Date.now();
+  const c = caches[t];
+  if (!force && c && now - c.at < CACHE_MS && c.tasks.length) return c.tasks;
+  const tasks = await sheets.getTasks(t);
+  caches[t] = { at: now, tasks };
+  return tasks;
+}
+
+function invalidateCache(tab) { if (tab) delete caches[tab]; else Object.keys(caches).forEach((k) => delete caches[k]); }
+
+// قائمة البروفايلات المتاحة لمستخدم (فارغ = الكل)
+async function availableProfilesFor(user) {
+  const all = store.enabled ? await store.getProfiles() : [store.DEFAULT_PROFILE];
+  if (!user || !user.profiles || !user.profiles.length) return all;
+  const set = new Set(user.profiles);
+  const filtered = all.filter((p) => set.has(p.tab));
+  return filtered.length ? filtered : all;
+}
+
+// حارس الكتابة: يمنع التعديل عند غياب صلاحية الكتابة (مفتاح قراءة فقط)
+function requireWrite(req, res, next) {
+  if (!sheets.canWrite) {
+    return res.status(403).json({ ok: false, error: 'الكتابة معطّلة — لم يُضبط حساب الخدمة (Service Account).' });
+  }
+  next();
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+}
+
+// ===== تخصيص المخرجات لمستخدمين =====
+// مكلّفو المخرجات كتل متوازية لكتل «المخرج المطلوب»؛ «-» (أو «—») = بلا تخصيص.
+function splitOwnerNames(raw) {
+  return String(raw || '').split(/[\n,،/]+/).map((s) => s.trim()).filter(Boolean);
+}
+function alignAssignees(raw, n) {
+  const a = sheets.fuBlocks(raw || '');
+  while (a.length < n) a.push('-');
+  return a.slice(0, n);
+}
+function dvAssigneeName(v) {
+  const s = String(v == null ? '' : v).trim();
+  return (s && s !== '-' && s !== '—' && s !== '----------') ? s : '';
+}
+// هل يحقّ للمستخدم الحالي التصرّف بمخرَج مخصَّص؟ المدير دائماً؛ غير المخصَّص متاح للمحرّر؛ وإلا المخصَّص فقط.
+function canActOnDeliv(req, assigneeName) {
+  if (!auth.authEnabled()) return true;
+  const u = req.session && req.session.user;
+  if (auth.hasRole(u, 'admin')) return true;
+  if (!assigneeName) return true;
+  return String((u && u.name) || '').trim() === String(assigneeName).trim();
+}
+
+// تنبيه تيليجرام لمن عُيّن مسؤولاً عن مهمة من قِبل مستخدم آخر (يُتجاهَل من ليس له تيليجرام مربوط)
+async function notifyOwnersAssigned(req, info, addedNames) {
+  try {
+    if (!telegram.enabled || !store.enabled) return;
+    const actor = authorName(req.session && req.session.user);
+    const added = (addedNames || []).map((s) => String(s).trim()).filter(Boolean).filter((n) => n !== actor);
+    if (!added.length) return;
+    const users = (await store.getUsersFull()) || [];
+    const appUrl = process.env.APP_URL || '';
+    const title = esc(`${info.project || 'مهمة'}${info.file ? ' — ' + info.file : ''}`);
+    for (const name of added) {
+      const u = users.find((x) => String(x.name || '').trim() === name && x.telegramChatId);
+      if (!u) continue;
+      const line = `📌 تم تعيينك مسؤولاً عن مهمة: <b>${title}</b> من قِبل ${esc(actor)}${info.deadlineRaw ? `\nالموعد: ${esc(info.deadlineRaw)}` : ''}`;
+      telegram.sendMessage(u.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`).catch(() => { /* تجاهل */ });
+    }
+  } catch (e) { console.warn('notifyOwnersAssigned', e.message); }
+}
+
+function summarize(tasks) {
+  const s = {
+    total: tasks.length,
+    today: 0,
+    overdue: 0,
+    soon3: 0,
+    thisWeek: 0,
+    undated: 0,
+    recurring: 0,
+    done: 0,
+    byPriority: {},
+    byStatus: {},
+    byType: {},
+    meetings: { total: 0, required: 0, scheduled: 0, done: 0 },
+  };
+  let completionSum = 0;
+  for (const t of tasks) {
+    if (t.isToday) s.today++;
+    if (t.isOverdue) s.overdue++;
+    if (t.isSoon3) s.soon3++;
+    if (t.isThisWeek) s.thisWeek++;
+    if (t.isUndated) s.undated++;
+    if (t.isRecurring) s.recurring++;
+    if (t.isDone) s.done++;
+    s.byPriority[t.priority] = (s.byPriority[t.priority] || 0) + 1;
+    s.byStatus[t.status] = (s.byStatus[t.status] || 0) + 1;
+    const tk = t.type || '';
+    s.byType[tk] = (s.byType[tk] || 0) + 1;
+    // عدّ الاجتماعات حسب الحالة (مطلوب/مجدول/تم) — المهمة قد تحوي عدّة اجتماعات
+    for (const m of (t.meetings || [])) {
+      s.meetings.total++;
+      if (m.status === 'done') s.meetings.done++;
+      else if (m.status === 'scheduled') s.meetings.scheduled++;
+      else s.meetings.required++;
+    }
+    completionSum += taskCompletion(t);
+  }
+  // نسبة الإنجاز تشمل الإنجاز الجزئي للمخرجات (مهمة بنصف مخرجاتها منجزة = 0.5)
+  s.completion = s.total ? Math.round((completionSum / s.total) * 100) : 0;
+  return s;
+}
+
+// نسبة إنجاز المهمة الواحدة (0..1): منجزة كلياً=1، وإلا نسبة المخرجات المؤشَّرة، وبلا مخرجات=0
+function taskCompletion(t) {
+  if (t.isDone) return 1;
+  const dB = sheets.fuBlocks(t.deliverable || '');
+  if (!dB.length) return 0;
+  const done = dB.filter((b) => /^✓/.test(b)).length;
+  return done / dB.length;
+}
+
+// كل المهام + ملخص + خيارات الفلاتر
+app.get('/api/tasks', requireAuth, async (req, res) => {
+  try {
+    const tasks = await loadTasks(activeTab(req), req.query.refresh === '1');
+    res.json({
+      ok: true,
+      tasks,
+      summary: summarize(tasks),
+      filters: {
+        projects: uniqueSorted(tasks.map((t) => t.project)),
+        owners: uniqueSorted(tasks.flatMap((t) => t.owners)),
+        priorities: uniqueSorted(tasks.map((t) => t.priority)),
+        statuses: sheets.STATUSES,
+        files: uniqueSorted(tasks.map((t) => t.file)),
+        types: uniqueSorted(tasks.map((t) => t.type)),
+        linked: uniqueSorted(tasks.flatMap((t) => t.linkedList || [])),
+      },
+      meta: { canWrite: sheets.canWrite, fetchedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.error('GET /api/tasks', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// تعديل مهمة قائمة (حقول متعددة)
+app.patch('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    // المسؤولون قبل التعديل (لاكتشاف المُضافين حديثاً وتنبيههم)
+    let oldOwners = [];
+    if (req.body && 'owner' in req.body) {
+      try { const before = (await loadTasks(activeTab(req))).find((x) => String(x.row) === String(req.params.row)); oldOwners = (before && before.owners) || []; } catch { /* تجاهل */ }
+    }
+    const task = await sheets.updateTask(activeTab(req), req.params.row, req.body || {});
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+    // تنبيه المسؤولين المُضافين حديثاً عبر تيليجرام (بعد الردّ، لا يعطّل الاستجابة)
+    if (req.body && 'owner' in req.body) {
+      const oldSet = oldOwners.map((o) => o.trim());
+      const added = (task.owners || []).filter((n) => !oldSet.includes(n.trim()));
+      if (added.length) notifyOwnersAssigned(req, task, added);
+    }
+  } catch (err) {
+    console.error('PATCH /api/tasks', err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// تغيير حالة مهمة (للوحة كانبان)
+app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!sheets.STATUSES.includes(status)) {
+      return res.status(400).json({ ok: false, error: 'حالة غير صالحة' });
+    }
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { status });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// إضافة حدث إلى سجل «نتائج المتابعة اليومية» (يُلحق سطراً مؤرّخاً باسم المستخدم)
+app.post('/api/tasks/:row/followup', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim(); // نحفظ أسطر الحدث، ونمنع السطر الفارغ داخله
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const u = req.session && req.session.user;
+    const author = authorName(u);
+    const logLine = `[${nowStamp()} — ${author}]`;
+    // الكتل متوازية: نصّ الحدث في «المتابعة» والسجل في «السجل»، والأحداث اليدوية تأخذ «----------»
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    fB.push(text);
+    lB.push(logLine);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) {
+    console.error('POST followup', err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// تعديل حدث متابعة بالموضع: النصّ والتاريخ/الوقت (مدير/محرّر) · اسم المستخدم في السجل (المدير فقط) — المشاهد ممنوع
+app.patch('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
+
+    const u = req.session && req.session.user;
+    const role = !auth.authEnabled() ? 'admin' : ((u && u.role) || 'viewer');
+    const isAdmin = role === 'admin';
+    const canText = isAdmin || role === 'editor';
+
+    // النصّ: يعدّله المدير/المحرّر فقط؛ المشاهد يُبقيه كما هو
+    if (canText) {
+      const text = String((req.body && req.body.text) || '').replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim();
+      if (!text) return res.status(400).json({ ok: false, error: 'نصّ الحدث فارغ' });
+      fB[idx] = text;
+    }
+    // السجل: نقرأ القيم الأصلية لنحافظ على اسم المستخدم عند غير المدير
+    const m = String(lB[idx] || '').match(/^\s*\[(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*[—–-]\s*(.+?)\]\s*$/);
+    const origAuthor = m ? m[3].trim() : authorName(u);
+    const { date, time, author: customAuthor } = req.body || {};
+    const stamp = nowStamp();
+    const dt = (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) ? date : (m ? m[1] : stamp.slice(0, 10));
+    const tm = /^\d{1,2}:\d{2}$/.test(String(time || '')) ? time : (m ? m[2] : stamp.slice(11));
+    // اسم المستخدم في السجل: المدير فقط يعدّله؛ غيره يُبقي الاسم الأصلي
+    const au = isAdmin ? (String(customAuthor || '').trim() || origAuthor) : origAuthor;
+    lB[idx] = `[${dt} ${tm} — ${au}]`;
+
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('PATCH followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// حذف حدث متابعة بالموضع — يحذف نصّه وسجلّه معاً
+app.delete('/api/tasks/:row/followup/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const fB = sheets.fuBlocks(t ? t.followup : '');
+    const lB = sheets.fuBlocks(t ? t.log : '');
+    while (lB.length < fB.length) lB.push('----------');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= fB.length) return res.status(400).json({ ok: false, error: 'حدث غير موجود' });
+    fB.splice(idx, 1);
+    lB.splice(idx, 1);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { followup: fB.join('\n\n'), log: lB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('DELETE followup', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// ===== المخرجات المطلوبة ككائنات (كتل مفصولة بسطر فارغ في نفس الخلية) =====
+app.post('/api/tasks/:row/deliverable', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    dB.push(text); aB.push('-'); // المخرج الجديد بلا تخصيص افتراضاً
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST deliverable', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+app.patch('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim().replace(/\n\s*\n+/g, '\n');
+    if (!text) return res.status(400).json({ ok: false, error: 'نصّ المخرج فارغ' });
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    dB[idx] = text;
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    dB.splice(idx, 1); aB.splice(idx, 1);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// تأشير/إلغاء تأشير مخرج كمنجَز (بإضافة/إزالة «✓»)؛ عند إنجاز كل المخرجات تصبح المهمة «منجزة»
+app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    const done = /^✓/.test(dB[idx]);
+    dB[idx] = done ? dB[idx].replace(/^✓\s*/, '') : '✓ ' + dB[idx];
+    const patch = { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') };
+    if (dB.length && dB.every((b) => /^✓/.test(b))) patch.status = sheets.DONE_STATUS;
+    const task = await sheets.updateTask(activeTab(req), req.params.row, patch);
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// تخصيص مخرَج لمستخدم (أو إزالة التخصيص بإرسال قيمة فارغة) — للمحرّر/المدير
+app.post('/api/tasks/:row/deliverable/:idx/assignee', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const assignee = String((req.body && req.body.assignee) || '').trim();
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    // إعادة التخصيص محصورة بالمخصَّص الحالي أو المدير (غير المخصَّص متاح لأي محرّر)
+    if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    aB[idx] = assignee || '-';
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { dvowners: aB.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST deliverable assignee', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// حذف مهمة (يحذف صفّها من الشيت)
+app.delete('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    await sheets.deleteTask(activeTab(req), req.params.row);
+    invalidateCache(activeTab(req));
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE /api/tasks', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// ===== المرفقات (رفع إلى Google Drive وحفظ الرابط في عمود «مرفقات») =====
+app.post('/api/tasks/:row/attachment', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    if (!drive.enabled) return res.status(400).json({ ok: false, error: 'المرفقات غير مفعّلة (إعداد Google Drive مطلوب).' });
+    const { name, mime, data } = req.body || {};
+    if (!data) return res.status(400).json({ ok: false, error: 'لا يوجد ملف' });
+    const buffer = Buffer.from(String(data), 'base64');
+    if (!buffer.length) return res.status(400).json({ ok: false, error: 'ملف فارغ' });
+    if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'حجم الملف يتجاوز ٨ ميغابايت' });
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const folderName = `${(t && t.project) || 'مشروع'} - ${(t && t.file) || 'ملف'}`.trim();
+    const up = await drive.uploadFile({ folderName, filename: String(name || 'ملف'), mimeType: mime, buffer });
+    const blocks = sheets.fuBlocks(t ? t.attachments : '');
+    blocks.push(`${up.name}\n${up.url}`);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+app.delete('/api/tasks/:row/attachment/:idx', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const blocks = sheets.fuBlocks(t ? t.attachments : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= blocks.length) return res.status(400).json({ ok: false, error: 'مرفق غير موجود' });
+    const url = (blocks[idx].split('\n')[1] || '').trim();
+    drive.deleteFile(url).catch(() => { /* تجاهل */ });
+    blocks.splice(idx, 1);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { attachments: blocks.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('DELETE attachment', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// إضافة مهمة جديدة (مع أحداث متابعة اختيارية)
+app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const body = { ...(req.body || {}) };
+    const events = Array.isArray(body.events) ? body.events.map((e) => String(e).replace(/\r/g, '').replace(/\n[ \t]*\n+/g, '\n').trim()).filter(Boolean) : [];
+    delete body.events;
+    if (events.length) {
+      const u = req.session && req.session.user;
+      const author = authorName(u);
+      const stamp = nowStamp();
+      body.followup = events.join('\n\n');
+      body.log = events.map(() => `[${stamp} — ${author}]`).join('\n\n');
+    }
+    await sheets.addTask(activeTab(req), body);
+    invalidateCache(activeTab(req));
+    res.json({ ok: true });
+    // تنبيه المسؤولين المعيَّنين عند الإنشاء عبر تيليجرام (عدا من أنشأ المهمة)
+    const owners = splitOwnerNames(body.owner);
+    if (owners.length) notifyOwnersAssigned(req, { project: body.project, file: body.file, deadlineRaw: body.deadlineRaw }, owners);
+  } catch (err) {
+    console.error('POST /api/tasks', err.message);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// ===== الإشعارات =====
+app.get('/api/push/key', requireAuth, (req, res) => {
+  res.json({ ok: true, key: process.env.VAPID_PUBLIC_KEY || null });
+});
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  notify.addSubscription(req.body);
+  try { if (store.enabled && req.session.user) await store.savePush(req.session.user.email, req.body); } catch (e) { console.warn('savePush', e.message); }
+  res.json({ ok: true });
+});
+
+// ===== التذكيرات (لكل مستخدم/مهمة) =====
+app.get('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    let email = req.session?.user?.email;
+    // المدير يستطيع جلب تذكيرات مستخدم آخر عبر ?user=
+    if (req.query.user && auth.hasRole(req.session.user, 'admin')) email = String(req.query.user).toLowerCase();
+    if (!store.enabled || !email) return res.json({ ok: true, reminders: {}, storeEnabled: store.enabled });
+    res.json({ ok: true, reminders: await store.getReminders(email), methods: REMINDER_METHODS, offsets: REMINDER_OFFSETS });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// تطبيع مصفوفة التوقيتات [{t,count,every}]
+function sanitizeTimes(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((x) => ({ t: /^\d{1,2}:\d{2}$/.test(String(x && x.t)) ? x.t : '', count: Math.min(20, Math.max(1, parseInt(x && x.count, 10) || 1)), every: Math.min(720, Math.max(0, parseInt(x && x.every, 10) || 0)) }))
+    .filter((x) => x.t);
+}
+
+app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    let email = req.session.user.email;
+    // المدير يضبط تذكيراً لمستخدم آخر عبر body.user
+    if (req.body.user && auth.hasRole(req.session.user, 'admin')) email = String(req.body.user).toLowerCase();
+    const methods = (req.body.methods || []).filter((m) => REMINDER_METHODS.includes(m));
+    const days = (req.body.days || req.body.offsets || []).filter((o) => REMINDER_OFFSETS.includes(o));
+    const dates = (req.body.dates || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    const times = sanitizeTimes(req.body.times);
+    // فهرس الاجتماع (اختياري): إن وُجد فهو تذكير اجتماع يُحسب نسبةً لموعد ذلك الاجتماع
+    const mi = parseInt(req.body.meeting, 10);
+    const meeting = (req.body.meeting != null && req.body.meeting !== '' && Number.isInteger(mi) && mi >= 0) ? String(mi) : '';
+    await store.setReminder(email, req.params.row, methods, days, dates, times, meeting);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// إطلاق تذكير لحظي للمستخدم الحالي (بريد/تيليجرام) — يستدعيه محرّك التذكير عميلياً في الوقت المضبوط
+app.post('/api/tasks/:row/notify', requireAuth, async (req, res) => {
+  try {
+    const methods = (req.body.methods || []).filter((m) => ['email', 'telegram'].includes(m));
+    if (!methods.length) return res.json({ ok: true, sent: [] });
+    const tasks = await loadTasks(activeTab(req));
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    if (!t) return res.status(404).json({ ok: false, error: 'مهمة غير موجودة' });
+    const u = req.session.user;
+    const isOwner = (t.owners || []).map((o) => o.trim()).includes(String(u.name || '').trim());
+    const ownerNote = (!isOwner && t.owner) ? ` — المسؤول المعني: ${t.owner.replace(/\n+/g, '، ')}` : '';
+    const title = `${t.project}${t.file ? ' — ' + t.file : ''}`;
+    const line = `🔔 تذكير بمهمة: ${title}${ownerNote}${t.deadlineRaw ? ` (الموعد: ${t.deadlineRaw})` : ''}`;
+    const appUrl = process.env.APP_URL || '';
+    const sent = [];
+    if (methods.includes('email') && notify.emailEnabled()) {
+      try { await notify.sendEmail({ to: u.email, subject: `تذكير: ${t.project}`, html: `<div style="font-family:Cairo,Arial,sans-serif;direction:rtl;color:#2b2823">${esc(line)}${appUrl ? `<p style="margin-top:14px"><a href="${appUrl}" style="background:#bd6a43;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">فتح اللوحة</a></p>` : ''}</div>` }); sent.push('email'); }
+      catch (e) { console.warn('notify email', e.message); }
+    }
+    if (methods.includes('telegram') && telegram.enabled && store.enabled) {
+      try {
+        const full = (await store.getUsersFull() || []).find((x) => x.email.toLowerCase() === u.email.toLowerCase());
+        if (full && full.telegramChatId) { const ok = await telegram.sendMessage(full.telegramChatId, `${telegram.esc(line)}${appUrl ? '\n' + appUrl : ''}`); if (ok) sent.push('telegram'); }
+      } catch (e) { console.warn('notify telegram', e.message); }
+    }
+    res.json({ ok: true, sent });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// ===== تغذية التقويم (ICS) — اشتراك دائم برمز شخصي =====
+app.get('/api/calendar/:token.ics', async (req, res) => {
+  try {
+    const user = await store.getUserByToken(req.params.token);
+    if (!user) return res.status(404).send('NOT FOUND');
+    const tasks = await loadTasks(DEFAULT_TAB);
+    const byRow = {}; tasks.forEach((t) => { byRow[String(t.row)] = t; });
+    const reminders = await store.getReminders(user.email);
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Content-Disposition', 'inline; filename="eo-dashboard.ics"');
+    res.send(calendar.buildICS(byRow, reminders));
+  } catch (e) { res.status(500).send('ERROR: ' + e.message); }
+});
+
+// ===== Telegram webhook: ربط رقم المستخدم بحسابه عند مشاركته رقمه مع البوت =====
+app.post('/api/telegram/webhook', async (req, res) => {
+  if (process.env.TELEGRAM_WEBHOOK_SECRET && req.get('x-telegram-bot-api-secret-token') !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    return res.sendStatus(403);
+  }
+  res.sendStatus(200); // ردّ سريع لتيليجرام
+  try {
+    const msg = (req.body && req.body.message) || null;
+    if (!msg) return;
+    const chatId = msg.chat && msg.chat.id;
+    if (!chatId) return;
+    if (msg.contact && msg.contact.phone_number) {
+      const phone = telegram.normPhone(msg.contact.phone_number);
+      const linked = store.enabled ? await store.linkTelegram(phone, chatId) : null;
+      await telegram.sendMessage(chatId, linked
+        ? `✅ تم ربط رقمك بحساب «${linked.name}». ستصلك تذكيرات المهام هنا.`
+        : '⚠️ لم نجد مستخدماً بهذا الرقم على اللوحة. تأكّد من إدخال رقمك (مع رمز الدولة) في حسابك، ثم أعد المشاركة.');
+    } else {
+      await telegram.sendWelcome(chatId);
+    }
+  } catch (e) { console.warn('telegram webhook:', e.message); }
+});
+
+// المهمة المجدولة: ملخص يومي عبر البريد و Push (يستدعيها GitHub Actions)
+async function runDailyDigest(req, res) {
+  const secret = req.get('x-cron-secret') || req.query.secret;
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ ok: false, error: 'رمز غير صالح' });
+  }
+  try {
+    const tasks = await loadTasks(activeTab(req), true);
+    const appUrl = process.env.APP_URL || '';
+    const digest = await notify.sendDailyDigest(tasks, appUrl);
+    // ملاحظة: تذكيرات المهام بالتاريخ/الوقت تُطلَق عميلياً في أوقاتها المضبوطة (لا من الـ cron)
+    res.json({ ok: true, mail: { enabled: notify.emailEnabled(), provider: notify.emailProvider() }, digest });
+  } catch (e) {
+    console.error('daily-digest', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+}
+app.post('/api/cron/daily-digest', runDailyDigest);
+app.get('/api/cron/daily-digest', runDailyDigest);
+
+// نبضة التذكيرات بالوقت الدقيق: يستدعيها مجدول خارجي كل دقيقة/خمس دقائق فتصل التذكيرات دون فتح اللوحة
+async function runReminderTick(req, res) {
+  const secret = req.get('x-cron-secret') || req.query.secret;
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ ok: false, error: 'رمز غير صالح' });
+  }
+  try {
+    if (!store.enabled) return res.json({ ok: true, skipped: 'store-disabled' });
+    const reminders = await store.getAllReminders();
+    // خريطة الصف→المهمة عبر كل البروفايلات (البروفايل الافتراضي له الأولوية) + مهام كل بروفايل على حدة (للّوحات)
+    const profiles = await store.getProfiles();
+    const tasksByRow = {};
+    const tasksByProfile = {};
+    for (const p of profiles) {
+      try { const tasks = await loadTasks(p.tab, true); tasksByProfile[p.tab] = tasks; for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+      catch (e) { console.warn('reminder-tick tab', p.tab, e.message); }
+    }
+    const appUrl = process.env.APP_URL || '';
+    const result = await notify.sendScheduledReminders(tasksByRow, reminders, appUrl, store);
+    // اللوحات اليومية في توقيتها المضبوط (مرّة/يوم)
+    let boards = { skipped: 'n/a' };
+    try { boards = await notify.sendDailyBoards(profiles, tasksByProfile, store, appUrl); }
+    catch (e) { console.warn('daily-boards', e.message); boards = { error: e.message }; }
+    res.json({ ok: true, ...result, boards });
+  } catch (e) {
+    console.error('reminder-tick', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+}
+app.post('/api/cron/reminders', runReminderTick);
+app.get('/api/cron/reminders', runReminderTick);
+
+// نسخة node-fetch الفعلية المثبّتة (للتشخيص) — نبحث في المواقع المحتملة داخل node_modules
+function pkgVersion(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')).version; } catch { return null; } }
+function nodeFetchVersion() {
+  const nm = path.join(__dirname, 'node_modules');
+  const candidates = [
+    path.join(nm, 'node-fetch', 'package.json'),
+    path.join(nm, 'gaxios', 'node_modules', 'node-fetch', 'package.json'),
+    path.join(nm, 'google-auth-library', 'node_modules', 'node-fetch', 'package.json'),
+  ];
+  for (const c of candidates) { const v = pkgVersion(c); if (v) return v; }
+  return 'unknown';
+}
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    canWrite: sheets.canWrite,
+    tz: require('./lib/dates').TZ,
+    storeEnabled: store.enabled,
+    attachmentsEnabled: drive.enabled,
+    mailProvider: notify.emailProvider(),
+    notifyEmailSet: !!process.env.NOTIFY_EMAIL,
+    node: process.version,         // إصدار Node الفعلي على Render
+    nodeFetch: nodeFetchVersion(), // إصدار node-fetch الفعلي (يجب أن يكون 2.6.13)
+    dnsOrder: (() => { try { return require('dns').getDefaultResultOrder(); } catch { return 'n/a'; } })(),
+  });
+});
+
+// تشخيص حيّ لاتصال Google: يحاول جلب رمز عبر نفس مكتبات التطبيق ويعيد النتيجة الدقيقة
+app.get('/api/diag/google', async (req, res) => {
+  const out = { node: process.version, nodeFetch: nodeFetchVersion() };
+  try {
+    const { request } = require('gaxios');
+    const r = await request({
+      url: 'https://oauth2.googleapis.com/token', method: 'POST',
+      data: { grant_type: 'x' }, validateStatus: () => true, retry: false, timeout: 15000,
+    });
+    out.googleTransport = 'OK';   // اكتمل الاتصال (حتى لو رمز 400) ⇒ المشكلة محلولة
+    out.googleStatus = r.status;
+  } catch (e) {
+    out.googleTransport = 'FAIL'; // فشل النقل ⇒ ما زالت المشكلة قائمة
+    out.googleError = e.message;
+  }
+  res.json(out);
+});
+
+// تشخيص تيليجرام (مدير): يكشف الحلقة المعطوبة — التفعيل / الـ webhook / الحسابات المربوطة / إعداد الـ cron
+async function diagTelegram(req, res) {
+  try {
+    const bot = await telegram.getMe();
+    const webhook = await telegram.getWebhookInfo();
+    let linkedUsers = [];
+    if (store.enabled) {
+      try { linkedUsers = ((await store.getUsersFull()) || []).filter((u) => u.telegramChatId).map((u) => ({ name: u.name, email: u.email })); }
+      catch (e) { /* تجاهل */ }
+    }
+    res.json({
+      ok: true,
+      enabled: telegram.enabled,            // هل TELEGRAM_BOT_TOKEN مضبوط؟
+      bot,                                  // username/id البوت أو خطأ التوكن
+      webhook,                              // url + pending + lastErrorMessage (أهم مؤشّر)
+      appUrl: process.env.APP_URL || null,  // يلزم لتسجيل الـ webhook
+      cronSecretSet: !!process.env.CRON_SECRET,
+      storeEnabled: store.enabled,
+      linkedCount: linkedUsers.length,      // كم حساباً مربوطاً فعلاً
+      linkedUsers,
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.get('/api/diag/telegram', requireAuth, requireRole('admin'), diagTelegram);
+
+// إرسال رسالة اختبار إلى حساب المدير الحالي (يعزل مشكلة «الإرسال» عن مشكلة «الجدولة»)
+async function diagTelegramTest(req, res) {
+  try {
+    if (!telegram.enabled) return res.json({ ok: false, error: 'البوت غير مفعّل (TELEGRAM_BOT_TOKEN غير مضبوط)' });
+    if (!store.enabled) return res.json({ ok: false, error: 'التخزين الدائم غير مفعّل' });
+    const me = ((await store.getUsersFull()) || []).find((u) => u.email.toLowerCase() === String(req.session.user.email).toLowerCase());
+    if (!me) return res.json({ ok: false, error: 'تعذّر إيجاد حسابك في التخزين' });
+    if (!me.telegramChatId) return res.json({ ok: false, error: 'حسابك غير مربوط بتيليجرام (لا يوجد chatId). أكمِل الربط: شارك رقمك مع البوت.' });
+    const r = await telegram.trySend(me.telegramChatId, '✅ رسالة اختبار من لوحة الإدارة التنفيذية — إن وصلتك هذه فإنّ إرسال تيليجرام يعمل بشكل سليم.');
+    res.json({ ok: r.ok, error: r.error || null, chatId: me.telegramChatId, sentTo: me.name });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.get('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
+app.post('/api/diag/telegram/test', requireAuth, requireRole('admin'), diagTelegramTest);
+
+// تشخيص البريد (مدير): هل البريد مُهيّأ؟ وأيّ مزوّد؟
+app.get('/api/diag/email', requireAuth, requireRole('admin'), (req, res) => {
+  res.json({
+    ok: true,
+    enabled: notify.emailEnabled(),
+    provider: notify.emailProvider(),  // gmail | brevo | smtp | none
+    gmail: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN),
+    brevo: !!process.env.BREVO_API_KEY,
+    smtp: !!process.env.SMTP_HOST,
+    sender: process.env.GMAIL_SENDER || process.env.SENDER_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || null,
+    notifyEmail: process.env.NOTIFY_EMAIL || null,
+  });
+});
+// إرسال بريد اختبار إلى المدير الحالي (أو ?to=) — يُرجع الخطأ الفعلي إن فشل
+async function diagEmailTest(req, res) {
+  try {
+    if (!notify.emailEnabled()) return res.json({ ok: false, error: 'البريد غير مُهيّأ على الخادم (لم يُضبط Gmail/Brevo/SMTP)' });
+    const to = (req.query.to && String(req.query.to).trim()) || req.session.user.email;
+    await notify.sendEmail({ to, subject: 'اختبار بريد — لوحة الإدارة التنفيذية', html: '<div style="font-family:Cairo,Arial,sans-serif;direction:rtl;color:#2b2823">✅ إن وصلتك هذه الرسالة فإنّ إرسال البريد يعمل بشكل سليم. إن لم تجدها في الوارد فابحث في مجلد <b>الرسائل غير المرغوب فيها (Spam)</b>.</div>' });
+    res.json({ ok: true, sentTo: to, provider: notify.emailProvider() });
+  } catch (e) { res.json({ ok: false, error: e.message, provider: notify.emailProvider() }); }
+}
+app.get('/api/diag/email/test', requireAuth, requireRole('admin'), diagEmailTest);
+app.post('/api/diag/email/test', requireAuth, requireRole('admin'), diagEmailTest);
+
+// تشخيص جدولة التذكيرات (مدير): محاكاة جافة تكشف لكل تذكير هل يُنتج لحظة إطلاق مستحقّة الآن ولماذا.
+// افتراضياً يحلّل تذكيراتك؛ ?all=1 لكل المستخدمين، أو ?user=email لمستخدم محدّد.
+app.get('/api/diag/reminders', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.json({ ok: false, error: 'التخزين الدائم غير مفعّل' });
+    let reminders = await store.getAllReminders();
+    const scope = req.query.all === '1' ? null : (req.query.user ? String(req.query.user).toLowerCase() : String(req.session.user.email).toLowerCase());
+    if (scope) reminders = reminders.filter((r) => String(r.email).toLowerCase() === scope);
+    // خريطة الصف→المهمة عبر كل البروفايلات (نفس منطق نبضة الـ cron)
+    const profiles = await store.getProfiles();
+    const tasksByRow = {};
+    for (const p of profiles) {
+      try { const tasks = await loadTasks(p.tab, true); for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+      catch (e) { console.warn('diag/reminders tab', p.tab, e.message); }
+    }
+    const analysis = await notify.analyzeReminders(tasksByRow, reminders, store);
+    res.json({ ok: true, scope: scope || 'كل المستخدمين', ...analysis });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.listen(PORT, async () => {
+  console.log(`EO-Dashboard يعمل على المنفذ ${PORT} (الكتابة: ${sheets.canWrite ? 'مفعّلة' : 'معطّلة - قراءة فقط'})`);
+  if (sheets.canWrite) {
+    try {
+      const profs = store.enabled ? await store.getProfiles() : [{ tab: DEFAULT_TAB }];
+      for (const p of profs) { try { await sheets.ensureColumns(p.tab); } catch (e) { console.warn('ensureColumns', p.tab, e.message); } }
+      console.log('تم التأكد من الأعمدة المُدارة لكل البروفايلات.');
+    } catch (e) {
+      console.warn('تعذّر إنشاء الأعمدة المُدارة:', e.message);
+    }
+  }
+  console.log(`التخزين الدائم (المستخدمون/التذكيرات): ${store.enabled ? 'مفعّل' : 'معطّل — USERS_JSON فقط'}`);
+  // تسجيل webhook تيليجرام تلقائياً (لاستقبال ربط الأرقام)
+  if (telegram.enabled && process.env.APP_URL) {
+    telegram.setWebhook(`${process.env.APP_URL.replace(/\/$/, '')}/api/telegram/webhook`, process.env.TELEGRAM_WEBHOOK_SECRET).catch((e) => console.warn('telegram webhook reg:', e.message));
+  }
+});

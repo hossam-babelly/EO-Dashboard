@@ -16,23 +16,25 @@
     <img src="/assets/logo-horizontal.png" alt="سنكري القابضة — SANKARI HOLDING">
   </div>
   <div class="title">
-    <h1>لوحة الإدارة التنفيذية</h1>
-    <p>مجموعة سنكري القابضة — متابعة المهام والمخرجات</p>
+    <h1 data-i18n="لوحة الإدارة التنفيذية">لوحة الإدارة التنفيذية</h1>
+    <p data-i18n="مجموعة سنكري القابضة — متابعة المهام والمخرجات">مجموعة سنكري القابضة — متابعة المهام والمخرجات</p>
   </div>
   <div class="header-actions">
+    <button class="btn btn-ghost icon-only" id="langBtn" title="Language / اللغة">EN</button>
+    <button class="btn btn-ghost icon-only" id="dirBtn" title="RTL / LTR">⇄</button>
     <select id="profileSwitch" class="profile-switch" title="البروفايل" style="display:none"></select>
     <span class="sync" id="sync">—</span>
     <div class="bell-wrap">
       <button class="btn btn-ghost bell" id="bellBtn">🔔<span class="bell-count" id="bellCount" style="display:none">0</span></button>
       <div class="bell-panel" id="bellPanel"></div>
     </div>
-    <button class="btn btn-ghost icon-only" id="addBtn" title="مهمة جديدة" style="display:none">➕</button>
-    <button class="btn btn-gold icon-only" id="refreshBtn" title="تحديث">🔄</button>
+    <button class="btn btn-ghost icon-only" id="addBtn" data-i18n-title="مهمة جديدة" title="مهمة جديدة" style="display:none">➕</button>
+    <button class="btn btn-gold icon-only" id="refreshBtn" data-i18n-title="تحديث" title="تحديث">🔄</button>
     <button class="btn btn-ghost icon-only push-toggle" id="pushBtn" title="تفعيل إشعارات المتصفح" style="display:none">🖥️</button>
-    <a class="btn btn-ghost icon-only" id="usersBtn" href="/users.html" title="المستخدمون" style="display:none">👥</a>
-    <button class="btn btn-ghost icon-only" id="accountBtn" title="حسابي" style="display:none">⚙</button>
+    <a class="btn btn-ghost icon-only" id="usersBtn" href="/users.html" data-i18n-title="المستخدمون" title="المستخدمون" style="display:none">👥</a>
+    <button class="btn btn-ghost icon-only" id="accountBtn" data-i18n-title="حسابي" title="حسابي" style="display:none">⚙</button>
     <span class="user-chip" id="userChip" style="display:none"></span>
-    <button class="btn btn-ghost icon-only" id="logoutBtn" title="خروج" style="display:none">🚪</button>
+    <button class="btn btn-ghost icon-only" id="logoutBtn" data-i18n-title="خروج" title="خروج" style="display:none">🚪</button>
   </div>
 </header>
 
@@ -48,24 +50,24 @@
       <div class="ms" id="msType" data-all="الأنواع"></div>
       <div class="ms" id="msPriority" data-all="الأولويات"></div>
       <div class="ms" id="msStatus" data-all="الحالات"></div>
-      <input class="search" id="fSearch" type="text" placeholder="🔍 بحث في المهام...">
-      <button class="btn reset" id="resetBtn">مسح الفلاتر</button>
-      <button class="btn btn-gold" id="reportBtn" type="button">📄 تقرير</button>
+      <input class="search" id="fSearch" type="text" data-i18n-ph="🔍 بحث في المهام..." placeholder="🔍 بحث في المهام...">
+      <button class="btn reset" id="resetBtn" data-i18n="مسح الفلاتر">مسح الفلاتر</button>
+      <button class="btn btn-gold" id="reportBtn" type="button" data-i18n="📄 تقرير">📄 تقرير</button>
     </div>
   </div>
 
   <div class="views">
     <div class="view-group" id="shapeTabs">
-      <button class="view-tab active" data-shape="table">📋 جدول</button>
-      <button class="view-tab" data-shape="kanban">🗂️ كانبان</button>
-      <button class="view-tab" data-shape="calendar">🗓️ تقويم</button>
+      <button class="view-tab active" data-shape="table" data-i18n="📋 جدول">📋 جدول</button>
+      <button class="view-tab" data-shape="kanban" data-i18n="🗂️ كانبان">🗂️ كانبان</button>
+      <button class="view-tab" data-shape="calendar" data-i18n="🗓️ تقويم">🗓️ تقويم</button>
     </div>
     <div class="view-group" id="dataTabs">
-      <button class="view-tab active" data-data="tasks">📌 مهام</button>
-      <button class="view-tab" data-data="meetings">🤝 اجتماعات</button>
+      <button class="view-tab active" data-data="tasks" data-i18n="📌 مهام">📌 مهام</button>
+      <button class="view-tab" data-data="meetings" data-i18n="🤝 اجتماعات">🤝 اجتماعات</button>
     </div>
     <button class="view-tab toggle" id="expandBtn" type="button" style="margin-inline-start:auto">↕ عرض موسّع</button>
-    <div class="ms" id="colsWrap"><button class="view-tab toggle" id="colsBtn" type="button">⚙ الأعمدة</button><div class="ms-panel" id="colsPanel" style="inset-inline-start:auto;inset-inline-end:0;min-width:210px"></div></div>
+    <div class="ms" id="colsWrap"><button class="view-tab toggle" id="colsBtn" type="button" data-i18n="⚙ الأعمدة">⚙ الأعمدة</button><div class="ms-panel" id="colsPanel" style="inset-inline-start:auto;inset-inline-end:0;min-width:210px"></div></div>
   </div>
 
   <div class="count-line" id="countLine"></div>
@@ -140,6 +142,7 @@
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="/i18n.js"></script>
 <script src="/app.js"></script>
 <script src="/report.js"></script>
 </body>

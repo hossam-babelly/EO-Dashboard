@@ -143,7 +143,7 @@ async function fetchReminders() {
 function toast(msg, isErr = false) {
   let el = $('toast');
   if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
-  el.textContent = msg;
+  el.textContent = (window.tr ? tr(msg) : msg);
   el.className = 'toast show' + (isErr ? ' err' : '');
   setTimeout(() => { el.className = 'toast' + (isErr ? ' err' : ''); }, 2600);
 }
@@ -477,8 +477,8 @@ function renderKpis() {
 
   // البطاقات: نُبقي «إجمالي المهام» و«نسبة الإنجاز» فقط (البقية متوفّرة كشرائح فوق الفلاتر)
   const cards = [
-    { kind: 'time', key: 'all', cls: '', num: s.total, lbl: 'إجمالي المهام' },
-    { kind: 'time', key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: 'نسبة الإنجاز' },
+    { kind: 'time', key: 'all', cls: '', num: s.total, lbl: tr('إجمالي المهام') },
+    { kind: 'time', key: '_done', cls: 'green', num: (s.completion || 0) + '%', lbl: tr('نسبة الإنجاز') },
   ];
 
   // بطاقة لكل نوع (المعروفة أولاً ثم أي نوع آخر موجود)
@@ -487,10 +487,10 @@ function renderKpis() {
     ...Object.keys(byType).filter((k) => k && !TYPES.includes(k)),
   ];
   presentTypes.forEach((t) => cards.push({ kind: 'type', key: t, cls: 'kpi-type', num: byType[t] || 0, lbl: `${TYPE_ICON[t] || '🏷️'} ${t}` }));
-  if (byType['']) cards.push({ kind: 'type', key: '__none__', cls: 'kpi-type', num: byType[''], lbl: '🏷️ بلا نوع' });
+  if (byType['']) cards.push({ kind: 'type', key: '__none__', cls: 'kpi-type', num: byType[''], lbl: '🏷️ ' + tr('بلا نوع') });
 
   // بطاقة الاجتماعات (التركيز على غير المجدولة)
-  if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.required, lbl: '🤝 اجتماعات مطلوبة' });
+  if (meet.total) cards.push({ kind: 'meet', key: 'meetings', cls: 'kpi-meet', num: meet.required, lbl: tr('🤝 اجتماعات مطلوبة') });
 
   const isActive = (c) =>
     (c.kind === 'time' && state.dataType !== 'meetings' && state.time === c.key) ||
@@ -513,7 +513,7 @@ function renderKpis() {
 }
 function renderChips() {
   $('timeChips').innerHTML = TIME_CHIPS.map((c) =>
-    `<button class="chip ${state.time === c.key ? 'active' : ''}" data-time="${c.key}">${c.label}<span class="c">${countForTime(c.key)}</span></button>`).join('');
+    `<button class="chip ${state.time === c.key ? 'active' : ''}" data-time="${c.key}">${tr(c.label)}<span class="c">${countForTime(c.key)}</span></button>`).join('');
   $('timeChips').querySelectorAll('.chip').forEach((el) => { el.onclick = () => { state.time = el.dataset.time; render(); }; });
 }
 function fillSelect(id, values, current) {
@@ -525,10 +525,10 @@ function buildMS(id, stateKey, values) {
   const el = $(id); if (!el) return;
   const sel = state[stateKey];
   const all = el.dataset.all || '';
-  const label = sel.length === 0 ? `كل ${all}` : (sel.length === 1 ? (sel[0] === '__none__' ? 'بلا نوع' : sel[0]) : `${sel.length} مختار`);
+  const label = sel.length === 0 ? tr('كل ' + all) : (sel.length === 1 ? (sel[0] === '__none__' ? tr('بلا نوع') : sel[0]) : `${sel.length} ${tr('مختار')}`);
   el.innerHTML =
     `<button type="button" class="ms-btn ${sel.length ? 'has' : ''}"><span class="ms-lbl">${esc(label)}</span><span class="ms-ar">▾</span></button>
-     <div class="ms-panel">${values.length ? values.map((v) => `<label class="ms-opt"><input type="checkbox" value="${esc(v.value)}" ${sel.includes(v.value) ? 'checked' : ''}><span>${esc(v.label)}</span></label>`).join('') : '<div class="ms-empty">لا خيارات</div>'}</div>`;
+     <div class="ms-panel">${values.length ? values.map((v) => `<label class="ms-opt"><input type="checkbox" value="${esc(v.value)}" ${sel.includes(v.value) ? 'checked' : ''}><span>${esc(v.value === '__none__' ? tr('بلا نوع') : v.label)}</span></label>`).join('') : `<div class="ms-empty">${tr('لا خيارات')}</div>`}</div>`;
   el.querySelector('.ms-btn').onclick = (e) => {
     e.stopPropagation();
     const open = el.classList.contains('open');
@@ -613,7 +613,7 @@ function meetingStatusBadge(m) {
   const lbl = MEETING_STATUS[m.status] || 'مطلوب';
   const cls = MEETING_STATUS_CLS[m.status] || 'mt-unsched';
   const dt = (m.status === 'scheduled' && m.datetime) ? ` <span class="mt-dt">${esc(m.datetime)}</span>` : '';
-  return `<span class="badge ${cls}">${lbl}</span>${dt}`;
+  return `<span class="badge ${cls}">${tr(lbl)}</span>${dt}`;
 }
 function activeMeetingCols() {
   const sel = (state.meetingCols && state.meetingCols.length) ? state.meetingCols : DEFAULT_MEETING_COLS;
@@ -644,7 +644,7 @@ function renderTable() {
   const arrow = (k) => state.sortKey === k ? `<span class="arrow">${state.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
   const cols = activeTableCols();
   const wStyle = (k) => state.colWidths[k] ? ` style="width:${state.colWidths[k]}px"` : '';
-  const ths = cols.map((c) => `<th data-k="${c.k}"${c.sort ? ` data-sort="${c.sort}"` : ''}${wStyle(c.k)}><span class="th-lbl">${c.label} ${c.sort ? arrow(c.sort) : ''}</span><span class="col-resizer" data-k="${c.k}"></span></th>`).join('');
+  const ths = cols.map((c) => `<th data-k="${c.k}"${c.sort ? ` data-sort="${c.sort}"` : ''}${wStyle(c.k)}><span class="th-lbl">${tr(c.label)} ${c.sort ? arrow(c.sort) : ''}</span><span class="col-resizer" data-k="${c.k}"></span></th>`).join('');
   // زر توسيع/طيّ الصف الفردي (في الوضع المضغوط) — متاح لكل المهام
   const rows = list.map((t) => {
     const exp = state.expandedRows.has(t.id);
@@ -780,13 +780,13 @@ function deliverableSection(t) {
     return `<span class="fu-acts"><button class="fu-ico dv-chk" type="button" data-idx="${e.idx}" title="${e.done ? 'إلغاء التأشير' : 'تأشير منجز'}">${e.done ? '☑' : '☐'}</button><button class="fu-ico dv-ed" type="button" data-idx="${e.idx}" title="تعديل">✏️</button><button class="fu-ico dv-del" type="button" data-idx="${e.idx}" title="حذف">🗑</button></span>`;
   };
   // تخصيص/إعادة تخصيص المخرَج محصور كذلك: غير المخصَّص يخصّصه أي محرّر، وبمجرد تخصيصه يعيد تخصيصه المخصَّص أو المدير فقط
-  const assignRow = (e) => (ed && canActDeliv(e)) ? `<div class="dv-assign-row"><span>المخصَّص:</span><select class="dv-assign" data-idx="${e.idx}"><option value="">— بلا —</option>${userOpts(e.assignee)}</select></div>` : '';
+  const assignRow = (e) => (ed && canActDeliv(e)) ? `<div class="dv-assign-row"><span>${tr('المخصَّص:')}</span><select class="dv-assign" data-idx="${e.idx}"><option value="">${tr('— بلا —')}</option>${userOpts(e.assignee)}</select></div>` : '';
   const list = items.length ? items.map((e) => `
     <div class="fu-item plain ${e.done ? 'dv-done' : ''}" data-idx="${e.idx}">
-      <div class="fu-ihead"><span class="dv-num">مخرج ${e.idx + 1}</span>${dvWhoChip(e)}${acts(e)}</div>
-      <div class="fu-ibody">${esc(e.text)}</div>${assignRow(e)}</div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
-  const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="أضف مخرجاً مطلوباً جديداً…"></textarea><button class="btn btn-save" id="dvAdd" type="button">➕ إضافة مخرج</button></div>` : '';
-  return `<div id="dvSection" class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>${add}</div>`;
+      <div class="fu-ihead"><span class="dv-num">${tr('مخرج')} ${e.idx + 1}</span>${dvWhoChip(e)}${acts(e)}</div>
+      <div class="fu-ibody">${esc(e.text)}</div>${assignRow(e)}</div>`).join('') : `<div class="fu-empty">${tr('لا توجد مخرجات بعد.')}</div>`;
+  const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="${tr('أضف مخرجاً مطلوباً جديداً…')}"></textarea><button class="btn btn-save" id="dvAdd" type="button">${tr('➕ إضافة مخرج')}</button></div>` : '';
+  return `<div id="dvSection" class="field"><label>${tr('المخرجات المطلوبة')}</label><div class="fu-log">${list}</div>${add}</div>`;
 }
 async function setDelivAssignee(id, idx, assignee) {
   try {
@@ -1074,7 +1074,7 @@ function renderMeetings() {
 
   const cols = activeMeetingCols();
   const editable = canEdit();
-  const ths = cols.map((c) => `<th>${c.label}</th>`).join('') + (state.storeEnabled ? '<th>تذكير</th>' : '') + (editable ? '<th>تغيير الحالة</th>' : '');
+  const ths = cols.map((c) => `<th>${tr(c.label)}</th>`).join('') + (state.storeEnabled ? `<th>${tr('تذكير')}</th>` : '') + (editable ? `<th>${tr('تغيير الحالة')}</th>` : '');
   const body = rows.map((row) => {
     const { t, m, idx } = row;
     const tds = cols.map((c) => `<td class="${c.cls || ''}">${c.r(row)}</td>`).join('');
@@ -1203,16 +1203,16 @@ function openModal(id) {
   closeMeetingReminder(); // تفريغ لوحة تذكير الاجتماع لتفادي تعارض مُعرّفات لوحتَي التذكير
   resetRemContext();
   $('mTitle').textContent = `${t.project}${t.file ? ' — ' + t.file : ''}`;
-  const F = (label, val) => val ? `<div class="field"><label>${label}</label><div class="val">${esc(val)}</div></div>` : '';
+  const F = (label, val) => val ? `<div class="field"><label>${tr(label)}</label><div class="val">${esc(val)}</div></div>` : '';
   const meetingField = (t.meetings && t.meetings.length)
-    ? `<div class="field"><label>🤝 الاجتماعات</label><div class="val">${t.meetings.map((m) => `<div class="mtg-row">${meetingStatusBadge(m)} <span class="mtg-name">${esc(m.title)}</span></div>`).join('')}</div></div>`
+    ? `<div class="field"><label>${tr('🤝 الاجتماعات')}</label><div class="val">${t.meetings.map((m) => `<div class="mtg-row">${meetingStatusBadge(m)} <span class="mtg-name">${esc(m.title)}</span></div>`).join('')}</div></div>`
     : '';
   $('mBody').innerHTML =
     F('المشروع', t.project) + F('الملف', t.file) + F('النوع', t.type) + F('مرتبط بـ', t.linkedTo) + F('المسؤول المعني', t.owner) +
     deliverableSection(t) +
-    `<div class="field"><label>الموعد / الدورية</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
-    `<div class="field"><label>الأولوية</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
-    `<div class="field"><label>الحالة</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
+    `<div class="field"><label>${tr('الموعد / الدورية')}</label><div class="val">${esc(t.deadlineRaw || '—')} <span style="color:var(--muted)">(${relText(t)})</span></div></div>` +
+    `<div class="field"><label>${tr('الأولوية')}</label><div class="val"><span class="badge ${priClass(t.priority)}">${esc(t.priority)}</span></div></div>` +
+    `<div class="field"><label>${tr('الحالة')}</label><div class="val"><span class="badge st ${stClass(t.status)}">${esc(t.status)}</span></div></div>` +
     meetingField +
     followupSection(t) + F('ملاحظات', t.notes) +
     attachmentsSection(t) +
@@ -1296,9 +1296,9 @@ function remTimeRow(tm) {
   tm = tm || {};
   return `<div class="rem-time-row">
     <input type="time" class="rt-t" value="${esc(tm.t || '09:00')}">
-    <span>كرّر</span><input type="number" class="rt-count" min="1" max="20" value="${esc(tm.count || 1)}" title="عدد مرات التكرار">
-    <span>مرّة، كل</span><input type="number" class="rt-every" min="0" max="720" value="${esc(tm.every || 0)}" title="فترة التكرار بالدقائق">
-    <span>دقيقة</span><button type="button" class="rt-del" title="حذف التوقيت">✕</button>
+    <span>${tr('كرّر')}</span><input type="number" class="rt-count" min="1" max="20" value="${esc(tm.count || 1)}" title="عدد مرات التكرار">
+    <span>${tr('مرّة، كل')}</span><input type="number" class="rt-every" min="0" max="720" value="${esc(tm.every || 0)}" title="فترة التكرار بالدقائق">
+    <span>${tr('دقيقة')}</span><button type="button" class="rt-del" title="حذف التوقيت">✕</button>
   </div>`;
 }
 function reminderSection(t, mIdx) {
@@ -1310,12 +1310,12 @@ function reminderSection(t, mIdx) {
   const saved = (state.remMap || {})[remKey];
   const pref = saved || (mIdx == null ? remDefaultPref(t) : { methods: [], days: [], dates: [], times: [] });
   const chk = (arr, item) => (arr || []).includes(item.key) ? 'checked' : '';
-  const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${m.label}</label>`).join('');
-  const days = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="day" value="${o.key}" ${chk(pref.days, o)}> ${offsetLabel(o, mIdx)}</label>`).join('');
+  const methods = REMINDER_METHODS.map((m) => `<label class="rem-opt"><input type="checkbox" data-rem="method" value="${m.key}" ${chk(pref.methods, m)}> ${tr(m.label)}</label>`).join('');
+  const days = REMINDER_OFFSETS.map((o) => `<label class="rem-opt"><input type="checkbox" data-rem="day" value="${o.key}" ${chk(pref.days, o)}> ${tr(offsetLabel(o, mIdx))}</label>`).join('');
   const datesHtml = (pref.dates || []).map((d) => remDateChip(d)).join('');
   const timesHtml = (pref.times && pref.times.length ? pref.times : [{ t: '09:00', count: 1, every: 0 }]).map(remTimeRow).join('');
   const userPicker = isAdmin()
-    ? `<div class="rem-group"><span class="rem-sub">إعدادات المستخدم:</span>
+    ? `<div class="rem-group"><span class="rem-sub">${tr('إعدادات المستخدم:')}</span>
         <select id="remUserSel">${(state.users || []).map((u) => `<option value="${esc(u.email)}" ${u.email === state.remUser ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>`
     : '';
   const calUrl = state.me && state.me.calToken ? `${location.origin}/api/calendar/${state.me.calToken}.ics` : '';
@@ -1324,23 +1324,23 @@ function reminderSection(t, mIdx) {
         <div class="rem-cal-row"><input id="calUrl" readonly value="${esc(calUrl)}"><button class="btn btn-cancel" id="calCopy" type="button">نسخ</button></div></div>`
     : '';
   return `<div id="remSection" class="rem-box">
-    <label class="rem-title">${mIdx == null ? '🔔 تذكيرات هذه المهمة' : '🔔 تذكير هذا الاجتماع'}</label>
+    <label class="rem-title">${mIdx == null ? tr('🔔 تذكيرات هذه المهمة') : tr('🔔 تذكير هذا الاجتماع')}</label>
     ${userPicker}
-    <div class="rem-group"><span class="rem-sub">طريقة التذكير:</span>${methods}</div>
-    <div class="rem-group"><span class="rem-sub">أيام التذكير:</span>${days}</div>
-    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">+ تواريخ ثابتة:</span>
+    <div class="rem-group"><span class="rem-sub">${tr('طريقة التذكير:')}</span>${methods}</div>
+    <div class="rem-group"><span class="rem-sub">${tr('أيام التذكير:')}</span>${days}</div>
+    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">${tr('+ تواريخ ثابتة:')}</span>
       <div style="flex:1">
         <div id="remDates" class="rem-dates">${datesHtml}</div>
-        <div class="rem-cal-row" style="margin-top:6px"><input type="date" id="remDateInput"><button class="btn btn-cancel" id="remDateAdd" type="button">➕ أضف تاريخاً</button></div>
+        <div class="rem-cal-row" style="margin-top:6px"><input type="date" id="remDateInput"><button class="btn btn-cancel" id="remDateAdd" type="button">${tr('➕ أضف تاريخاً')}</button></div>
       </div>
     </div>
-    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">توقيت التذكير (سوريا):</span>
+    <div class="rem-group" style="align-items:flex-start"><span class="rem-sub">${tr('توقيت التذكير (سوريا):')}</span>
       <div style="flex:1">
         <div id="remTimesList">${timesHtml}</div>
-        <button class="btn btn-cancel" id="remTimeAdd" type="button" style="margin-top:4px">➕ أضف توقيتاً</button>
+        <button class="btn btn-cancel" id="remTimeAdd" type="button" style="margin-top:4px">${tr('➕ أضف توقيتاً')}</button>
       </div>
     </div>
-    <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">💾 حفظ التذكير</button>
+    <button class="btn btn-save" id="remSave" type="button" style="margin-top:8px">${tr('💾 حفظ التذكير')}</button>
     <div style="font-size:11.5px;color:var(--muted);margin-top:6px">تُطلَق التذكيرات بكل الطرق المختارة في الأيام والأوقات المحدّدة، أثناء فتح المستلِم للوحة بحسابه.</div>
     ${calHint}
   </div>`;
@@ -1408,13 +1408,13 @@ function bindReminderSection(t, mIdx) {
 }
 
 function field(label, name, value, type = 'text') {
-  return `<div class="field"><label>${label}</label><input name="${name}" type="${type}" value="${esc(value)}"></div>`;
+  return `<div class="field"><label>${tr(label)}</label><input name="${name}" type="${type}" value="${esc(value)}"></div>`;
 }
 function textarea(label, name, value) {
-  return `<div class="field"><label>${label}</label><textarea name="${name}">${esc(value)}</textarea></div>`;
+  return `<div class="field"><label>${tr(label)}</label><textarea name="${name}">${esc(value)}</textarea></div>`;
 }
 function selectField(label, name, options, value) {
-  return `<div class="field"><label>${label}</label><select name="${name}">${options.map((o) => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+  return `<div class="field"><label>${tr(label)}</label><select name="${name}">${options.map((o) => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
 }
 // حقل الموعد: تاريخ محدد (تقويم) / دورية / غير محدد
 const DL_WEEKDAYS = ['كل السبت', 'كل الأحد', 'كل الإثنين', 'كل الثلاثاء', 'كل الأربعاء', 'كل الخميس'];
@@ -1452,8 +1452,8 @@ function pickField(label, name, values, value, multiline) {
   const ni = multiline
     ? `<textarea name="${name}New" id="${name}New" rows="2" placeholder="قيمة جديدة (سطر لكل قيمة)" style="display:none;margin-top:8px"></textarea>`
     : `<input name="${name}New" id="${name}New" type="text" placeholder="قيمة جديدة" style="display:none;margin-top:8px">`;
-  return `<div class="field"><label>${label}</label>
-    <select name="${name}" id="${name}Sel">${opts}<option value="__new__">➕ إضافة جديد…</option></select>${ni}</div>`;
+  return `<div class="field"><label>${tr(label)}</label>
+    <select name="${name}" id="${name}Sel">${opts}<option value="__new__">${tr('➕ إضافة جديد…')}</option></select>${ni}</div>`;
 }
 
 function openEdit(t) {
@@ -1466,7 +1466,7 @@ function openEdit(t) {
   state.editOwner = isNew ? [] : ((t.owners && t.owners.length) ? t.owners.slice() : []);
   state.editMeetings = isNew ? [] : (t.meetings || []).map((m) => ({ title: m.title, status: m.status || 'required', datetime: m.datetime || '' }));
   const createdVal = isNew ? todayISO() : (t.createdIso || t.created || '');
-  $('mTitle').textContent = isNew ? 'إضافة مهمة جديدة' : 'تعديل المهمة';
+  $('mTitle').textContent = isNew ? tr('إضافة مهمة جديدة') : tr('تعديل المهمة');
   $('mBody').innerHTML = `<form id="taskForm">
     ${pickField('المشروع', 'project', state.filters.projects, t.project, false)}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
@@ -1714,6 +1714,22 @@ async function load(refresh = false) {
   }
 }
 
+// ===== اللغة والاتجاه =====
+(function () {
+  const lb = $('langBtn'), db = $('dirBtn');
+  const syncLangBtn = () => { if (lb) lb.textContent = (window.I18N && I18N.lang === 'en') ? 'ع' : 'EN'; };
+  syncLangBtn();
+  if (lb) lb.onclick = () => {
+    if (!window.I18N) return;
+    I18N.setLang(I18N.lang === 'en' ? 'ar' : 'en');
+    syncLangBtn();
+    I18N.applyStatic();
+    closeModal(); closeMeetingReminder();
+    try { render(); if (window._syncExpandBtn) window._syncExpandBtn(); } catch (e) { /* قبل اكتمال التحميل */ }
+  };
+  if (db) db.onclick = () => { if (window.I18N) I18N.setDir(I18N.dir === 'ltr' ? 'rtl' : 'ltr'); };
+})();
+
 // ===== Events =====
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
@@ -1728,7 +1744,8 @@ try { state.colWidths = JSON.parse(localStorage.getItem('eo_colwidths') || '{}')
 })();
 (function () {
   const eb = $('expandBtn');
-  const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.textContent = state.expanded ? '↕ عرض مضغوط' : '↕ عرض موسّع'; } };
+  const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.textContent = state.expanded ? tr('↕ عرض مضغوط') : tr('↕ عرض موسّع'); } };
+  window._syncExpandBtn = sync;
   if (eb) eb.onclick = () => { state.expanded = !state.expanded; localStorage.setItem('eo_expanded', state.expanded ? '1' : '0'); sync(); render(); };
   sync();
 })();

@@ -15,9 +15,11 @@
   <div class="logo" aria-label="سنكري القابضة">
     <img src="/assets/logo-horizontal.png" alt="سنكري القابضة — SANKARI HOLDING">
   </div>
-  <div class="title"><h1>إدارة المستخدمين</h1><p>مجموعة سنكري القابضة</p></div>
+  <div class="title"><h1 data-i18n="إدارة المستخدمين">إدارة المستخدمين</h1><p data-i18n="مجموعة سنكري القابضة">مجموعة سنكري القابضة</p></div>
   <div class="header-actions">
-    <a class="btn btn-gold" href="/">← رجوع للوحة</a>
+    <button class="btn btn-ghost icon-only" id="langBtn" title="Language / اللغة">EN</button>
+    <button class="btn btn-ghost icon-only" id="dirBtn" title="RTL / LTR">⇄</button>
+    <a class="btn btn-gold" href="/" data-i18n="← رجوع للوحة">← رجوع للوحة</a>
   </div>
 </header>
 
@@ -25,48 +27,48 @@
   <div id="notice"></div>
 
   <div class="card">
-    <h2>🗂️ البروفايلات</h2>
+    <h2 data-i18n="🗂️ البروفايلات">🗂️ البروفايلات</h2>
     <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">كل بروفايل = تبويب مستقلّ في ملف المهام. إضافة بروفايل تُنشئ تبويباً جديداً بنفس بنية الجدول تلقائياً.</p>
     <div id="profilesList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-      <div class="fld" style="flex:1;min-width:200px"><label>اسم البروفايل الجديد</label><input type="text" id="newProfileName" placeholder="مثال: ممثل المالك"></div>
-      <button class="btn btn-save" id="addProfileBtn" type="button">➕ إضافة بروفايل</button>
+      <div class="fld" style="flex:1;min-width:200px"><label data-i18n="اسم البروفايل الجديد">اسم البروفايل الجديد</label><input type="text" id="newProfileName" placeholder="مثال: ممثل المالك"></div>
+      <button class="btn btn-save" id="addProfileBtn" type="button" data-i18n="➕ إضافة بروفايل">➕ إضافة بروفايل</button>
     </div>
   </div>
 
   <div class="card">
-    <h2>📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)</h2>
+    <h2 data-i18n="📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)">📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)</h2>
     <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">تُرسَل تلقائياً يومياً عبر البريد وتيليجرام: <b>لوحة مخصّصة</b> لكل مسؤول معني بمهامه، و<b>لوحة شاملة</b> لكل بروفايل (مهام الجميع مُجمَّعة حسب المسؤول) تُرسَل للمستخدم المحدّد أدناه. (اتركها فارغة لإيقاف الإرسال.)</p>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
-      <div class="fld"><label>توقيت الإرسال اليومي (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
-      <button class="btn btn-save" id="saveDigestBtn" type="button">💾 حفظ الإعدادات</button>
-      <button class="btn btn-gold" id="testDigestBtn" type="button">📤 إرسال تجريبي الآن</button>
+      <div class="fld"><label data-i18n="توقيت الإرسال اليومي (بتوقيت سوريا)">توقيت الإرسال اليومي (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
+      <button class="btn btn-save" id="saveDigestBtn" type="button" data-i18n="💾 حفظ الإعدادات">💾 حفظ الإعدادات</button>
+      <button class="btn btn-gold" id="testDigestBtn" type="button" data-i18n="📤 إرسال تجريبي الآن">📤 إرسال تجريبي الآن</button>
     </div>
-    <div class="rep-cols-title">مستلِم اللوحة الشاملة لكل بروفايل:</div>
+    <div class="rep-cols-title" data-i18n="مستلِم اللوحة الشاملة لكل بروفايل:">مستلِم اللوحة الشاملة لكل بروفايل:</div>
     <div id="digestRecipients" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
   <div class="card">
-    <h2>➕ إضافة مستخدم</h2>
+    <h2 data-i18n="➕ إضافة مستخدم">➕ إضافة مستخدم</h2>
     <form class="u-form" id="addForm">
-      <div class="fld"><label>البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
-      <div class="fld"><label>الاسم الأول</label><input type="text" name="firstName" required placeholder="مثال: حسام"></div>
-      <div class="fld"><label>الاسم الأخير</label><input type="text" name="lastName" placeholder="مثال: بابللي"></div>
-      <div class="fld"><label>رقم الهاتف (تيليجرام)</label><input type="tel" name="phone" dir="ltr" placeholder="+963…"></div>
-      <div class="fld"><label>كلمة المرور</label>
+      <div class="fld"><label data-i18n="البريد (اسم الدخول)">البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
+      <div class="fld"><label data-i18n="الاسم الأول">الاسم الأول</label><input type="text" name="firstName" required placeholder="مثال: حسام"></div>
+      <div class="fld"><label data-i18n="الاسم الأخير">الاسم الأخير</label><input type="text" name="lastName" placeholder="مثال: بابللي"></div>
+      <div class="fld"><label data-i18n="رقم الهاتف (تيليجرام)">رقم الهاتف (تيليجرام)</label><input type="tel" name="phone" dir="ltr" placeholder="+963…"></div>
+      <div class="fld"><label data-i18n="كلمة المرور">كلمة المرور</label>
         <div class="pw-wrap"><input type="password" name="password" id="addPw" required placeholder="••••••"><button type="button" class="pw-eye" data-target="addPw" aria-label="إظهار كلمة المرور">👁</button></div>
       </div>
-      <div class="fld"><label>الدور</label><select name="role"><option value="viewer">مشاهد</option><option value="editor">محرّر</option><option value="admin">مدير</option></select></div>
-      <div class="fld" style="grid-column:1/-1"><label>البروفايلات المتاحة (بلا تحديد = الكل)</label><div id="addProfiles" class="prof-checks"></div></div>
-      <button class="btn btn-save" type="submit">حفظ</button>
+      <div class="fld"><label data-i18n="الدور">الدور</label><select name="role"><option value="viewer" data-i18n="مشاهد">مشاهد</option><option value="editor" data-i18n="محرّر">محرّر</option><option value="admin" data-i18n="مدير">مدير</option></select></div>
+      <div class="fld" style="grid-column:1/-1"><label data-i18n="البروفايلات المتاحة (بلا تحديد = الكل)">البروفايلات المتاحة (بلا تحديد = الكل)</label><div id="addProfiles" class="prof-checks"></div></div>
+      <button class="btn btn-save" type="submit" data-i18n="حفظ">حفظ</button>
     </form>
     <p style="color:var(--muted);font-size:12.5px;margin-top:10px">البريد هو اسم الدخول، وإليه تُرسل تنبيهات المهام. الأدوار: <b>مدير</b> (كل شيء + إدارة المستخدمين) • <b>محرّر</b> (تعديل المهام) • <b>مشاهد</b> (عرض + تذكيرات شخصية).</p>
   </div>
 
   <div class="card">
-    <h2>👥 المستخدمون</h2>
+    <h2 data-i18n="👥 المستخدمون">👥 المستخدمون</h2>
     <table class="users-table">
-      <thead><tr><th>البريد</th><th>الاسم</th><th>الدور</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+      <thead><tr><th data-i18n="البريد">البريد</th><th data-i18n="الاسم">الاسم</th><th data-i18n="الدور">الدور</th><th data-i18n="الحالة">الحالة</th><th data-i18n="إجراءات">إجراءات</th></tr></thead>
       <tbody id="usersBody"><tr><td colspan="5" style="text-align:center;color:var(--muted)">جارٍ التحميل…</td></tr></tbody>
     </table>
   </div>
@@ -92,9 +94,18 @@
   </div>
 </div>
 
+<script src="/i18n.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
+const TR = (s) => (window.tr ? tr(s) : s);
 const ROLES = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' };
+(function () {
+  const lb = $('#langBtn'), db = $('#dirBtn');
+  const sync = () => { if (lb) lb.textContent = (window.I18N && I18N.lang === 'en') ? 'ع' : 'EN'; };
+  sync();
+  if (lb) lb.onclick = () => { if (!window.I18N) return; I18N.setLang(I18N.lang === 'en' ? 'ar' : 'en'); sync(); I18N.applyStatic(); loadProfiles(); loadUsers(); loadDigest(); };
+  if (db) db.onclick = () => { if (window.I18N) I18N.setDir(I18N.dir === 'ltr' ? 'rtl' : 'ltr'); };
+})();
 let USERS = [];
 let PROFILES = [];
 let editingEmail = null;
@@ -137,13 +148,13 @@ async function loadUsers() {
   USERS = data.users || [];
   const rows = USERS.map((u) => `<tr>
     <td>${u.email}</td><td>${u.name || ''}</td>
-    <td><span class="role-badge role-${u.role}">${ROLES[u.role] || u.role}</span></td>
-    <td>${u.active === false ? '🚫 معطّل' : '✅ مفعّل'}</td>
+    <td><span class="role-badge role-${u.role}">${TR(ROLES[u.role] || u.role)}</span></td>
+    <td>${u.active === false ? TR('🚫 معطّل') : TR('✅ مفعّل')}</td>
     <td>
-      <button class="btn btn-edit" data-act="edit" data-email="${u.email}" style="padding:6px 12px">✏️ تعديل</button>
-      <button class="btn btn-cancel" data-act="toggle" data-email="${u.email}" data-active="${u.active === false ? 1 : 0}" style="padding:6px 12px">${u.active === false ? 'تمكين' : 'تعطيل'}</button>
+      <button class="btn btn-edit" data-act="edit" data-email="${u.email}" style="padding:6px 12px">${TR('✏️ تعديل')}</button>
+      <button class="btn btn-cancel" data-act="toggle" data-email="${u.email}" data-active="${u.active === false ? 1 : 0}" style="padding:6px 12px">${u.active === false ? TR('تمكين') : TR('تعطيل')}</button>
     </td></tr>`).join('');
-  $('#usersBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا مستخدمون</td></tr>';
+  $('#usersBody').innerHTML = rows || `<tr><td colspan="5" style="text-align:center;color:var(--muted)">${TR('لا مستخدمون')}</td></tr>`;
   bindActions();
 }
 
