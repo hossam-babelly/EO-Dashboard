@@ -802,7 +802,7 @@ function deliverableSection(t) {
   const assignRow = (e) => (ed && canActDeliv(e)) ? `<div class="dv-assign-row"><span>${tr('المخصَّص:')}</span><select class="dv-assign" data-idx="${e.idx}"><option value="">${tr('— بلا —')}</option>${userOpts(e.assignee)}</select></div>` : '';
   // صفّ موعد المخرَج: تاريخ اختياري يُدرِج المهمة في اللوحة/التذكير عند اقترابه دون التأثير على موعد المهمة العام
   const dateRow = (e) => (ed && canActDeliv(e))
-    ? `<div class="dv-assign-row"><span>${tr('موعد المخرج:')}</span><input type="date" class="dv-date" data-idx="${e.idx}" value="${esc(e.dateIso || '')}">${e.dateRaw ? `<button class="fu-ico dv-date-clr" data-idx="${e.idx}" type="button" title="إزالة الموعد">✕</button>` : ''}</div>`
+    ? `<div class="dv-assign-row"><span>${tr('موعد المخرج:')}</span><input type="date" class="dv-date" data-idx="${e.idx}" value="${esc(e.dateIso || '')}"><button class="btn btn-save dv-date-save" data-idx="${e.idx}" type="button">${tr('حفظ الموعد')}</button>${e.dateRaw ? `<button class="fu-ico dv-date-clr" data-idx="${e.idx}" type="button" title="إزالة الموعد">✕</button>` : ''}</div>`
     : '';
   const list = items.length ? items.map((e) => `
     <div class="fu-item plain ${e.done ? 'dv-done' : ''}" data-idx="${e.idx}">
@@ -837,7 +837,12 @@ function bindDeliverable(t) {
   sec.querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
   sec.querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
   sec.querySelectorAll('.dv-assign').forEach((s) => s.onchange = () => setDelivAssignee(t.id, Number(s.dataset.idx), s.value));
-  sec.querySelectorAll('.dv-date').forEach((d) => d.onchange = () => setDelivDate(t.id, Number(d.dataset.idx), d.value));
+  // الحفظ بزرّ صريح فقط (لا onchange) كي لا يُلتقط تاريخ وسيط أثناء الكتابة ولا يُعاد الرسم في أثنائها
+  sec.querySelectorAll('.dv-date-save').forEach((b) => b.onclick = () => {
+    const idx = Number(b.dataset.idx);
+    const inp = sec.querySelector(`.dv-date[data-idx="${idx}"]`);
+    setDelivDate(t.id, idx, inp ? inp.value : '');
+  });
   sec.querySelectorAll('.dv-date-clr').forEach((b) => b.onclick = () => setDelivDate(t.id, Number(b.dataset.idx), ''));
 }
 function refreshDeliverable(id) {
