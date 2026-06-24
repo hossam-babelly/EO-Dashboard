@@ -248,13 +248,32 @@ function typeCell(type) {
 // خلية المخرجات في الجدول: مضغوط = أول مخرج + «+عدد»، موسّع = كل المخرجات مكدّسة
 // المخرجات: كتل مفصولة بسطر فارغ؛ المخرج المنجَز يبدأ بـ«✓»
 // المخرجات: كتل نصّية، والتخصيص كتل متوازية في «assignees» («-» = بلا تخصيص)
-function parseDeliverables(raw, assigneesRaw) {
+function dvRealVal(v) { const s = String(v == null ? '' : v).trim(); return (s && s !== '-' && s !== '—' && s !== '----------') ? s : ''; }
+// تطبيع تاريخ (ISO أو D/M/YYYY) إلى YYYY-MM-DD
+function toIsoDateC(s) {
+  const v = String(s == null ? '' : s).trim();
+  let m = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (m) { let y = Number(m[3]); if (y < 100) y += 2000; return `${y}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`; }
+  return '';
+}
+function relFromDiffC(diff) { return diff == null ? '' : diff < 0 ? `متأخر ${Math.abs(diff)} يوم` : diff === 0 ? 'اليوم' : `بعد ${diff} يوم`; }
+function parseDeliverables(raw, assigneesRaw, datesRaw) {
   const aB = fuBlocks(assigneesRaw || '');
+  const tB = fuBlocks(datesRaw || '');
   return fuBlocks(raw).map((b, i) => {
-    const a = String(aB[i] || '').trim();
-    const assignee = (a && a !== '-' && a !== '—' && a !== '----------') ? a : '';
-    return { idx: i, done: /^✓/.test(b), text: b.replace(/^✓\s*/, ''), assignee };
+    const dateRaw = dvRealVal(tB[i]); const dateIso = toIsoDateC(dateRaw);
+    return { idx: i, done: /^✓/.test(b), text: b.replace(/^✓\s*/, ''), assignee: dvRealVal(aB[i]), dateRaw, dateIso, diffDays: dateIso ? dayDiffIso(dateIso, todayISO()) : null };
   });
+}
+// عناصر المخرجات: نفضّل المصفوفة المحسوبة خادمياً (تتضمّن تصنيف الموعد)، وإلا نحلّلها محلياً
+function delivItems(t) { return Array.isArray(t.deliverables) && t.deliverables.length ? t.deliverables : parseDeliverables(t.deliverable, t.assignees, t.dvdates); }
+// شارة موعد المخرَج (لونها حسب القرب)
+function dvWhenChip(e) {
+  if (!e.dateRaw) return '';
+  const cls = (e.diffDays != null && e.diffDays <= 0) ? 'dvw-over' : (e.diffDays != null && e.diffDays <= 3) ? 'dvw-soon' : 'dvw-far';
+  return `<span class="dv-when ${cls}">📅 ${esc(e.dateRaw)} · ${esc(relFromDiffC(e.diffDays))}</span>`;
 }
 // قائمة خيارات المستخدمين لاختيار المخصَّص
 function userOpts(selected) {
@@ -272,11 +291,11 @@ function dvWhoChip(e) {
 }
 function dvChip(t, e) {
   const allowed = canActDeliv(e);
-  return `<div class="dv-toggle ${e.done ? 'done' : ''}${allowed ? '' : ' locked'}" data-id="${t.id}" data-idx="${e.idx}" title="${allowed ? (e.done ? 'إلغاء التأشير' : 'تأشير كمنجز') : 'مخصَّص لمستخدم آخر'}"><span class="dv-check"></span><span class="dv-txt">${esc(e.text)}${dvWhoChip(e)}</span></div>`;
+  return `<div class="dv-toggle ${e.done ? 'done' : ''}${allowed ? '' : ' locked'}" data-id="${t.id}" data-idx="${e.idx}" title="${allowed ? (e.done ? 'إلغاء التأشير' : 'تأشير كمنجز') : 'مخصَّص لمستخدم آخر'}"><span class="dv-check"></span><span class="dv-txt">${esc(e.text)}${dvWhoChip(e)}${dvWhenChip(e)}</span></div>`;
 }
 function rowExpanded(t) { return state.expanded || state.expandedRows.has(t.id); }
 function deliverableCell(t) {
-  const items = parseDeliverables(t.deliverable, t.assignees);
+  const items = delivItems(t);
   if (!items.length) return '<span style="color:var(--muted)">—</span>';
   if (rowExpanded(t)) return `<div class="dv-list">${items.map((e) => dvChip(t, e)).join('')}</div>`;
   const more = items.length > 1 ? `<span class="fu-more row-expand" data-id="${t.id}" style="margin-top:4px;display:inline-block;cursor:pointer">+${items.length - 1}</span>` : '';
@@ -297,7 +316,7 @@ function bindDvToggles(scope) {
     e.stopPropagation();
     const id = Number(el.dataset.id), idx = Number(el.dataset.idx);
     const t = state.tasks.find((x) => x.id === id);
-    const ev = t ? parseDeliverables(t.deliverable, t.assignees).find((x) => x.idx === idx) : null;
+    const ev = t ? delivItems(t).find((x) => x.idx === idx) : null;
     if (!ev) return;
     if (canActDeliv(ev)) toggleDeliv(id, idx);
     else if (canEdit()) toast('هذا المخرج مخصَّص لمستخدم آخر', true);
@@ -772,7 +791,7 @@ function renderCalendar() {
 
 // ===== المخرجات المطلوبة ككائنات (كتل مفصولة بسطر فارغ) =====
 function deliverableSection(t) {
-  const items = parseDeliverables(t.deliverable, t.assignees);
+  const items = delivItems(t);
   const ed = canEdit();
   const acts = (e) => {
     if (!ed) return '';
@@ -781,12 +800,25 @@ function deliverableSection(t) {
   };
   // تخصيص/إعادة تخصيص المخرَج محصور كذلك: غير المخصَّص يخصّصه أي محرّر، وبمجرد تخصيصه يعيد تخصيصه المخصَّص أو المدير فقط
   const assignRow = (e) => (ed && canActDeliv(e)) ? `<div class="dv-assign-row"><span>${tr('المخصَّص:')}</span><select class="dv-assign" data-idx="${e.idx}"><option value="">${tr('— بلا —')}</option>${userOpts(e.assignee)}</select></div>` : '';
+  // صفّ موعد المخرَج: تاريخ اختياري يُدرِج المهمة في اللوحة/التذكير عند اقترابه دون التأثير على موعد المهمة العام
+  const dateRow = (e) => (ed && canActDeliv(e))
+    ? `<div class="dv-assign-row"><span>${tr('موعد المخرج:')}</span><input type="date" class="dv-date" data-idx="${e.idx}" value="${esc(e.dateIso || '')}">${e.dateRaw ? `<button class="fu-ico dv-date-clr" data-idx="${e.idx}" type="button" title="إزالة الموعد">✕</button>` : ''}</div>`
+    : '';
   const list = items.length ? items.map((e) => `
     <div class="fu-item plain ${e.done ? 'dv-done' : ''}" data-idx="${e.idx}">
-      <div class="fu-ihead"><span class="dv-num">${tr('مخرج')} ${e.idx + 1}</span>${dvWhoChip(e)}${acts(e)}</div>
-      <div class="fu-ibody">${esc(e.text)}</div>${assignRow(e)}</div>`).join('') : `<div class="fu-empty">${tr('لا توجد مخرجات بعد.')}</div>`;
+      <div class="fu-ihead"><span class="dv-num">${tr('مخرج')} ${e.idx + 1}</span>${dvWhoChip(e)}${dvWhenChip(e)}${acts(e)}</div>
+      <div class="fu-ibody">${esc(e.text)}</div>${assignRow(e)}${dateRow(e)}</div>`).join('') : `<div class="fu-empty">${tr('لا توجد مخرجات بعد.')}</div>`;
   const add = ed ? `<div class="fu-add"><textarea id="dvInput" rows="2" placeholder="${tr('أضف مخرجاً مطلوباً جديداً…')}"></textarea><button class="btn btn-save" id="dvAdd" type="button">${tr('➕ إضافة مخرج')}</button></div>` : '';
   return `<div id="dvSection" class="field"><label>${tr('المخرجات المطلوبة')}</label><div class="fu-log">${list}</div>${add}</div>`;
+}
+async function setDelivDate(id, idx, date) {
+  try {
+    const res = await fetch(`/api/tasks/${id}/deliverable/${idx}/date`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date }) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, data.task);
+    toast(date ? 'تم ضبط موعد المخرج ✓' : 'تم إزالة موعد المخرج ✓');
+    refreshDeliverable(id); render();
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 async function setDelivAssignee(id, idx, assignee) {
   try {
@@ -805,6 +837,8 @@ function bindDeliverable(t) {
   sec.querySelectorAll('.dv-ed').forEach((b) => b.onclick = () => startEditDeliv(t.id, Number(b.dataset.idx), b));
   sec.querySelectorAll('.dv-del').forEach((b) => b.onclick = () => deleteDeliv(t.id, Number(b.dataset.idx)));
   sec.querySelectorAll('.dv-assign').forEach((s) => s.onchange = () => setDelivAssignee(t.id, Number(s.dataset.idx), s.value));
+  sec.querySelectorAll('.dv-date').forEach((d) => d.onchange = () => setDelivDate(t.id, Number(d.dataset.idx), d.value));
+  sec.querySelectorAll('.dv-date-clr').forEach((b) => b.onclick = () => setDelivDate(t.id, Number(b.dataset.idx), ''));
 }
 function refreshDeliverable(id) {
   const t = state.tasks.find((x) => x.id === id); if (!t) return;
@@ -848,22 +882,24 @@ async function deleteDeliv(id, idx) {
 }
 
 // ===== أقسام محلية للمهمة الجديدة (تُجمَع في الذاكرة ثم تُرسَل عند الحفظ) =====
-// عناصر state.newDv كائنات { text, assignee } لدعم تخصيص المخرجات قبل حفظ المهمة الجديدة
+// عناصر state.newDv كائنات { text, assignee, date } لدعم تخصيص المخرجات وموعدها قبل حفظ المهمة الجديدة
 function localDeliverableSection() {
   const list = state.newDv.length ? state.newDv.map((b, i) => `
     <div class="fu-item plain" data-idx="${i}">
-      <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span>${b.assignee ? `<span class="dv-who">👤 ${esc(b.assignee)}</span>` : ''}<span class="fu-acts"><button class="fu-ico ldv-ed" type="button" data-idx="${i}">✏️</button><button class="fu-ico ldv-del" type="button" data-idx="${i}">🗑</button></span></div>
+      <div class="fu-ihead"><span class="dv-num">مخرج ${i + 1}</span>${b.assignee ? `<span class="dv-who">👤 ${esc(b.assignee)}</span>` : ''}${b.date ? `<span class="dv-when dvw-soon">📅 ${esc(b.date)}</span>` : ''}<span class="fu-acts"><button class="fu-ico ldv-ed" type="button" data-idx="${i}">✏️</button><button class="fu-ico ldv-del" type="button" data-idx="${i}">🗑</button></span></div>
       <div class="fu-ibody">${esc(b.text)}</div>
-      <div class="dv-assign-row"><span>المخصَّص:</span><select class="ldv-assign" data-idx="${i}"><option value="">— بلا —</option>${userOpts(b.assignee)}</select></div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
+      <div class="dv-assign-row"><span>المخصَّص:</span><select class="ldv-assign" data-idx="${i}"><option value="">— بلا —</option>${userOpts(b.assignee)}</select></div>
+      <div class="dv-assign-row"><span>موعد المخرج:</span><input type="date" class="ldv-date" data-idx="${i}" value="${esc(b.date || '')}"></div></div>`).join('') : '<div class="fu-empty">لا توجد مخرجات بعد.</div>';
   return `<div id="ldvSection" class="field"><label>المخرجات المطلوبة</label><div class="fu-log">${list}</div>
     <div class="fu-add"><textarea id="ldvInput" rows="2" placeholder="أضف مخرجاً مطلوباً…"></textarea><button class="btn btn-save" id="ldvAdd" type="button">➕ إضافة مخرج</button></div></div>`;
 }
 function refreshLocalDv() { const el = $('ldvSection'); if (el) { el.outerHTML = localDeliverableSection(); bindLocalDeliverable(); } }
 function bindLocalDeliverable() {
   const a = $('ldvAdd');
-  if (a) a.onclick = () => { const v = $('ldvInput').value.trim().replace(/\n\s*\n+/g, '\n'); if (!v) { toast('اكتب نصّ المخرج', true); return; } state.newDv.push({ text: v, assignee: '' }); refreshLocalDv(); };
+  if (a) a.onclick = () => { const v = $('ldvInput').value.trim().replace(/\n\s*\n+/g, '\n'); if (!v) { toast('اكتب نصّ المخرج', true); return; } state.newDv.push({ text: v, assignee: '', date: '' }); refreshLocalDv(); };
   $('ldvSection').querySelectorAll('.ldv-del').forEach((b) => b.onclick = () => { state.newDv.splice(Number(b.dataset.idx), 1); refreshLocalDv(); });
   $('ldvSection').querySelectorAll('.ldv-assign').forEach((s) => s.onchange = () => { if (state.newDv[Number(s.dataset.idx)]) state.newDv[Number(s.dataset.idx)].assignee = s.value; refreshLocalDv(); });
+  $('ldvSection').querySelectorAll('.ldv-date').forEach((d) => d.onchange = () => { if (state.newDv[Number(d.dataset.idx)]) state.newDv[Number(d.dataset.idx)].date = d.value; });
   $('ldvSection').querySelectorAll('.ldv-ed').forEach((b) => b.onclick = () => {
     const i = Number(b.dataset.idx), body = b.closest('.fu-item').querySelector('.fu-ibody'), cur = body.textContent;
     body.innerHTML = `<textarea class="fu-eta" rows="3"></textarea><div class="fu-eacts"><button class="btn btn-save" type="button" id="ldvS">حفظ</button><button class="btn btn-cancel" type="button" id="ldvC">إلغاء</button></div>`;
@@ -1521,6 +1557,7 @@ async function saveTask(id) {
   if (!id) {
     payload.deliverable = state.newDv.map((d) => d.text).join('\n\n');
     payload.dvowners = state.newDv.map((d) => (d.assignee || '-')).join('\n\n');
+    payload.dvdates = state.newDv.map((d) => (d.date || '-')).join('\n\n');
     payload.events = state.newEv.slice();
   }
   // الموعد: من خيار التاريخ/الدورية/غير محدد

@@ -320,6 +320,12 @@ function alignAssignees(raw, n) {
   while (a.length < n) a.push('-');
   return a.slice(0, n);
 }
+// مواعيد المخرجات: كتل متوازية لكتل «المخرج المطلوب» («-» = بلا موعد) — تُحاذى كالمكلّفين
+function alignDvDates(raw, n) {
+  const a = sheets.fuBlocks(raw || '');
+  while (a.length < n) a.push('-');
+  return a.slice(0, n);
+}
 function dvAssigneeName(v) {
   const s = String(v == null ? '' : v).trim();
   return (s && s !== '-' && s !== '—' && s !== '----------') ? s : '';
@@ -557,8 +563,9 @@ app.post('/api/tasks/:row/deliverable', requireAuth, requireRole('editor'), requ
     const t = tasks.find((x) => String(x.row) === String(req.params.row));
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     const aB = alignAssignees(t ? t.assignees : '', dB.length);
-    dB.push(text); aB.push('-'); // المخرج الجديد بلا تخصيص افتراضاً
-    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') });
+    const dD = alignDvDates(t ? t.dvdates : '', dB.length);
+    dB.push(text); aB.push('-'); dD.push('-'); // المخرج الجديد بلا تخصيص ولا موعد افتراضاً
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n') });
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('POST deliverable', err.message); res.status(400).json({ ok: false, error: err.message }); }
@@ -589,8 +596,9 @@ app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'
     if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
     const aB = alignAssignees(t ? t.assignees : '', dB.length);
     if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
-    dB.splice(idx, 1); aB.splice(idx, 1);
-    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') });
+    const dD = alignDvDates(t ? t.dvdates : '', dB.length);
+    dB.splice(idx, 1); aB.splice(idx, 1); dD.splice(idx, 1);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n') });
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
@@ -633,6 +641,29 @@ app.post('/api/tasks/:row/deliverable/:idx/assignee', requireAuth, requireRole('
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('POST deliverable assignee', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// ضبط/إزالة موعد مخرَج (يُسجَّل في عمود «مواعيد المخرجات» ككتلة متوازية؛ فارغ = إزالة الموعد).
+// موعد المخرَج يُدرِج المهمة في اللوحة/التذكير عند اقترابه دون التأثير على آلية موعد المهمة العامة.
+app.post('/api/tasks/:row/deliverable/:idx/date', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const date = String((req.body && req.body.date) || '').trim();
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date) && !/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(date)) {
+      return res.status(400).json({ ok: false, error: 'صيغة تاريخ غير صحيحة (YYYY-MM-DD)' });
+    }
+    const tasks = await loadTasks(activeTab(req), true);
+    const t = tasks.find((x) => String(x.row) === String(req.params.row));
+    const dB = sheets.fuBlocks(t ? t.deliverable : '');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= dB.length) return res.status(400).json({ ok: false, error: 'مخرج غير موجود' });
+    const aB = alignAssignees(t ? t.assignees : '', dB.length);
+    if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    const dD = alignDvDates(t ? t.dvdates : '', dB.length);
+    dD[idx] = date || '-';
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { dvdates: dD.join('\n\n') });
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, task });
+  } catch (err) { console.error('POST deliverable date', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
 
 // حذف مهمة (يحذف صفّها من الشيت)
