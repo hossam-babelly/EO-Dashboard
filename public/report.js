@@ -496,3 +496,142 @@ document.addEventListener('DOMContentLoaded', () => {
   const word = document.getElementById('reportWord'); if (word) word.onclick = runExport(word, exportWord, 'Word');
   const excel = document.getElementById('reportExcel'); if (excel) excel.onclick = runExport(excel, exportExcel, 'Excel');
 });
+
+/* ===================== تقرير المهمة الواحدة (PDF بورتريه A4، بند لا يُقسَّم بين صفحتين) ===================== */
+const TR_W = 780, TR_PAGE_H = 1085; // عرض العرض/القياس + ارتفاع صفحة A4 بورتريه متحفّظ عند هذا العرض
+
+// لون شارة موعد المخرَج حسب القرب (٤ حالات): متأخر / اليوم / خلال ٣ / بعيد
+function trDateColor(diff) {
+  if (diff == null) return RB.muted;
+  if (diff < 0) return RB.red;
+  if (diff === 0) return '#c0822f';
+  if (diff <= 3) return '#9a7b50';
+  return RB.muted;
+}
+function trPill(text, color) { return `<span style="display:inline-block;padding:2px 11px;border-radius:20px;font-size:12px;font-weight:800;color:${color};background:#fff;border:1.5px solid ${color}">${esc(text)}</span>`; }
+
+// ترتيب الاجتماعات: المنتهية أولاً، ثم المجدولة حسب موعدها، ثم المطلوبة
+function orderedMeetingsReport(t) {
+  const rank = (m) => (m.status === 'done' ? 0 : m.status === 'scheduled' ? 1 : 2);
+  return (t.meetings || []).slice().sort((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (a.status === 'scheduled' && b.status === 'scheduled') { const x = a.datetime || '', y = b.datetime || ''; return x < y ? -1 : x > y ? 1 : 0; }
+    return 0;
+  });
+}
+// ترتيب أحداث المتابعة حسب التاريخ (تصاعدياً)؛ الأحداث اليدوية بلا تاريخ في النهاية
+function orderedEventsReport(t) {
+  const evs = (typeof parseFollowup === 'function') ? parseFollowup(t.followup, t.log) : [];
+  return evs.slice().sort((a, b) => {
+    const ad = a.date || '', bd = b.date || '';
+    if (!ad && !bd) return 0; if (!ad) return 1; if (!bd) return -1;
+    const ax = ad + (a.time || ''), bx = bd + (b.time || ''); return ax < bx ? -1 : ax > bx ? 1 : 0;
+  });
+}
+
+function trHeaderBlock(logo, t) {
+  const img = logo && logo.url ? `<img src="${logo.url}" width="${logo.w}" height="${logo.h}" style="width:${logo.w}px;height:${logo.h}px">` : '';
+  const title = `${esc(t.project || 'مهمة')}${t.file ? ' — ' + esc(t.file) : ''}`;
+  return `<div style="background:${RB.ink};padding:14px 22px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
+      <div><div style="font-size:19px;font-weight:800;color:#fff">تقرير المهمة</div><div style="font-size:12.5px;color:${RB.champagne};margin-top:3px">${title}</div></div>${img}</div>
+    <div style="padding:8px 22px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:11.5px;color:${RB.copperDeep}"><b>تاريخ التقرير:</b> ${esc(nowText())} &nbsp;•&nbsp; مجموعة سنكري القابضة — الإدارة التنفيذية</div>`;
+}
+function trInfoBlock(t) {
+  const rows = [
+    ['المشروع', esc(t.project || '—')], ['الملف', esc(t.file || '—')], ['النوع', esc(t.type || '—')],
+    ['تاريخ إنشاء المهمة', esc(t.created || t.createdIso || '—')], ['الموعد / الدورية', esc(t.deadlineRaw || t.deadlineIso || '—')],
+    ['الأولوية', trPill(t.priority || '—', priColor(t.priority))], ['الحالة', trPill(t.status || '—', stColor(t.status))],
+    ['المسؤول المعني', esc((t.owner || '—').replace(/\n+/g, '، '))], ['مرتبط بـ', esc((t.linkedTo || '—').replace(/\n+/g, '، '))],
+  ];
+  const cells = rows.map(([l, v]) => `<div style="border:1px solid ${RB.line};border-radius:8px;padding:8px 11px;background:#fff">
+      <div style="font-size:10.5px;color:${RB.muted};font-weight:700;margin-bottom:3px">${l}</div>
+      <div style="font-size:13px;color:${RB.ink};font-weight:600">${v}</div></div>`).join('');
+  return `<div class="trblk" style="padding:14px 22px 4px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${cells}</div></div>`;
+}
+function trHeadingBlock(text) {
+  return `<div class="trblk" style="padding:14px 22px 6px"><div style="font-size:15px;font-weight:800;color:${RB.ink};border-bottom:2px solid ${RB.copper};padding-bottom:5px">${esc(text)}</div></div>`;
+}
+function trDeliverableBlock(d, n) {
+  const date = d.dateRaw
+    ? `<span style="display:inline-block;padding:1px 9px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:${trDateColor(d.diffDays)}">📅 ${esc(d.dateRaw)} · ${esc(relFromDiffC(d.diffDays))}</span>`
+    : `<span style="font-size:11px;color:${RB.muted}">بلا موعد</span>`;
+  const who = d.assignee ? `<span style="font-size:11px;color:${RB.copperDeep};font-weight:700">👤 ${esc(d.assignee)}</span>` : '';
+  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-inline-start:3px solid ${d.done ? RB.green : RB.copper};border-radius:8px;padding:9px 12px;background:${d.done ? '#f3f6f0' : '#fff'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div style="font-size:11px;color:${RB.muted};font-weight:700">${d.done ? '✓ منجَز' : '○ قيد التنفيذ'} · مخرج ${n}</div><div style="display:flex;gap:8px;align-items:center">${who}${date}</div></div>
+      <div style="font-size:13px;color:${RB.ink};font-weight:600;${d.done ? 'text-decoration:line-through;opacity:.7' : ''}">${esc(d.text)}</div></div></div>`;
+}
+const TR_MST = { done: { t: 'تم', c: RB.green }, scheduled: { t: 'مجدول', c: RB.copperDeep }, required: { t: 'مطلوب', c: RB.amber } };
+function trMeetingBlock(m) {
+  const st = TR_MST[m.status] || TR_MST.required;
+  const when = (m.status === 'scheduled' && m.datetime) ? `<span style="font-size:11px;color:${RB.muted}">🕓 ${esc(m.datetime)}</span>` : '';
+  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-radius:8px;padding:9px 12px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="font-size:13px;color:${RB.ink};font-weight:700">🤝 ${esc(m.title)}</div>
+      <div style="display:flex;gap:8px;align-items:center">${when}${trPill(st.t, st.c)}</div></div></div>`;
+}
+function trEventBlock(e) {
+  const meta = e.manual ? 'متابعة (يدوي)' : `${esc(e.author || '')} · ${esc((typeof fuShort === 'function') ? fuShort(e.date, e.time) : (e.date || ''))}`;
+  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-radius:8px;padding:9px 12px;background:#fff">
+      <div style="font-size:11px;color:${RB.copperDeep};font-weight:700;margin-bottom:4px">${meta}</div>
+      <div style="font-size:12.5px;color:${RB.ink};white-space:pre-line">${esc(e.text || '')}</div></div></div>`;
+}
+function trPageHTML(logo, t, blocks) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
+      ${trHeaderBlock(logo, t)}
+      <div class="trbody">${blocks.map((b) => b.html).join('')}</div>
+      <div style="padding:6px 22px 12px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div></div>`;
+}
+// قياس ارتفاع كل بند وتوزيع البنود على صفحات دون تقسيم أي بند (مع إبقاء العنوان مع أول بنده)
+async function trPaginate(blocks, logo, t) {
+  const m = document.createElement('div');
+  m.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;visibility:hidden`;
+  m.innerHTML = trPageHTML(logo, t, blocks);
+  document.body.appendChild(m);
+  try { await document.fonts.ready; } catch { /* تجاهل */ }
+  await new Promise((r) => setTimeout(r, 20));
+  const page = m.firstElementChild;
+  const body = m.querySelector('.trbody');
+  const contentTop = body.getBoundingClientRect().top - page.getBoundingClientRect().top;
+  const hts = [...m.querySelectorAll('.trblk')].map((e) => e.getBoundingClientRect().height);
+  m.remove();
+  const FOOTER = 34;
+  const avail = Math.max(200, TR_PAGE_H - contentTop - FOOTER);
+  const pages = []; let cur = [], used = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    const h = hts[i] || 24;
+    const nextH = (blocks[i].keepNext && i + 1 < blocks.length) ? (hts[i + 1] || 24) : 0; // العنوان يبقى مع أول بند
+    if (cur.length && used + h + nextH > avail) { pages.push(cur); cur = []; used = 0; }
+    cur.push(blocks[i]); used += h;
+  }
+  if (cur.length) pages.push(cur);
+  return pages.length ? pages : [[]];
+}
+async function taskReportPDF(task) {
+  try {
+    const logo = await logoSmall(30);
+    const blocks = [{ html: trInfoBlock(task) }];
+    const dvs = (typeof orderedDeliverables === 'function') ? orderedDeliverables(task) : [];
+    if (dvs.length) { blocks.push({ html: trHeadingBlock('📋 المخرجات المطلوبة'), keepNext: true }); dvs.forEach((d, i) => blocks.push({ html: trDeliverableBlock(d, i + 1) })); }
+    const mts = orderedMeetingsReport(task);
+    if (mts.length) { blocks.push({ html: trHeadingBlock('🤝 الاجتماعات'), keepNext: true }); mts.forEach((mm) => blocks.push({ html: trMeetingBlock(mm) })); }
+    const evs = orderedEventsReport(task);
+    if (evs.length) { blocks.push({ html: trHeadingBlock('🗒️ سجلّ المتابعة اليومية'), keepNext: true }); evs.forEach((ev) => blocks.push({ html: trEventBlock(ev) })); }
+    const pages = await trPaginate(blocks, logo, task);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    for (let i = 0; i < pages.length; i++) {
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;background:#fff`;
+      el.innerHTML = trPageHTML(logo, task, pages[i]);
+      document.body.appendChild(el);
+      try { await document.fonts.ready; } catch { /* تجاهل */ }
+      await new Promise((r) => setTimeout(r, 40));
+      const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: TR_W });
+      el.remove();
+      addCanvasPaged(pdf, canvas, i === 0); // يشرّح أي صفحة تتجاوز الطول احتياطاً
+    }
+    const fn = `تقرير-${(task.project || 'مهمة')}${task.file ? '-' + task.file : ''}`.replace(/[\\/:*?"<>|]+/g, '_');
+    pdf.save(fn + '.pdf');
+    if (typeof toast === 'function') toast('تم توليد تقرير المهمة ✓');
+  } catch (e) { if (typeof toast === 'function') toast('تعذّر توليد التقرير: ' + e.message, true); }
+}

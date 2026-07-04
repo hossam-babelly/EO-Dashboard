@@ -208,6 +208,17 @@ app.patch('/api/admin/users/:email', requireAuth, requireRole('admin'), async (r
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
+// حذف مستخدم نهائياً (مدير) — لا يمكن حذف الحساب الحالي
+app.delete('/api/admin/users/:email', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const email = String(req.params.email).toLowerCase();
+    if (email === String(req.session.user.email).toLowerCase()) return res.status(400).json({ ok: false, error: 'لا يمكنك حذف حسابك الحالي.' });
+    await store.deleteUser(email);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
 // إدارة البروفايلات (مدير): عرض + إضافة بروفايل جديد (يُنشئ تبويباً جديداً تلقائياً)
 app.get('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, res) => {
   try { res.json({ ok: true, profiles: await store.getProfiles() }); }
@@ -356,6 +367,22 @@ async function notifyOwnersAssigned(req, info, addedNames) {
       telegram.sendMessage(u.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`).catch(() => { /* تجاهل */ });
     }
   } catch (e) { console.warn('notifyOwnersAssigned', e.message); }
+}
+
+// تنبيه تيليجرام لمن أُسند إليه مخرَج من قِبل مستخدم آخر (نفس مبدأ تنبيه إسناد المهمة)
+async function notifyDeliverableAssigned(req, info, assigneeName, deliverableText) {
+  try {
+    if (!telegram.enabled || !store.enabled) return;
+    const actor = authorName(req.session && req.session.user);
+    const name = String(assigneeName || '').trim();
+    if (!name || name === actor) return;
+    const u = ((await store.getUsersFull()) || []).find((x) => String(x.name || '').trim() === name && x.telegramChatId);
+    if (!u) return;
+    const appUrl = process.env.APP_URL || '';
+    const title = esc(`${(info && info.project) || 'مهمة'}${info && info.file ? ' — ' + info.file : ''}`);
+    const line = `📎 تم إسناد مخرَج إليك ضمن مهمة: <b>${title}</b> من قِبل ${esc(actor)}${deliverableText ? `\nالمخرَج: ${esc(deliverableText)}` : ''}`;
+    telegram.sendMessage(u.telegramChatId, `${line}${appUrl ? '\n' + appUrl : ''}`).catch(() => { /* تجاهل */ });
+  } catch (e) { console.warn('notifyDeliverableAssigned', e.message); }
 }
 
 function summarize(tasks) {
@@ -636,11 +663,38 @@ app.post('/api/tasks/:row/deliverable/:idx/assignee', requireAuth, requireRole('
     const aB = alignAssignees(t ? t.assignees : '', dB.length);
     // إعادة التخصيص محصورة بالمخصَّص الحالي أو المدير (غير المخصَّص متاح لأي محرّر)
     if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
+    const prevAssignee = dvAssigneeName(aB[idx]);
     aB[idx] = assignee || '-';
     const task = await sheets.updateTask(activeTab(req), req.params.row, { dvowners: aB.join('\n\n') });
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
+    // تنبيه المُسنَد إليه المخرَج عبر تيليجرام (فور الإسناد، إن اختلف عن المُسنَد سابقاً وعن الفاعل)
+    if (assignee && assignee.trim() !== prevAssignee) notifyDeliverableAssigned(req, { project: t && t.project, file: t && t.file }, assignee, dB[idx]);
   } catch (err) { console.error('POST deliverable assignee', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// إعادة تسمية مشروع عبر كل مهام البروفايل الحالي (تحديث كل المهام التي مشروعها بالاسم القديم)
+app.post('/api/projects/rename', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const from = String((req.body && req.body.from) || '').trim();
+    const to = String((req.body && req.body.to) || '').trim();
+    if (!from || !to) return res.status(400).json({ ok: false, error: 'الاسم القديم والجديد مطلوبان' });
+    const count = await sheets.renameFieldValue(activeTab(req), 'project', from, to);
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, count });
+  } catch (err) { console.error('POST projects/rename', err.message); res.status(400).json({ ok: false, error: err.message }); }
+});
+
+// إعادة تسمية اسم شخص داخل عمود «مرتبط بـ» عبر كل مهام البروفايل الحالي
+app.post('/api/linked/rename', requireAuth, requireRole('editor'), requireWrite, async (req, res) => {
+  try {
+    const from = String((req.body && req.body.from) || '').trim();
+    const to = String((req.body && req.body.to) || '').trim();
+    if (!from || !to) return res.status(400).json({ ok: false, error: 'الاسم القديم والجديد مطلوبان' });
+    const count = await sheets.renameLinkedName(activeTab(req), from, to);
+    invalidateCache(activeTab(req));
+    res.json({ ok: true, count });
+  } catch (err) { console.error('POST linked/rename', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
 
 // ضبط/إزالة موعد مخرَج (يُسجَّل في عمود «مواعيد المخرجات» ككتلة متوازية؛ فارغ = إزالة الموعد).

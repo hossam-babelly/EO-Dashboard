@@ -272,8 +272,20 @@ function delivItems(t) { return Array.isArray(t.deliverables) && t.deliverables.
 // شارة موعد المخرَج (لونها حسب القرب)
 function dvWhenChip(e) {
   if (!e.dateRaw) return '';
-  const cls = (e.diffDays != null && e.diffDays <= 0) ? 'dvw-over' : (e.diffDays != null && e.diffDays <= 3) ? 'dvw-soon' : 'dvw-far';
+  const d = e.diffDays;
+  const cls = (d != null && d < 0) ? 'dvw-over' : (d === 0) ? 'dvw-today' : (d != null && d <= 3) ? 'dvw-soon' : 'dvw-far';
   return `<span class="dv-when ${cls}">📅 ${esc(e.dateRaw)} · ${esc(relFromDiffC(e.diffDays))}</span>`;
+}
+// ترتيب المخرجات: المنتهية أولاً، ثم المؤرّخة من الأصغر للأكبر، ثم التي بلا موعد
+function orderedDeliverables(t) {
+  return delivItems(t).slice().sort((a, b) => {
+    if (a.done !== b.done) return a.done ? -1 : 1;
+    const ad = a.dateIso || '', bd = b.dateIso || '';
+    if (!ad && !bd) return a.idx - b.idx;
+    if (!ad) return 1;   // بلا موعد في النهاية
+    if (!bd) return -1;
+    return ad < bd ? -1 : ad > bd ? 1 : 0;
+  });
 }
 // قائمة خيارات المستخدمين لاختيار المخصَّص
 function userOpts(selected) {
@@ -295,11 +307,13 @@ function dvChip(t, e) {
 }
 function rowExpanded(t) { return state.expanded || state.expandedRows.has(t.id); }
 function deliverableCell(t) {
-  const items = delivItems(t);
+  const items = orderedDeliverables(t);
   if (!items.length) return '<span style="color:var(--muted)">—</span>';
   if (rowExpanded(t)) return `<div class="dv-list">${items.map((e) => dvChip(t, e)).join('')}</div>`;
+  // العرض المضغوط: أبعد مخرج من حيث الموعد (آخر عنصر في الترتيب) + عدّاد البقية
+  const shown = items[items.length - 1];
   const more = items.length > 1 ? `<span class="fu-more row-expand" data-id="${t.id}" style="margin-top:4px;display:inline-block;cursor:pointer">+${items.length - 1}</span>` : '';
-  return `<div class="dv-list">${dvChip(t, items[0])}${more}</div>`;
+  return `<div class="dv-list">${dvChip(t, shown)}${more}</div>`;
 }
 async function toggleDelivApi(id, idx) {
   const res = await fetch(`/api/tasks/${id}/deliverable/${idx}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -589,7 +603,8 @@ function ownerCell(t) {
   return `${esc(t.owner)}${cards ? `<div class="linked-cards">${cards}</div>` : ''}`;
 }
 function deadlineCellHtml(t) {
-  const dlCls = t.isOverdue ? 'overdue' : t.isSoon3 ? 'soon' : '';
+  // تلوين نصّ الموعد فقط حسب القرب من اليوم: متأخر / اليوم / خلال ٣ أيام / بعيد (لا تلوين للصفّ)
+  const dlCls = t.isOverdue ? 'overdue' : t.isToday ? 'today' : t.isSoon3 ? 'soon' : 'far';
   const dl = t.deadlineIso || (t.deadlineRaw ? esc(t.deadlineRaw) : '—');
   return `<div class="deadline-cell ${dlCls}"><span class="iso">${dl}</span><span class="rel">${relText(t)}</span></div>`;
 }
@@ -667,7 +682,7 @@ function renderTable() {
   // زر توسيع/طيّ الصف الفردي (في الوضع المضغوط) — متاح لكل المهام
   const rows = list.map((t) => {
     const exp = state.expandedRows.has(t.id);
-    const rowCls = (t.isDone ? 'row-done' : t.isOverdue ? 'row-overdue' : t.isSoon3 ? 'row-soon' : '') + (exp && !state.expanded ? ' row-exp' : '');
+    const rowCls = (t.isDone ? 'row-done' : '') + (exp && !state.expanded ? ' row-exp' : ''); // ألغي تلوين الصفّ حسب الموعد — يبقى تلوين نصّ الموعد فقط
     const tds = cols.map((c, ci) => {
       const toggle = (ci === 0 && !state.expanded)
         ? `<button class="row-toggle" data-id="${t.id}" title="${exp ? 'طيّ' : 'توسيع'}">${exp ? '▴' : '▾'}</button>` : '';
@@ -943,7 +958,7 @@ function linkedCandidates() {
 }
 function linkedEditSection() {
   const chips = state.editLinked.length
-    ? state.editLinked.map((p, i) => `<span class="rem-date">${esc(p)} <button type="button" class="elink-del" data-idx="${i}" aria-label="حذف">✕</button></span>`).join('')
+    ? state.editLinked.map((p, i) => `<span class="rem-date">${esc(p)} <button type="button" class="elink-edit" data-idx="${i}" title="تعديل الاسم في كل المهام">✏️</button> <button type="button" class="elink-del" data-idx="${i}" aria-label="حذف">✕</button></span>`).join('')
     : '<span style="color:var(--muted);font-size:13px">لا يوجد (اختياري)</span>';
   const opts = linkedCandidates().filter((p) => !state.editLinked.includes(p)).map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
   return `<div id="elinkSection" class="field"><label>مرتبط بـ <span style="color:var(--muted);font-weight:400;font-size:11.5px">(اختياري — يمكن اختيار أكثر من شخص)</span></label>
@@ -969,6 +984,23 @@ function bindLinked() {
   };
   const add = $('elinkNewAdd'); if (add) add.onclick = () => { const ni = $('elinkNewInput'); if (ni) addLinked(ni.value); };
   sec.querySelectorAll('.elink-del').forEach((b) => b.onclick = () => { state.editLinked.splice(Number(b.dataset.idx), 1); refreshLinked(); });
+  sec.querySelectorAll('.elink-edit').forEach((b) => b.onclick = () => renameLinkedFromChip(Number(b.dataset.idx)));
+}
+// إعادة تسمية شخص في «مرتبط بـ» عبر كل المهام (بلا إغلاق النموذج)
+async function renameLinkedFromChip(idx) {
+  const cur = state.editLinked[idx]; if (cur == null) return;
+  const to = prompt('الاسم الجديد (يُحدَّث في «مرتبط بـ» لكل مهام هذا البروفايل):', cur);
+  if (to == null) return; const nn = to.trim();
+  if (!nn || nn === cur) return;
+  try {
+    const res = await fetch('/api/linked/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: cur, to: nn }) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    state.editLinked[idx] = nn;
+    if (state.filters.linked) state.filters.linked = [...new Set(state.filters.linked.map((p) => p === cur ? nn : p))];
+    state.tasks.forEach((x) => { if (x.linkedList) x.linkedList = x.linkedList.map((p) => p === cur ? nn : p); });
+    refreshLinked();
+    toast(`تم تحديث الاسم في ${data.count} مهمة ✓`);
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 
 // ===== المسؤول المعني (متعدّد، من المستخدمين فقط — بلا إضافة جديد) =====
@@ -1258,8 +1290,9 @@ function openModal(id) {
     followupSection(t) + F('ملاحظات', t.notes) +
     attachmentsSection(t) +
     reminderSection(t);
-  $('mHeadActions').innerHTML = canEdit() ? `<button class="mh-icon" id="mEdit" title="تعديل المهمة">✏️</button><button class="mh-icon mh-del" id="mDel" title="حذف المهمة">🗑</button>` : '';
+  $('mHeadActions').innerHTML = `<button class="mh-icon" id="mReport" title="تقرير المهمة (PDF)">📄</button>` + (canEdit() ? `<button class="mh-icon" id="mEdit" title="تعديل المهمة">✏️</button><button class="mh-icon mh-del" id="mDel" title="حذف المهمة">🗑</button>` : '');
   $('mFoot').innerHTML = '';
+  { const rb = $('mReport'); if (rb) rb.onclick = () => { if (typeof taskReportPDF === 'function') taskReportPDF(t); else toast('وحدة التقارير غير جاهزة', true); }; }
   if (canEdit()) { $('mEdit').onclick = () => openEdit(t); $('mDel').onclick = () => removeTask(t.id); }
   bindFollowup(t);
   bindDeliverable(t);
@@ -1486,15 +1519,32 @@ function deadlineField(t) {
 }
 
 // حقل قائمة منسدلة من القيم الموجودة + خيار «إضافة جديد» (يصلح للمشروع/المسؤول/مرتبط بـ)
-function pickField(label, name, values, value, multiline) {
+function pickField(label, name, values, value, multiline, editable) {
   const list = (values || []).slice();
   if (value && !list.includes(value)) list.unshift(value);
   const opts = list.map((p) => `<option value="${esc(p)}" ${p === value ? 'selected' : ''}>${esc(p)}</option>`).join('');
   const ni = multiline
     ? `<textarea name="${name}New" id="${name}New" rows="2" placeholder="قيمة جديدة (سطر لكل قيمة)" style="display:none;margin-top:8px"></textarea>`
     : `<input name="${name}New" id="${name}New" type="text" placeholder="قيمة جديدة" style="display:none;margin-top:8px">`;
+  const editBtn = editable ? `<button type="button" class="pick-rename" data-name="${name}" title="تعديل اسم المحدَّد (يُحدَّث في كل المهام)">✏️</button>` : '';
   return `<div class="field"><label>${tr(label)}</label>
-    <select name="${name}" id="${name}Sel">${opts}<option value="__new__">${tr('➕ إضافة جديد…')}</option></select>${ni}</div>`;
+    <div class="pick-row"><select name="${name}" id="${name}Sel">${opts}<option value="__new__">${tr('➕ إضافة جديد…')}</option></select>${editBtn}</div>${ni}</div>`;
+}
+// إعادة تسمية المشروع المحدَّد في القائمة (يُحدَّث في كل مهام البروفايل) — بلا إغلاق النموذج
+async function renameProjectFromSelect() {
+  const sel = $('projectSel'); const cur = sel ? sel.value : '';
+  if (!cur || cur === '__new__') { toast('اختر مشروعاً أولاً', true); return; }
+  const to = prompt('الاسم الجديد للمشروع (يُحدَّث في كل مهام هذا البروفايل):', cur);
+  if (to == null) return; const nn = to.trim();
+  if (!nn || nn === cur) return;
+  try {
+    const res = await fetch('/api/projects/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: cur, to: nn }) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    state.filters.projects = [...new Set((state.filters.projects || []).map((p) => p === cur ? nn : p))];
+    state.tasks.forEach((x) => { if (x.project === cur) x.project = nn; });
+    const opt = [...sel.options].find((o) => o.value === cur); if (opt) { opt.value = nn; opt.textContent = nn; } sel.value = nn;
+    toast(`تم تحديث اسم المشروع في ${data.count} مهمة ✓`);
+  } catch (e) { toast('تعذّر: ' + e.message, true); }
 }
 
 function openEdit(t) {
@@ -1509,7 +1559,7 @@ function openEdit(t) {
   const createdVal = isNew ? todayISO() : (t.createdIso || t.created || '');
   $('mTitle').textContent = isNew ? tr('إضافة مهمة جديدة') : tr('تعديل المهمة');
   $('mBody').innerHTML = `<form id="taskForm">
-    ${pickField('المشروع', 'project', state.filters.projects, t.project, false)}
+    ${pickField('المشروع', 'project', state.filters.projects, t.project, false, canEdit())}
     <div class="form-row">${field('الملف', 'file', t.file)}${selectField('النوع', 'type', ['', ...TYPES], t.type)}</div>
     ${linkedEditSection()}
     ${ownerEditSection()}
@@ -1528,6 +1578,8 @@ function openEdit(t) {
       sync(); // ضبط الحالة الأولية — مهمّ للبروفايل الفارغ حيث «إضافة جديد» هي الخيار الوحيد المُختار تلقائياً
     }
   });
+  const prBtn = $('mBody').querySelector('.pick-rename[data-name="project"]');
+  if (prBtn) prBtn.onclick = renameProjectFromSelect;
   const dlMode = $('dlMode');
   if (dlMode) {
     dlMode.onchange = () => { $('dlDate').style.display = dlMode.value === 'date' ? '' : 'none'; $('dlRecurWrap').style.display = dlMode.value === 'recur' ? '' : 'none'; };

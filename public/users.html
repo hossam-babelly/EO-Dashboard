@@ -153,6 +153,7 @@ async function loadUsers() {
     <td>
       <button class="btn btn-edit" data-act="edit" data-email="${u.email}" style="padding:6px 12px">${TR('✏️ تعديل')}</button>
       <button class="btn btn-cancel" data-act="toggle" data-email="${u.email}" data-active="${u.active === false ? 1 : 0}" style="padding:6px 12px">${u.active === false ? TR('تمكين') : TR('تعطيل')}</button>
+      <button class="btn" data-act="delete" data-email="${u.email}" data-name="${escp(u.name || u.email)}" style="padding:6px 12px;background:var(--red-bg);color:var(--red);border:1px solid var(--red)">${TR('🗑 حذف')}</button>
     </td></tr>`).join('');
   $('#usersBody').innerHTML = rows || `<tr><td colspan="5" style="text-align:center;color:var(--muted)">${TR('لا مستخدمون')}</td></tr>`;
   bindActions();
@@ -163,6 +164,12 @@ function bindActions() {
     await patchUser(el.dataset.email, { active: el.dataset.active === '1' });
   });
   document.querySelectorAll('[data-act="edit"]').forEach((el) => el.onclick = () => openEditUser(el.dataset.email));
+  document.querySelectorAll('[data-act="delete"]').forEach((el) => el.onclick = async () => {
+    if (!confirm(`حذف المستخدم «${el.dataset.name}» نهائياً؟ لا يمكن التراجع.`)) return;
+    const res = await fetch('/api/admin/users/' + encodeURIComponent(el.dataset.email), { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) { notice('تم حذف المستخدم ✓'); loadUsers(); } else notice('خطأ: ' + (data.error || ''), true);
+  });
 }
 
 function openEditUser(email) {
