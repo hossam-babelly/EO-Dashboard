@@ -21,7 +21,7 @@
     'بلا نوع': 'No type', 'لا خيارات': 'No options',
     // ===== العروض =====
     '📋 جدول': '📋 Table', '🗂️ كانبان': '🗂️ Kanban', '🗓️ تقويم': '🗓️ Calendar',
-    '📌 مهام': '📌 Tasks', '🤝 اجتماعات': '🤝 Meetings',
+    '📌 مهام': '📌 Tasks', '🤝 اجتماعات': '🤝 Meetings', '📦 المخرجات': '📦 Deliverables',
     '↕ عرض موسّع': '↕ Expanded view', '↕ عرض مضغوط': '↕ Compact view', '⚙ الأعمدة': '⚙ Columns',
     // ===== البطاقات (KPI) =====
     'إجمالي المهام': 'Total tasks', 'نسبة الإنجاز': 'Completion', '🤝 اجتماعات مطلوبة': '🤝 Meetings required',

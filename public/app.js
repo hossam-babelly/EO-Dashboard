@@ -259,19 +259,33 @@ function toIsoDateC(s) {
   return '';
 }
 function relFromDiffC(diff) { return diff == null ? '' : diff < 0 ? `متأخر ${Math.abs(diff)} يوم` : diff === 0 ? 'اليوم' : `بعد ${diff} يوم`; }
-function parseDeliverables(raw, assigneesRaw, datesRaw) {
+function parseDeliverables(raw, assigneesRaw, datesRaw, doneRaw) {
   const aB = fuBlocks(assigneesRaw || '');
   const tB = fuBlocks(datesRaw || '');
+  const nB = fuBlocks(doneRaw || '');
   return fuBlocks(raw).map((b, i) => {
+    const done = /^✓/.test(b);
     const dateRaw = dvRealVal(tB[i]); const dateIso = toIsoDateC(dateRaw);
-    return { idx: i, done: /^✓/.test(b), text: b.replace(/^✓\s*/, ''), assignee: dvRealVal(aB[i]), dateRaw, dateIso, diffDays: dateIso ? dayDiffIso(dateIso, todayISO()) : null };
+    const doneDateRaw = dvRealVal(nB[i]); const doneDateIso = toIsoDateC(doneDateRaw);
+    let diffDays = null;
+    if (dateIso) diffDays = done ? (doneDateIso ? dayDiffIso(dateIso, doneDateIso) : null) : dayDiffIso(dateIso, todayISO());
+    return { idx: i, done, text: b.replace(/^✓\s*/, ''), assignee: dvRealVal(aB[i]), dateRaw, dateIso, doneDateRaw, doneDateIso, diffDays };
   });
 }
-// عناصر المخرجات: نفضّل المصفوفة المحسوبة خادمياً (تتضمّن تصنيف الموعد)، وإلا نحلّلها محلياً
-function delivItems(t) { return Array.isArray(t.deliverables) && t.deliverables.length ? t.deliverables : parseDeliverables(t.deliverable, t.assignees, t.dvdates); }
+// عناصر المخرجات: نفضّل المصفوفة المحسوبة خادمياً (تتضمّن تصنيف الموعد وتجميد المنجَز)، وإلا نحلّلها محلياً
+function delivItems(t) { return Array.isArray(t.deliverables) && t.deliverables.length ? t.deliverables : parseDeliverables(t.deliverable, t.assignees, t.dvdates, t.dvdone); }
+// نصّ إنجاز مُجمَّد للمخرَج المنجَز (بحسب فرق الموعد − تاريخ الإنجاز)
+function doneRelC(diff) {
+  if (diff == null) return 'منجَز';
+  if (diff < 0) return `أُنجز متأخراً ${Math.abs(diff)} يوم`;
+  if (diff === 0) return 'أُنجز في الموعد';
+  return `أُنجز قبل ${diff} يوم`;
+}
 // شارة موعد المخرَج (لونها حسب القرب)
 function dvWhenChip(e) {
   if (!e.dateRaw) return '';
+  // المخرَج المنجَز: عدّاد مُجمَّد على لحظة الإنجاز (لون منجَز أخضر)
+  if (e.done) return `<span class="dv-when dvw-done">✓ ${esc(e.dateRaw)} · ${esc(doneRelC(e.diffDays))}</span>`;
   const d = e.diffDays;
   const cls = (d != null && d < 0) ? 'dvw-over' : (d === 0) ? 'dvw-today' : (d != null && d <= 3) ? 'dvw-soon' : 'dvw-far';
   return `<span class="dv-when ${cls}">📅 ${esc(e.dateRaw)} · ${esc(relFromDiffC(e.diffDays))}</span>`;
@@ -1269,6 +1283,71 @@ function renderMeetingsCalendar() {
   $('viewArea').querySelectorAll('.cal-task').forEach((el) => { el.onclick = () => openModal(Number(el.dataset.id)); });
 }
 
+// ===== عرض قائمة المخرجات لكل المهام (مسطّحة، مرتّبة حسب الموعد، مع فلاتر) =====
+function dvAssigneeOptions() {
+  const set = new Set();
+  state.tasks.forEach((t) => (t.deliverables || []).forEach((d) => { if (d.assignee) set.add(d.assignee); }));
+  return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+}
+function renderDeliverables() {
+  state.dvStatus = state.dvStatus || 'all';
+  state.dvTime = state.dvTime || 'all';
+  state.dvAssignee = state.dvAssignee || '';
+  // القاعدة: مهام مطابقة للفلاتر العامة (مشروع/مسؤول/مرتبط/نوع/بحث)
+  const base = state.tasks.filter((t) => t.deliverables && t.deliverables.length && meetingTaskMatches(t));
+  let rows = [];
+  base.forEach((t) => (t.deliverables || []).forEach((d) => rows.push({ t, d })));
+  const totalAll = rows.length;
+  const cnt = { pending: rows.filter((r) => !r.d.done).length, done: rows.filter((r) => r.d.done).length };
+  // فلتر الحالة
+  if (state.dvStatus === 'pending') rows = rows.filter((r) => !r.d.done);
+  else if (state.dvStatus === 'done') rows = rows.filter((r) => r.d.done);
+  // فلتر المكلّف
+  if (state.dvAssignee) rows = rows.filter((r) => state.dvAssignee === '__none__' ? !r.d.assignee : r.d.assignee === state.dvAssignee);
+  // فلتر الموعد (على المخرجات غير المنجزة)
+  if (state.dvTime !== 'all') rows = rows.filter((r) => {
+    const d = r.d;
+    if (state.dvTime === 'undated') return !d.dateIso;
+    if (!d.dateIso || d.done) return false;
+    if (state.dvTime === 'overdue') return d.diffDays != null && d.diffDays < 0;
+    if (state.dvTime === 'today') return d.diffDays === 0;
+    if (state.dvTime === 'soon3') return d.diffDays != null && d.diffDays > 0 && d.diffDays <= 3;
+    return true;
+  });
+  // ترتيب حسب الموعد (المؤرّخة تصاعدياً ثم بلا موعد)
+  rows.sort((a, b) => { const ad = a.d.dateIso || '', bd = b.d.dateIso || ''; if (!ad && !bd) return 0; if (!ad) return 1; if (!bd) return -1; return ad < bd ? -1 : ad > bd ? 1 : 0; });
+
+  const schips = [['all', 'الكل', totalAll], ['pending', 'غير منجزة', cnt.pending], ['done', 'منجزة', cnt.done]]
+    .map(([k, l, c]) => `<button class="chip ${state.dvStatus === k ? 'active' : ''}" data-dvs="${k}">${tr(l)}<span class="c">${c}</span></button>`).join('');
+  const tchips = [['all', 'كل المواعيد'], ['overdue', 'متأخر'], ['today', 'اليوم'], ['soon3', 'خلال ٣'], ['undated', 'بلا موعد']]
+    .map(([k, l]) => `<button class="chip ${state.dvTime === k ? 'active' : ''}" data-dvt="${k}">${tr(l)}</button>`).join('');
+  const opts = dvAssigneeOptions().map((a) => `<option value="${esc(a)}" ${state.dvAssignee === a ? 'selected' : ''}>${esc(a)}</option>`).join('');
+  const assignSel = `<select id="dvAssigneeSel" class="dv-assign-sel"><option value="">كل المكلّفين</option><option value="__none__" ${state.dvAssignee === '__none__' ? 'selected' : ''}>(غير مخصَّص)</option>${opts}</select>`;
+  const filterBar = `<div class="mtg-filter chips">${schips}</div><div class="mtg-filter chips" style="margin-top:6px;align-items:center">${tchips}<span style="margin-inline-start:auto">👤 المكلّف: ${assignSel}</span></div>`;
+
+  $('countLine').textContent = `${rows.length} مخرَج معروض — الإجمالي ${totalAll} (غير منجزة ${cnt.pending} · منجزة ${cnt.done})`;
+  if (!rows.length) { $('viewArea').innerHTML = `${filterBar}<div class="table-wrap"><div class="empty">لا مخرجات مطابقة.</div></div>`; bindDvFilter(); return; }
+  const ths = ['المخرج', 'المشروع / الملف', 'المكلّف', 'الموعد', 'حالة المخرج', 'المسؤول'].map((h) => `<th>${tr(h)}</th>`).join('');
+  const body = rows.map(({ t, d }) => {
+    const st = d.done ? '<span class="badge st st-منجزة">منجَز</span>' : '<span class="badge st st-قيد">قيد التنفيذ</span>';
+    const dt = d.dateRaw ? dvWhenChip(d) : '<span style="color:var(--muted)">—</span>';
+    const who = d.assignee ? `<span class="dv-who">👤 ${esc(d.assignee)}</span>` : '<span style="color:var(--muted)">—</span>';
+    return `<tr data-id="${t.id}">
+      <td><span class="${d.done ? 'dv-done-txt' : ''}">${esc(d.text)}</span></td>
+      <td>${esc(t.project)}${t.file ? ' — ' + esc(t.file) : ''}</td>
+      <td>${who}</td><td>${dt}</td><td>${st}</td>
+      <td class="cell-owner">${esc((t.owner || '').split('\n')[0])}</td></tr>`;
+  }).join('');
+  $('viewArea').innerHTML = `${filterBar}<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${body}</tbody></table></div>`;
+  bindDvFilter();
+  $('viewArea').querySelectorAll('tbody tr').forEach((tr) => { tr.onclick = () => openModal(Number(tr.dataset.id)); });
+}
+function bindDvFilter() {
+  document.querySelectorAll('[data-dvs]').forEach((b) => b.onclick = () => { state.dvStatus = b.dataset.dvs; renderDeliverables(); });
+  document.querySelectorAll('[data-dvt]').forEach((b) => b.onclick = () => { state.dvTime = b.dataset.dvt; renderDeliverables(); });
+  const sel = $('dvAssigneeSel'); if (sel) sel.onchange = () => { state.dvAssignee = sel.value; renderDeliverables(); };
+}
+
 // ===== Modal: view + edit =====
 function openModal(id) {
   const t = state.tasks.find((x) => x.id === id);
@@ -1777,7 +1856,10 @@ function render() {
   renderKpis(); renderChips(); renderFilters(); renderBell();
   $('addBtn').style.display = canEdit() ? '' : 'none';
   syncViewTabs();
-  if (state.dataType === 'meetings') {
+  const shTabs = $('shapeTabs'); if (shTabs) shTabs.style.display = state.dataType === 'deliverables' ? 'none' : '';
+  if (state.dataType === 'deliverables') {
+    renderDeliverables();
+  } else if (state.dataType === 'meetings') {
     if (state.shape === 'kanban') renderMeetingsKanban();
     else if (state.shape === 'calendar') renderMeetingsCalendar();
     else renderMeetings();

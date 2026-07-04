@@ -591,8 +591,9 @@ app.post('/api/tasks/:row/deliverable', requireAuth, requireRole('editor'), requ
     const dB = sheets.fuBlocks(t ? t.deliverable : '');
     const aB = alignAssignees(t ? t.assignees : '', dB.length);
     const dD = alignDvDates(t ? t.dvdates : '', dB.length);
-    dB.push(text); aB.push('-'); dD.push('-'); // المخرج الجديد بلا تخصيص ولا موعد افتراضاً
-    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n') });
+    const dN = alignDvDates(t ? t.dvdone : '', dB.length);
+    dB.push(text); aB.push('-'); dD.push('-'); dN.push('-'); // المخرج الجديد بلا تخصيص ولا موعد ولا إنجاز
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n'), dvdone: dN.join('\n\n') });
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { console.error('POST deliverable', err.message); res.status(400).json({ ok: false, error: err.message }); }
@@ -624,8 +625,9 @@ app.delete('/api/tasks/:row/deliverable/:idx', requireAuth, requireRole('editor'
     const aB = alignAssignees(t ? t.assignees : '', dB.length);
     if (!canActOnDeliv(req, dvAssigneeName(aB[idx]))) return res.status(403).json({ ok: false, error: 'هذا المخرج مخصَّص لمستخدم آخر' });
     const dD = alignDvDates(t ? t.dvdates : '', dB.length);
-    dB.splice(idx, 1); aB.splice(idx, 1); dD.splice(idx, 1);
-    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n') });
+    const dN = alignDvDates(t ? t.dvdone : '', dB.length);
+    dB.splice(idx, 1); aB.splice(idx, 1); dD.splice(idx, 1); dN.splice(idx, 1);
+    const task = await sheets.updateTask(activeTab(req), req.params.row, { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n'), dvdates: dD.join('\n\n'), dvdone: dN.join('\n\n') });
     invalidateCache(activeTab(req));
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
@@ -644,6 +646,10 @@ app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('ed
     const done = /^✓/.test(dB[idx]);
     dB[idx] = done ? dB[idx].replace(/^✓\s*/, '') : '✓ ' + dB[idx];
     const patch = { deliverable: dB.join('\n\n'), dvowners: aB.join('\n\n') };
+    // تثبيت/مسح تاريخ إنجاز المخرَج (لتجميد عدّاد الأيام عند الإنجاز؛ done=true يعني كان منجزاً فنُلغيه)
+    const dN = alignDvDates(t ? t.dvdone : '', dB.length);
+    dN[idx] = done ? '-' : nowStamp().slice(0, 10);
+    patch.dvdone = dN.join('\n\n');
     if (dB.length && dB.every((b) => /^✓/.test(b))) patch.status = sheets.DONE_STATUS;
     const task = await sheets.updateTask(activeTab(req), req.params.row, patch);
     invalidateCache(activeTab(req));

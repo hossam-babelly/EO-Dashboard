@@ -307,6 +307,10 @@ td.mt-rem { white-space: nowrap; text-align: center; }
 .dv-when.dvw-today { color: #fff; background: #c0822f; }
 .dv-when.dvw-soon { color: var(--gold-deep, #8a5a16); background: #f7ecd6; border: 1px solid #e8cf9e; }
 .dv-when.dvw-far { color: var(--muted); background: var(--bg); border: 1px solid var(--border); }
+.dv-when.dvw-done { color: #fff; background: #5f7457; }
+/* عرض قائمة المخرجات */
+.dv-done-txt { text-decoration: line-through; opacity: .62; }
+.dv-assign-sel { font-family: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text); }
 /* صفّ اختيار المشروع + زر تعديل الاسم */
 .pick-row { display: flex; align-items: center; gap: 8px; }
 .pick-row select { flex: 1; }

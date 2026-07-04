@@ -552,10 +552,18 @@ function trInfoBlock(t) {
 function trHeadingBlock(text) {
   return `<div class="trblk" style="padding:14px 22px 6px"><div style="font-size:15px;font-weight:800;color:${RB.ink};border-bottom:2px solid ${RB.copper};padding-bottom:5px">${esc(text)}</div></div>`;
 }
+function trDoneRel(diff) {
+  if (typeof doneRelC === 'function') return doneRelC(diff);
+  if (diff == null) return 'منجَز';
+  return diff < 0 ? `أُنجز متأخراً ${Math.abs(diff)} يوم` : diff === 0 ? 'أُنجز في الموعد' : `أُنجز قبل ${diff} يوم`;
+}
 function trDeliverableBlock(d, n) {
-  const date = d.dateRaw
-    ? `<span style="display:inline-block;padding:1px 9px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:${trDateColor(d.diffDays)}">📅 ${esc(d.dateRaw)} · ${esc(relFromDiffC(d.diffDays))}</span>`
-    : `<span style="font-size:11px;color:${RB.muted}">بلا موعد</span>`;
+  const pill = (bg, txt) => `<span style="display:inline-block;padding:1px 9px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:${bg}">${txt}</span>`;
+  const date = !d.dateRaw
+    ? `<span style="font-size:11px;color:${RB.muted}">بلا موعد</span>`
+    : d.done
+      ? pill(RB.green, `✓ ${esc(d.dateRaw)} · ${esc(trDoneRel(d.diffDays))}`)              // منجَز: عدّاد مُجمَّد
+      : pill(trDateColor(d.diffDays), `📅 ${esc(d.dateRaw)} · ${esc(relFromDiffC(d.diffDays))}`);
   const who = d.assignee ? `<span style="font-size:11px;color:${RB.copperDeep};font-weight:700">👤 ${esc(d.assignee)}</span>` : '';
   return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-inline-start:3px solid ${d.done ? RB.green : RB.copper};border-radius:8px;padding:9px 12px;background:${d.done ? '#f3f6f0' : '#fff'}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div style="font-size:11px;color:${RB.muted};font-weight:700">${d.done ? '✓ منجَز' : '○ قيد التنفيذ'} · مخرج ${n}</div><div style="display:flex;gap:8px;align-items:center">${who}${date}</div></div>
