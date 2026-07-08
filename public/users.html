@@ -7,8 +7,25 @@
 <link rel="icon" type="image/png" href="/assets/logo-mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
+<script>
+/* تطبيق التصميم/الوضع/الخط المحفوظ فوراً (قبل الرسم) ليطابق التطبيق */
+(function () { try {
+  var R = document.documentElement, LS = localStorage, DES = ['classic', 'wing', 'bp', 'marsad', 'custom'];
+  var d = LS.getItem('eo_design'); if (DES.indexOf(d) < 0) d = 'classic';
+  var m = LS.getItem('eo_theme') === 'dark' ? 'dark' : 'light';
+  var g = LS.getItem('eo_glass') === '1' ? 'on' : 'off';
+  var sig = d;
+  if (d === 'custom') { try { var c = JSON.parse(LS.getItem('eo_custom') || '{}') || {}; sig = (['wing','bp','marsad','classic'].indexOf(c.shape) >= 0) ? c.shape : 'wing'; } catch (e) { sig = 'wing'; } }
+  R.setAttribute('data-style', d); R.setAttribute('data-theme', m); R.setAttribute('data-glass', g); R.setAttribute('data-sig', sig);
+  var FA = { cairo: "'Cairo', system-ui, 'Segoe UI', sans-serif", tajawal: "'Tajawal', 'Cairo', system-ui, sans-serif", almarai: "'Almarai', 'Cairo', system-ui, sans-serif", plexar: "'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif", readex: "'Readex Pro', 'Cairo', system-ui, sans-serif" };
+  var FLn = { ibmplex: "'IBM Plex Sans', system-ui, sans-serif", sora: "'Sora', system-ui, sans-serif", space: "'Space Grotesk', system-ui, sans-serif", manrope: "'Manrope', system-ui, sans-serif", mono: "'IBM Plex Mono', ui-monospace, monospace" };
+  var fa = LS.getItem('eo_font_ar'), fl = LS.getItem('eo_font_latin');
+  if (FA[fa]) R.style.setProperty('--font-ar', FA[fa]);
+  if (FLn[fl]) R.style.setProperty('--font-latin', FLn[fl]);
+} catch (e) {} })();
+</script>
 </head>
 <body>
 <header>

@@ -26,17 +26,24 @@
   --radius: 14px;
   --section-bg: #faf6f0;
   --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  /* الخطوط القابلة للتبديل (يضبطها i18n عند اختيار المستخدم) — الافتراض = Cairo فيبقى الكلاسيكي مطابقاً */
+  --font-ar: 'Cairo', system-ui, 'Segoe UI', sans-serif;
+  --font-latin: 'Cairo', system-ui, sans-serif;
+  --font-display: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --ease: cubic-bezier(.4, .15, .2, 1);
+  --blur: 15px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Cairo', system-ui, sans-serif;
+  font-family: var(--font-ar);
   background: var(--bg);
   color: var(--text);
   direction: rtl;
   min-height: 100vh;
 }
+html[lang="en"] body { font-family: var(--font-latin); }
 
 /* ===== Header (سينمائي داكن) ===== */
 header {
@@ -521,3 +528,298 @@ td.mt-rem { white-space: nowrap; text-align: center; }
 .prof-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer; }
 .prof-check input { width: 16px; height: 16px; accent-color: var(--copper); }
 @media (max-width: 760px) { .u-form { grid-template-columns: 1fr 1fr; } }
+
+/* ============================================================
+   نظام التصاميم (EO): 4 تصاميم قابلة للتبديل × فاتح/داكن × شفافية + خامس مخصّص.
+   الحامل: سمات data-style / data-theme / data-glass / data-sig على <html>.
+   • الكلاسيكي = الحالي بالضبط (لا يُلمَس؛ يبقى بأيقونات الإيموجي).
+   • التصاميم الأخرى: رموز (tokens) جديدة + إسناد أسماء EO القديمة إليها (فترث تلقائياً)
+     + طبقة مكوّنات راقية + أيقونات SVG + توقيعات + علامة مائية + شفافية + حركة.
+   ============================================================ */
+
+/* رموز مرجعية افتراضية (تعادل قيم الكلاسيكي) — إضافية، لا تمسّ أسماء EO القديمة */
+:root {
+  --accent: #bd6a43; --accent-strong: #a4572f; --accent-ink: #ffffff;
+  --accent-soft: rgba(189,106,67,.10); --accent-soft-2: rgba(189,106,67,.18);
+  --ink: #211d1a; --ink-soft: #2b2823; --faint: #a99c90;
+  --line: #e7ddcf; --line-soft: #efe7da; --track: #f0e9de;
+  --good: #5f7457; --good-bg: #e9efe4; --warn: #c0822f; --warn-bg: #f6eddc; --bad: #b4453c; --bad-bg: #f7e9e7;
+  --topbar: #211d1a; --topbar-ink: #f3ece2; --topbar-line: #bd6a43; --topbar-glass: rgba(33,29,26,.72);
+  --shadow-lg: 0 18px 46px rgba(43,40,35,.14); --shadow-accent: 0 8px 20px rgba(189,106,67,.28);
+  --r-sm: 9px; --r: 12px; --r-lg: 14px; --r-xl: 20px;
+  --ic-sw: 1.7; --ic-cap: round; --ic-join: round;
+  --graphite: #43474a; --glow: 0 0 0 1px rgba(189,106,67,.4), 0 8px 20px rgba(189,106,67,.16);
+  --ambient: none; --grid-bg: none;
+  --glass-surface: rgba(255,255,255,.55); --glass-border: rgba(255,255,255,.72);
+}
+
+/* ============ الكلاسيكي — الوضع الداكن (جديد؛ الفاتح يبقى كما هو) ============ */
+:root[data-style="classic"][data-theme="dark"] {
+  --bg: #1a1718; --surface: #232022; --surface-2: #1e1b1d; --section-bg: #1e1b1d;
+  --border: #332f31; --border-2: #29262a;
+  --text: #e6e0d9; --muted: #a49c94; --champagne: #d8c4b0;
+  --navy: #141213; --navy-light: #1c1a18;
+  --copper: #cf7a55; --copper-deep: #e0946c; --gold: #cf7a55; --gold-light: #e0946c;
+  --red: #d57a6f; --red-bg: rgba(180,69,60,.24); --orange: #d9a24e; --orange-bg: rgba(192,130,47,.20);
+  --green: #8fb07f; --green-bg: rgba(95,116,87,.22); --blue: #c2a06a; --blue-bg: rgba(154,123,80,.22);
+  --shadow: 0 4px 16px rgba(0,0,0,.42);
+  --accent: #cf7a55; --accent-strong: #b8603c; --accent-ink: #1a1413;
+  --accent-soft: rgba(207,122,85,.15); --accent-soft-2: rgba(207,122,85,.24);
+  --ink: #f0edeb; --ink-soft: #d9d3cd; --faint: #7c746c; --line: #332f31; --line-soft: #29262a; --track: #2a2528;
+  --good: #8fb07f; --good-bg: rgba(95,116,87,.22); --warn: #d9a24e; --warn-bg: rgba(192,130,47,.20); --bad: #d57a6f; --bad-bg: rgba(180,69,60,.24);
+  --topbar: #141213; --topbar-ink: #f0edeb; --topbar-line: #cf7a55; --topbar-glass: rgba(20,18,19,.68);
+  --shadow-lg: 0 20px 50px rgba(0,0,0,.6); --shadow-accent: 0 8px 22px rgba(207,122,85,.32);
+  --glass-surface: rgba(40,36,38,.5); --glass-border: rgba(255,255,255,.08);
+}
+
+/* ============ ① جَناح سنكري (wing) — فاتح ============ */
+:root[data-style="wing"] {
+  --r-sm: 9px; --r: 13px; --r-lg: 17px; --r-xl: 22px;
+  --bg: #F4EFEA; --surface: #FFFFFF; --surface-2: #FBF6F1;
+  --ink: #211C18; --ink-soft: #463D35; --muted: #7C6F64; --faint: #A99C90;
+  --line: #EADFD5; --line-soft: #F3ECE4;
+  --accent: #B8603C; --accent-strong: #9A4E30; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(184,96,60,.10); --accent-soft-2: rgba(184,96,60,.17);
+  --good: #5E7A55; --good-bg: #E7EFE1; --warn: #C0822F; --warn-bg: #F7EACB; --bad: #B4453C; --bad-bg: #F7DED9;
+  --track: #EDE3D9;
+  --topbar: #211C18; --topbar-ink: #F4EFEA; --topbar-line: #B8603C; --topbar-glass: rgba(33,28,24,.72);
+  --shadow: 0 4px 14px rgba(33,28,24,.07); --shadow-lg: 0 18px 44px rgba(33,28,24,.14); --shadow-accent: 0 8px 20px rgba(184,96,60,.30);
+  --glass-surface: rgba(255,255,255,.55); --glass-border: rgba(255,255,255,.72);
+  --ambient: radial-gradient(820px 460px at 100% -8%, rgba(184,96,60,.08), transparent 60%), radial-gradient(680px 520px at -6% 10%, rgba(218,205,193,.20), transparent 62%);
+  --blue: #9a7b50; --blue-bg: #efe6d6;
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+}
+:root[data-style="wing"][data-theme="dark"] {
+  --bg: #17120F; --surface: #221A15; --surface-2: #1B1410;
+  --ink: #F2EAE2; --ink-soft: #D9CDC1; --muted: #A5978B; --faint: #7C6F63;
+  --line: #33291F; --line-soft: #291F17;
+  --accent: #D07C52; --accent-strong: #B8603C; --accent-ink: #1A130E;
+  --accent-soft: rgba(208,124,82,.15); --accent-soft-2: rgba(208,124,82,.24);
+  --good: #8FB07F; --good-bg: rgba(94,122,85,.22); --warn: #D9A24E; --warn-bg: rgba(192,130,47,.20); --bad: #D57A6F; --bad-bg: rgba(180,69,60,.24);
+  --track: #33271B;
+  --topbar: #120E0B; --topbar-ink: #F2EAE2; --topbar-line: #D07C52; --topbar-glass: rgba(18,14,11,.66);
+  --shadow: 0 4px 16px rgba(0,0,0,.42); --shadow-lg: 0 20px 50px rgba(0,0,0,.6); --shadow-accent: 0 8px 22px rgba(208,124,82,.32);
+  --glass-surface: rgba(40,32,26,.5); --glass-border: rgba(255,255,255,.08);
+  --ambient: radial-gradient(820px 460px at 100% -8%, rgba(208,124,82,.10), transparent 60%), radial-gradient(680px 520px at -6% 10%, rgba(120,80,55,.16), transparent 62%);
+  --blue: #c2a06a; --blue-bg: rgba(154,123,80,.22); --copper-deep: var(--accent);
+}
+
+/* ============ ② مخطّط الكلك (bp) — فاتح ============ */
+:root[data-style="bp"] {
+  --r-sm: 5px; --r: 7px; --r-lg: 9px; --r-xl: 12px;
+  --bg: #F1F0EB; --surface: #FBFAF6; --surface-2: #F4F3EE;
+  --ink: #20201C; --ink-soft: #3E3E38; --muted: #6E6E66; --faint: #9E9E94;
+  --line: #DEDDD5; --line-soft: #E9E8E1;
+  --accent: #B0582F; --accent-strong: #8F4522; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(176,88,47,.08); --accent-soft-2: rgba(176,88,47,.15);
+  --graphite: #43474A;
+  --good: #4C7150; --good-bg: #E7EFE7; --warn: #B07C2C; --warn-bg: #F5EBCF; --bad: #B0463A; --bad-bg: #F6DFDB;
+  --track: #E5E4DC;
+  --topbar: #2C2F31; --topbar-ink: #EDEDE7; --topbar-line: #B0582F; --topbar-glass: rgba(44,47,49,.72);
+  --shadow: 0 1px 2px rgba(20,20,18,.06); --shadow-lg: 0 10px 30px rgba(20,20,18,.11); --shadow-accent: 0 3px 10px rgba(176,88,47,.2);
+  --glass-surface: rgba(251,250,246,.6); --glass-border: rgba(255,255,255,.8);
+  --grid-bg: linear-gradient(rgba(70,84,90,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(70,84,90,.05) 1px, transparent 1px);
+  --blue: #5f727a; --blue-bg: #e7ecee;
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+}
+:root[data-style="bp"][data-theme="dark"] {
+  --bg: #131513; --surface: #1B1D1B; --surface-2: #161816;
+  --ink: #EBEDE9; --ink-soft: #CCCEC8; --muted: #8C8E88; --faint: #61635E;
+  --line: #282B28; --line-soft: #202320;
+  --accent: #C56B3E; --accent-strong: #AC552C; --accent-ink: #141210;
+  --accent-soft: rgba(197,107,62,.13); --accent-soft-2: rgba(197,107,62,.2);
+  --graphite: #AEB4B6;
+  --good: #82A877; --good-bg: rgba(76,113,80,.2); --warn: #CDA054; --warn-bg: rgba(176,124,44,.18); --bad: #D0776B; --bad-bg: rgba(176,70,58,.2);
+  --track: #2A2D2A;
+  --topbar: #0F110F; --topbar-ink: #EBEDE9; --topbar-line: #C56B3E; --topbar-glass: rgba(15,17,15,.72);
+  --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 14px 40px rgba(0,0,0,.55); --shadow-accent: 0 3px 12px rgba(197,107,62,.28);
+  --glass-surface: rgba(30,32,30,.5); --glass-border: rgba(230,235,230,.08);
+  --grid-bg: linear-gradient(rgba(150,170,175,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(150,170,175,.045) 1px, transparent 1px);
+  --blue: #8fa6b0; --blue-bg: rgba(95,114,122,.2); --copper-deep: var(--accent);
+}
+
+/* ============ ③ المِرصَد (marsad) — فاتح ============ */
+:root[data-style="marsad"] {
+  --r-sm: 8px; --r: 11px; --r-lg: 15px; --r-xl: 20px;
+  --bg: #EBEEF1; --surface: #FFFFFF; --surface-2: #F2F5F7;
+  --ink: #14181C; --ink-soft: #39424A; --muted: #66727B; --faint: #97A2AA;
+  --line: #DEE4E8; --line-soft: #EAEEF1;
+  --accent: #B8603C; --accent-strong: #9A4E30; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(184,96,60,.10); --accent-soft-2: rgba(184,96,60,.18);
+  --good: #4C7150; --good-bg: #E6EFE8; --warn: #B07C2C; --warn-bg: #F5EBCF; --bad: #B0463A; --bad-bg: #F6DFDB;
+  --track: #E4E9EC;
+  --topbar: #14181C; --topbar-ink: #EAEEF2; --topbar-line: #B8603C; --topbar-glass: rgba(20,24,28,.72);
+  --shadow: 0 2px 8px rgba(20,30,38,.06); --shadow-lg: 0 16px 40px rgba(20,30,38,.12); --shadow-accent: 0 4px 14px rgba(184,96,60,.2);
+  --glow: 0 0 0 1px rgba(184,96,60,.4), 0 8px 20px rgba(184,96,60,.16);
+  --glass-surface: rgba(255,255,255,.6); --glass-border: rgba(255,255,255,.85);
+  --ambient: radial-gradient(900px 500px at 100% -12%, rgba(184,96,60,.05), transparent 62%), radial-gradient(680px 520px at -6% 8%, rgba(70,110,130,.06), transparent 62%);
+  --blue: #4f7d99; --blue-bg: #e3edf3;
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+}
+:root[data-style="marsad"][data-theme="dark"] {
+  --bg: #0E1216; --surface: #161B20; --surface-2: #11161A;
+  --ink: #EAEEF2; --ink-soft: #C1CAD1; --muted: #87939C; --faint: #59646D;
+  --line: #232B31; --line-soft: #1A2126;
+  --accent: #DA7C4E; --accent-strong: #B8603C; --accent-ink: #11161A;
+  --accent-soft: rgba(218,124,78,.14); --accent-soft-2: rgba(218,124,78,.26);
+  --good: #63BE86; --good-bg: rgba(99,190,134,.16); --warn: #E3A24E; --warn-bg: rgba(227,162,78,.16); --bad: #E56A5B; --bad-bg: rgba(229,106,91,.16);
+  --track: #232B31;
+  --topbar: #0A0E11; --topbar-ink: #EAEEF2; --topbar-line: #DA7C4E; --topbar-glass: rgba(10,14,17,.66);
+  --glow: 0 0 0 1px rgba(218,124,78,.55), 0 0 22px rgba(218,124,78,.28);
+  --shadow: 0 10px 34px rgba(0,0,0,.5); --shadow-lg: 0 22px 60px rgba(0,0,0,.66); --shadow-accent: 0 8px 22px rgba(218,124,78,.3);
+  --glass-surface: rgba(24,30,36,.5); --glass-border: rgba(160,190,210,.1);
+  --ambient: radial-gradient(900px 500px at 100% -10%, rgba(218,124,78,.13), transparent 60%), radial-gradient(700px 520px at -6% 8%, rgba(70,110,130,.10), transparent 62%);
+  --blue: #6fa8c4; --blue-bg: rgba(79,125,153,.2); --copper-deep: var(--accent);
+}
+
+/* ============ التصميم المخصّص (custom): إسناد أسماء EO القديمة إلى الرموز (القيم تُضبط إنلاين من applyCustom) ============ */
+:root[data-style="custom"] {
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+  --blue: #9a7b50; --blue-bg: #efe6d6;
+}
+
+/* ============ خلفيات الصفحة (توهّج/شبكة/علامة مائية) — للتصاميم غير الكلاسيكية فقط ============ */
+:root:not([data-style="classic"]) main,
+:root:not([data-style="classic"]) .login-card,
+:root:not([data-style="classic"]) .page-wrap { position: relative; z-index: 1; }
+:root:not([data-style="classic"]) body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--ambient, transparent); transition: background .4s var(--ease); }
+:root:not([data-style="classic"]) body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--grid-bg, transparent); background-size: 26px 26px; }
+/* علامة سنكري المائية (تصميم جَناح): تغطّي كامل الصفحة وتبقى ثابتة عند التمرير */
+:root[data-sig="wing"] body::after { background: url("/assets/logo-mark.png") no-repeat center center; background-size: cover; opacity: .05; }
+:root[data-sig="wing"][data-theme="dark"] body::after { opacity: .08; }
+
+/* ============ أيقونات SVG + آلية «إيموجي/SVG» المزدوجة ============ */
+/* .di يلفّ (إيموجي + svg): الكلاسيكي يُظهر الإيموجي (كما هو تماماً)، وغيره يُظهر الـ SVG */
+.di { display: inline; }
+.di > svg.di-s { display: none; }
+:root:not([data-style="classic"]) .di { display: inline-flex; align-items: center; }
+:root:not([data-style="classic"]) .di > .di-e { display: none; }
+:root:not([data-style="classic"]) .di > svg.di-s { display: inline-flex; }
+svg.ic { width: 1.05em; height: 1.05em; flex: none; fill: none; stroke: currentColor; stroke-width: var(--ic-sw); stroke-linecap: var(--ic-cap); stroke-linejoin: var(--ic-join); vertical-align: -.16em; }
+.btn .di > svg.ic, .view-tab .di > svg.ic { width: 16px; height: 16px; }
+.icon-only .di > svg.ic, .bell .di > svg.ic { width: 18px; height: 18px; }
+.mh-icon .di > svg.ic, .modal-close .di > svg.ic { width: 17px; height: 17px; }
+
+/* ============ طبقة المكوّنات الراقية — للتصاميم غير الكلاسيكية فقط ============ */
+:root:not([data-style="classic"]) .btn { transition: transform .18s var(--ease), box-shadow .18s var(--ease), background-color .18s, border-color .18s, color .18s; }
+:root:not([data-style="classic"]) .btn-gold:hover, :root:not([data-style="classic"]) .btn-save:hover, :root:not([data-style="classic"]) .btn-edit:hover { transform: translateY(-1px); box-shadow: var(--shadow-accent); }
+:root:not([data-style="classic"]) .kpi { transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s, background-color .3s var(--ease); }
+:root:not([data-style="classic"]) .kpi:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--accent-soft-2); }
+:root:not([data-style="classic"]) .card { transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s, background-color .3s var(--ease); }
+/* رأس الجدول فاتح أنيق للتصاميم الجديدة (بدل الفحمي)؛ ومخطّط الكلك بغرافيت */
+:root:not([data-style="classic"]) thead th { background: var(--surface-2); color: var(--muted); border-bottom: 1.5px solid var(--line); }
+:root:not([data-style="classic"]) thead th:hover { background: var(--line-soft); color: var(--ink); }
+:root:not([data-style="classic"]) thead th .arrow { color: var(--accent); }
+:root[data-sig="bp"] thead th { background: var(--graphite); color: #fff; }
+:root[data-sig="bp"] thead th:hover { background: var(--graphite); filter: brightness(1.1); }
+/* حلقة تركيز أنيقة للحقول */
+:root:not([data-style="classic"]) .filters input:focus, :root:not([data-style="classic"]) .filters select:focus,
+:root:not([data-style="classic"]) .modal input:focus, :root:not([data-style="classic"]) .modal select:focus, :root:not([data-style="classic"]) .modal textarea:focus,
+:root:not([data-style="classic"]) .ms-btn:focus { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
+/* المؤشرات: رقم بخط العرض */
+:root:not([data-style="classic"]) .kpi .num { font-family: var(--font-display); letter-spacing: -.01em; }
+
+/* ============ الشفافية الزجاجية (data-glass=on) — للتصاميم غير الكلاسيكية ============ */
+:root[data-glass="on"]:not([data-style="classic"]) .kpi,
+:root[data-glass="on"]:not([data-style="classic"]) .toolbar,
+:root[data-glass="on"]:not([data-style="classic"]) .table-wrap,
+:root[data-glass="on"]:not([data-style="classic"]) .modal,
+:root[data-glass="on"]:not([data-style="classic"]) .kcol {
+  background: var(--glass-surface);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+  backdrop-filter: blur(var(--blur)) saturate(1.4);
+  border-color: var(--glass-border);
+}
+:root[data-glass="on"]:not([data-style="classic"]) header { background: var(--topbar-glass); -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3); }
+
+/* ============ توقيعات التصاميم (data-sig) ============ */
+/* مخطّط الكلك: علامات زوايا هندسية على البطاقات */
+:root[data-sig="bp"] .kpi { position: relative; }
+:root[data-sig="bp"] .kpi::before { content: ""; position: absolute; top: 6px; inset-inline-end: 6px; width: 9px; height: 9px; border-top: 1.5px solid var(--accent-soft-2); border-inline-end: 1.5px solid var(--accent-soft-2); pointer-events: none; }
+:root[data-sig="bp"] .kpi::after { content: ""; position: absolute; bottom: 6px; inset-inline-start: 6px; width: 9px; height: 9px; border-bottom: 1.5px solid var(--accent-soft-2); border-inline-start: 1.5px solid var(--accent-soft-2); pointer-events: none; }
+/* المِرصَد: توهّج نحاسي عند التأشير */
+:root[data-sig="marsad"] .kpi:hover { box-shadow: var(--glow); border-color: var(--accent); }
+:root[data-sig="marsad"] .btn-gold:hover, :root[data-sig="marsad"] .view-tab.active { box-shadow: var(--glow); }
+:root[data-sig="marsad"][data-theme="dark"] .kpi .num { text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ============ حركة النوافذ (للتصاميم غير الكلاسيكية) + احترام تقليل الحركة ============ */
+:root:not([data-style="classic"]) .modal-back.open { animation: eoFade .2s var(--ease); }
+:root:not([data-style="classic"]) .modal-back.open .modal { animation: eoModalIn .26s var(--ease); }
+@keyframes eoFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes eoModalIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { * { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+/* ============ أشرطة التمرير تتبع الوضع (للتصاميم غير الكلاسيكية والداكن) ============ */
+:root:not([data-style="classic"]) * { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+:root:not([data-style="classic"]) ::-webkit-scrollbar { width: 12px; height: 12px; }
+:root:not([data-style="classic"]) ::-webkit-scrollbar-track { background: transparent; }
+:root:not([data-style="classic"]) ::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 20px; border: 3px solid var(--bg); }
+:root:not([data-style="classic"]) ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ============ تصحيحات الوضع الداكن (تصلح الألوان الثابتة #fff في القواعد القديمة) ============ */
+:root[data-theme="dark"] .bell-panel,
+:root[data-theme="dark"] .bell-panel .bp-head,
+:root[data-theme="dark"] .filters select,
+:root[data-theme="dark"] .filters input,
+:root[data-theme="dark"] .ms-btn,
+:root[data-theme="dark"] .ms-panel,
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .modal input,
+:root[data-theme="dark"] .modal select,
+:root[data-theme="dark"] .modal textarea,
+:root[data-theme="dark"] .mtg-datefilter input,
+:root[data-theme="dark"] td.mt-ctrl select,
+:root[data-theme="dark"] td.mt-ctrl .mt-dt,
+:root[data-theme="dark"] .fu-item,
+:root[data-theme="dark"] .fu-logedit input,
+:root[data-theme="dark"] .fu-eta,
+:root[data-theme="dark"] .fu-add textarea,
+:root[data-theme="dark"] .dv-assign-row select,
+:root[data-theme="dark"] .dv-assign-row input,
+:root[data-theme="dark"] .dv-assign-sel,
+:root[data-theme="dark"] .pick-rename,
+:root[data-theme="dark"] .kcard,
+:root[data-theme="dark"] .cal-head button,
+:root[data-theme="dark"] .att-item,
+:root[data-theme="dark"] .rem-cal-row input,
+:root[data-theme="dark"] .users-table,
+:root[data-theme="dark"] .u-form input,
+:root[data-theme="dark"] .u-form select {
+  background: var(--surface); color: var(--text); border-color: var(--border);
+}
+/* عناوين كانت بلون الفحمي الداكن → تصبح فاتحة على الخلفية الداكنة */
+:root[data-theme="dark"] :is(.bell-panel .bp-head, .card h2, .kcol-head, .cal-head h3, .fu-au, .kcard .kp, .rem-title, .users-table th, .rep-cols-title) { color: var(--ink); }
+:root[data-theme="dark"] .fu-mini, :root[data-theme="dark"] .fu-log, :root[data-theme="dark"] .rem-box, :root[data-theme="dark"] .dv-toggle { background: var(--section-bg); }
+
+/* ============ منتقي التصميم: أزرار معاينة + مفاتيح انزلاق (نافذة الإعدادات) ============ */
+.theme-picker { display: flex; gap: 10px; flex-wrap: wrap; }
+.theme-swatch { position: relative; display: inline-grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 2px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--muted); cursor: pointer; overflow: hidden; transition: transform .16s var(--ease), border-color .16s, box-shadow .16s; }
+.theme-swatch svg.ic { width: 25px; height: 25px; stroke-width: 1.8; display: block; }
+.theme-swatch:hover { transform: translateY(-2px); border-color: var(--accent-soft-2); box-shadow: var(--shadow); }
+.theme-swatch.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; }
+.switch-row > span { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.switch { position: relative; width: 46px; height: 26px; border-radius: 999px; border: none; background: var(--track); cursor: pointer; padding: 0; transition: background-color .2s var(--ease); flex: none; }
+.switch .knob { position: absolute; top: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .2s var(--ease); }
+.switch.on { background: var(--copper); }
+.switch.on .knob { transform: translateX(-20px); }
+[dir="ltr"] .switch.on .knob { transform: translateX(20px); }
+.set-box { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; background: var(--section-bg); }
+.set-box-title { font-weight: 800; color: var(--navy); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.set-lbl { font-size: 12.5px; color: var(--muted); font-weight: 700; margin: 10px 0 5px; }
+.set-sel { width: 100%; font-family: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); }
+.custom-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; }
+.custom-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 420px; }
+.custom-table th, .custom-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-2); text-align: center; }
+.custom-table th { background: var(--section-bg); color: var(--muted); font-weight: 800; }
+.custom-table td:first-child, .custom-table th:first-child { text-align: start; font-weight: 700; }
+.custom-table input[type="radio"] { width: 18px; height: 18px; accent-color: var(--copper); cursor: pointer; }
+.theme-broadcast { margin-top: 12px; width: 100%; justify-content: center; }

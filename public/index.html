@@ -7,10 +7,47 @@
 <link rel="icon" type="image/png" href="/assets/logo-mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+<!-- ===== مجموعة أيقونات SVG (للتصاميم غير الكلاسيكية) — تُستعمَل عبر <svg class="ic"><use href="#i-…"/></svg> ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7 2.5 7H3.5S6 15 6 9M10.5 20a1.8 1.8 0 0 0 3 0"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 15H2a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6h.1A1.6 1.6 0 0 0 11 3V2a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.6 1.6 0 0 0 21.4 9h.1a2 2 0 1 1 0 4h-.1"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-3.9-4-7.4-9-7.4"/><circle cx="7.5" cy="12" r="1.2"/><circle cx="10" cy="7.7" r="1.2"/><circle cx="15" cy="7.7" r="1.2"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></symbol>
+  <symbol id="i-handshake" viewBox="0 0 24 24"><path d="m11 17 2 2a1.4 1.4 0 0 0 2-2M13 15l2.5 2.5a1.4 1.4 0 0 0 2-2L14 12"/><path d="m21 8-4 4-3-3 3.5-3.5a2 2 0 0 1 2.8 0zM3 8l4 4 4-4-2.5-2.5a2 2 0 0 0-2.8 0z"/><path d="M11 8 8.5 10.5a1.4 1.4 0 0 0 2 2L13 10"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 4 4 8h8zM8 20l-4-4h8zM16 4l4 4h-8zM16 20l4-4h-8z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 17v-3M12 17v-6M16 17v-2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-plusbox" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l9 5V5l-9 5H4a1 1 0 0 0-1 1z"/><path d="M18.5 8a4 4 0 0 1 0 8"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <!-- رموز التصاميم لأزرار الاختيار في الإعدادات -->
+  <symbol id="i-d-classic" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.2"/><rect x="13" y="3" width="8" height="5" rx="1.2"/><rect x="13" y="10" width="8" height="11" rx="1.2"/><rect x="3" y="13" width="8" height="8" rx="1.2"/></symbol>
+  <symbol id="i-d-wing" viewBox="0 0 24 24"><path d="M2 16 12 6l10 10"/><path d="M7 18.5 12 13l5 5.5"/></symbol>
+  <symbol id="i-d-bp" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
+  <symbol id="i-d-marsad" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-d-custom" viewBox="0 0 24 24"><circle cx="9.5" cy="10" r="6"/><circle cx="15" cy="14.5" r="6"/></symbol>
+</defs></svg>
 <header>
   <div class="logo" aria-label="سنكري القابضة">
     <img src="/assets/logo-horizontal.png" alt="سنكري القابضة — SANKARI HOLDING">
@@ -21,20 +58,21 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-ghost icon-only" id="langBtn" title="Language / اللغة">EN</button>
-    <button class="btn btn-ghost icon-only" id="dirBtn" title="RTL / LTR">⇄</button>
+    <button class="btn btn-ghost icon-only" id="dirBtn" title="RTL / LTR"><span class="di"><span class="di-e">⇄</span><svg class="ic di-s" aria-hidden="true"><use href="#i-swap"/></svg></span></button>
     <select id="profileSwitch" class="profile-switch" title="البروفايل" style="display:none"></select>
     <span class="sync" id="sync">—</span>
     <div class="bell-wrap">
-      <button class="btn btn-ghost bell" id="bellBtn">🔔<span class="bell-count" id="bellCount" style="display:none">0</span></button>
+      <button class="btn btn-ghost bell" id="bellBtn"><span class="di"><span class="di-e">🔔</span><svg class="ic di-s" aria-hidden="true"><use href="#i-bell"/></svg></span><span class="bell-count" id="bellCount" style="display:none">0</span></button>
       <div class="bell-panel" id="bellPanel"></div>
     </div>
-    <button class="btn btn-ghost icon-only" id="addBtn" data-i18n-title="مهمة جديدة" title="مهمة جديدة" style="display:none">➕</button>
-    <button class="btn btn-gold icon-only" id="refreshBtn" data-i18n-title="تحديث" title="تحديث">🔄</button>
-    <button class="btn btn-ghost icon-only push-toggle" id="pushBtn" title="تفعيل إشعارات المتصفح" style="display:none">🖥️</button>
-    <a class="btn btn-ghost icon-only" id="usersBtn" href="/users.html" data-i18n-title="المستخدمون" title="المستخدمون" style="display:none">👥</a>
-    <button class="btn btn-ghost icon-only" id="accountBtn" data-i18n-title="حسابي" title="حسابي" style="display:none">⚙</button>
+    <button class="btn btn-ghost icon-only" id="addBtn" data-i18n-title="مهمة جديدة" title="مهمة جديدة" style="display:none"><span class="di"><span class="di-e">➕</span><svg class="ic di-s" aria-hidden="true"><use href="#i-plus"/></svg></span></button>
+    <button class="btn btn-gold icon-only" id="refreshBtn" data-i18n-title="تحديث" title="تحديث"><span class="di"><span class="di-e">🔄</span><svg class="ic di-s" aria-hidden="true"><use href="#i-refresh"/></svg></span></button>
+    <button class="btn btn-ghost icon-only push-toggle" id="pushBtn" title="تفعيل إشعارات المتصفح" style="display:none"><span class="di"><span class="di-e">🖥️</span><svg class="ic di-s" aria-hidden="true"><use href="#i-monitor"/></svg></span></button>
+    <a class="btn btn-ghost icon-only" id="usersBtn" href="/users.html" data-i18n-title="المستخدمون" title="المستخدمون" style="display:none"><span class="di"><span class="di-e">👥</span><svg class="ic di-s" aria-hidden="true"><use href="#i-users"/></svg></span></a>
+    <button class="btn btn-ghost icon-only" id="designBtn" data-i18n-title="التصميم والمظهر" title="التصميم والمظهر"><span class="di"><span class="di-e">🎨</span><svg class="ic di-s" aria-hidden="true"><use href="#i-palette"/></svg></span></button>
+    <button class="btn btn-ghost icon-only" id="accountBtn" data-i18n-title="حسابي" title="حسابي" style="display:none"><span class="di"><span class="di-e">⚙</span><svg class="ic di-s" aria-hidden="true"><use href="#i-gear"/></svg></span></button>
     <span class="user-chip" id="userChip" style="display:none"></span>
-    <button class="btn btn-ghost icon-only" id="logoutBtn" data-i18n-title="خروج" title="خروج" style="display:none">🚪</button>
+    <button class="btn btn-ghost icon-only" id="logoutBtn" data-i18n-title="خروج" title="خروج" style="display:none"><span class="di"><span class="di-e">🚪</span><svg class="ic di-s" aria-hidden="true"><use href="#i-logout"/></svg></span></button>
   </div>
 </header>
 
@@ -52,23 +90,23 @@
       <div class="ms" id="msStatus" data-all="الحالات"></div>
       <input class="search" id="fSearch" type="text" data-i18n-ph="🔍 بحث في المهام..." placeholder="🔍 بحث في المهام...">
       <button class="btn reset" id="resetBtn" data-i18n="مسح الفلاتر">مسح الفلاتر</button>
-      <button class="btn btn-gold" id="reportBtn" type="button" data-i18n="📄 تقرير">📄 تقرير</button>
+      <button class="btn btn-gold" id="reportBtn" type="button"><span class="di"><span class="di-e">📄</span><svg class="ic di-s" aria-hidden="true"><use href="#i-report"/></svg></span> <span data-i18n="تقرير">تقرير</span></button>
     </div>
   </div>
 
   <div class="views">
     <div class="view-group" id="shapeTabs">
-      <button class="view-tab active" data-shape="table" data-i18n="📋 جدول">📋 جدول</button>
-      <button class="view-tab" data-shape="kanban" data-i18n="🗂️ كانبان">🗂️ كانبان</button>
-      <button class="view-tab" data-shape="calendar" data-i18n="🗓️ تقويم">🗓️ تقويم</button>
+      <button class="view-tab active" data-shape="table"><span class="di"><span class="di-e">📋</span><svg class="ic di-s" aria-hidden="true"><use href="#i-list"/></svg></span> <span data-i18n="جدول">جدول</span></button>
+      <button class="view-tab" data-shape="kanban"><span class="di"><span class="di-e">🗂️</span><svg class="ic di-s" aria-hidden="true"><use href="#i-layers"/></svg></span> <span data-i18n="كانبان">كانبان</span></button>
+      <button class="view-tab" data-shape="calendar"><span class="di"><span class="di-e">🗓️</span><svg class="ic di-s" aria-hidden="true"><use href="#i-calendar"/></svg></span> <span data-i18n="تقويم">تقويم</span></button>
     </div>
     <div class="view-group" id="dataTabs">
-      <button class="view-tab active" data-data="tasks" data-i18n="📌 مهام">📌 مهام</button>
-      <button class="view-tab" data-data="meetings" data-i18n="🤝 اجتماعات">🤝 اجتماعات</button>
-      <button class="view-tab" data-data="deliverables" data-i18n="📦 المخرجات">📦 المخرجات</button>
+      <button class="view-tab active" data-data="tasks"><span class="di"><span class="di-e">📌</span><svg class="ic di-s" aria-hidden="true"><use href="#i-target"/></svg></span> <span data-i18n="مهام">مهام</span></button>
+      <button class="view-tab" data-data="meetings"><span class="di"><span class="di-e">🤝</span><svg class="ic di-s" aria-hidden="true"><use href="#i-handshake"/></svg></span> <span data-i18n="اجتماعات">اجتماعات</span></button>
+      <button class="view-tab" data-data="deliverables"><span class="di"><span class="di-e">📦</span><svg class="ic di-s" aria-hidden="true"><use href="#i-box"/></svg></span> <span data-i18n="المخرجات">المخرجات</span></button>
     </div>
     <button class="view-tab toggle" id="expandBtn" type="button" style="margin-inline-start:auto">↕ عرض موسّع</button>
-    <div class="ms" id="colsWrap"><button class="view-tab toggle" id="colsBtn" type="button" data-i18n="⚙ الأعمدة">⚙ الأعمدة</button><div class="ms-panel" id="colsPanel" style="inset-inline-start:auto;inset-inline-end:0;min-width:210px"></div></div>
+    <div class="ms" id="colsWrap"><button class="view-tab toggle" id="colsBtn" type="button"><span class="di"><span class="di-e">⚙</span><svg class="ic di-s" aria-hidden="true"><use href="#i-sliders"/></svg></span> <span data-i18n="الأعمدة">الأعمدة</span></button><div class="ms-panel" id="colsPanel" style="inset-inline-start:auto;inset-inline-end:0;min-width:210px"></div></div>
   </div>
 
   <div class="count-line" id="countLine"></div>
@@ -136,6 +174,13 @@
   <div class="modal" style="max-width:560px">
     <div class="modal-head"><h3 id="mtgRemTitle">تذكير الاجتماع</h3><button class="modal-close" id="mtgRemClose">✕</button></div>
     <div class="modal-body" id="mtgRemBody"></div>
+  </div>
+</div>
+
+<div class="modal-back" id="setModalBack">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head"><h3 data-i18n="التصميم والمظهر">التصميم والمظهر</h3><button class="modal-close" id="setClose">✕</button></div>
+    <div class="modal-body" id="setBody"></div>
   </div>
 </div>
 

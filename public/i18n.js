@@ -80,11 +80,61 @@
     'البريد الإلكتروني': 'Email', 'اختر البروفايل للدخول': 'Choose a profile to sign in',
     // عام
     'جارٍ التحميل…': 'Loading…', 'جارٍ تحميل المهام…': 'Loading tasks…',
+    // ===== التصاميم والمظهر (نظام الكسوة) =====
+    'جدول': 'Table', 'كانبان': 'Kanban', 'تقويم': 'Calendar',
+    'مهام': 'Tasks', 'اجتماعات': 'Meetings', 'المخرجات': 'Deliverables',
+    'تقرير': 'Report', 'الأعمدة': 'Columns', 'عرض موسّع': 'Expanded view', 'عرض مضغوط': 'Compact view',
+    'التصميم والمظهر': 'Design & appearance', 'التصميم': 'Design',
+    'الوضع الداكن': 'Dark mode', 'الشفافية الزجاجية': 'Glass transparency',
+    'خط الواجهة العربية والعناوين': 'Arabic UI & headings font', 'خط اللاتيني والأرقام': 'Latin & numbers font',
+    'افتراضي (Cairo)': 'Default (Cairo)',
+    'الكلاسيكي': 'Classic', 'جَناح سنكري': 'Sankari Wing', 'مخطّط الكلك': 'Blueprint', 'المِرصَد': 'Marsad', 'مخصّص (هجين)': 'Custom (hybrid)',
+    'الخطوط': 'Fonts',
+    'تطبيق هذا التصميم على جميع المستخدمين': 'Apply this design to all users',
+    'اختر لكل مفصل من الواجهة تصميمه — فينتج تصميمك الهجين الخاص.': 'Pick a design for each interface facet to build your own hybrid.',
+    'المفصل': 'Facet',
+    'الخلفية والأسطح والنصوص': 'Background, surfaces & text', 'اللون المميّز (النحاسي)': 'Accent color (copper)',
+    'ألوان الحالة (منجَز/تأخّر/تنبيه)': 'State colors (done / late / alert)',
+    'الشكل والتوقيع (الزوايا/الظلال/الأيقونات)': 'Shape & signature (corners/shadows/icons)',
+    'الترويسة (الشريط العلوي)': 'Header (top bar)', 'خلفية الصفحة (توهّج / شبكة)': 'Page background (glow / grid)',
+    'سيُطبَّق التصميم الحالي على جميع المستخدمين (يبقى لكلٍّ تغييره لاحقاً). هل تريد المتابعة؟': 'The current design will be applied to all users (each can still change it later). Continue?',
+    'تمّ تطبيق التصميم على جميع المستخدمين': 'Design applied to all users', 'تعذّر التطبيق': 'Could not apply',
+    'المدير فقط — يطبّق تصميمك الحالي على كل الحسابات': 'Admin only — applies your current design to all accounts',
   };
+  // ===== الخطوط القابلة للتبديل (٥ عربية + ٥ لاتينية) — الافتراض غير محدَّد = Cairo (الكلاسيكي مطابق) =====
+  const FONT_AR = {
+    cairo: "'Cairo', system-ui, 'Segoe UI', sans-serif",
+    tajawal: "'Tajawal', 'Cairo', system-ui, sans-serif",
+    almarai: "'Almarai', 'Cairo', system-ui, sans-serif",
+    plexar: "'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif",
+    readex: "'Readex Pro', 'Cairo', system-ui, sans-serif",
+  };
+  const FONT_LATIN = {
+    ibmplex: "'IBM Plex Sans', system-ui, sans-serif",
+    sora: "'Sora', system-ui, sans-serif",
+    space: "'Space Grotesk', system-ui, sans-serif",
+    manrope: "'Manrope', system-ui, sans-serif",
+    mono: "'IBM Plex Mono', ui-monospace, monospace",
+  };
+  const FONT_AR_LABELS = { cairo: 'Cairo', tajawal: 'Tajawal', almarai: 'Almarai', plexar: 'IBM Plex Sans Arabic', readex: 'Readex Pro' };
+  const FONT_LATIN_LABELS = { ibmplex: 'IBM Plex Sans', sora: 'Sora', space: 'Space Grotesk', manrope: 'Manrope', mono: 'IBM Plex Mono' };
+  let fontAr = localStorage.getItem('eo_font_ar') || '';
+  let fontLatin = localStorage.getItem('eo_font_latin') || '';
+  function applyFonts() {
+    const s = document.documentElement.style;
+    if (FONT_AR[fontAr]) s.setProperty('--font-ar', FONT_AR[fontAr]); else s.removeProperty('--font-ar');
+    if (FONT_LATIN[fontLatin]) s.setProperty('--font-latin', FONT_LATIN[fontLatin]); else s.removeProperty('--font-latin');
+  }
 
   const I = {
     lang: localStorage.getItem('eo_lang') === 'en' ? 'en' : 'ar',
     dir: localStorage.getItem('eo_dir') === 'ltr' ? 'ltr' : 'rtl',
+    get fontAr() { return fontAr; },
+    get fontLatin() { return fontLatin; },
+    fontOptions() { return { ar: Object.keys(FONT_AR), latin: Object.keys(FONT_LATIN) }; },
+    fontLabels() { return { ar: FONT_AR_LABELS, latin: FONT_LATIN_LABELS }; },
+    setFontAr(v) { fontAr = FONT_AR[v] ? v : ''; localStorage.setItem('eo_font_ar', fontAr); applyFonts(); },
+    setFontLatin(v) { fontLatin = FONT_LATIN[v] ? v : ''; localStorage.setItem('eo_font_latin', fontLatin); applyFonts(); },
     t(s) { return (this.lang === 'en' && DICT[s] != null) ? DICT[s] : s; },
     setLang(l) { this.lang = (l === 'en') ? 'en' : 'ar'; localStorage.setItem('eo_lang', this.lang); document.documentElement.lang = this.lang; },
     setDir(d) {
@@ -107,6 +157,7 @@
   document.documentElement.setAttribute('dir', I.dir);
   document.documentElement.style.direction = I.dir;
   document.documentElement.setAttribute('lang', I.lang);
+  applyFonts(); // طبّق الخطّ المحفوظ فوراً (قبل الرسم)
 
   window.I18N = I;
   window.tr = (s) => I.t(s); // اسم «tr» تفادياً لتعارض «t» المستخدَم لكائن المهمة في app.js

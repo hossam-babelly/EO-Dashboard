@@ -58,6 +58,124 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 // أيقونة تيليجرام الرسمية (طائرة ورقية بيضاء داخل دائرة زرقاء) — SVG مضمّن
 const TG_ICON = '<svg class="tg-ic" viewBox="0 0 240 240" width="15" height="15" aria-hidden="true" style="vertical-align:-3px"><circle cx="120" cy="120" r="120" fill="#29a9eb"/><path fill="#fff" d="M52 117l116-45c6-2 11 2 9 11l-20 93c-1 6-5 8-11 5l-31-23-15 14c-2 2-4 3-7 3l3-34 62-56c3-2-1-4-4-2l-77 48-33-10c-7-2-7-7 2-10z"/></svg>';
 
+// ===== الأيقونات: إيموجي في الكلاسيكي، SVG في التصاميم الأخرى (آلية مزدوجة، التبديل عبر CSS فوري) =====
+function icon(name, emoji) {
+  return '<span class="di"><span class="di-e">' + (emoji || '') + '</span><svg class="ic di-s" aria-hidden="true"><use href="#i-' + name + '"/></svg></span>';
+}
+window.icon = icon;
+
+// ============================================================
+// نظام التصاميم (Theme): 4 تصاميم + خامس مخصّص × فاتح/داكن × شفافية.
+// يُطبَّق كسمات data-* على <html>. يُحفظ محلياً (eo_design/eo_theme/eo_glass/eo_custom)
+// ولكل مستخدم على الخادم (PATCH /api/me/theme). المدير يبثّ للجميع (theme-broadcast).
+// الكلاسيكي = الحالي بالضبط (بلا كسوة ولا SVG).
+// ============================================================
+const DESIGNS = ['classic', 'wing', 'bp', 'marsad', 'custom'];
+const BASE_DESIGNS = ['classic', 'wing', 'bp', 'marsad'];
+const DESIGN_LABELS = { classic: 'الكلاسيكي', wing: 'جَناح سنكري', bp: 'مخطّط الكلك', marsad: 'المِرصَد', custom: 'مخصّص (هجين)' };
+// الخط المقترح لكل تصميم [عربي, لاتيني] — الكلاسيكي غير مذكور فيبقى Cairo كما هو
+const DESIGN_FONT = { wing: ['tajawal', 'ibmplex'], bp: ['readex', 'space'], marsad: ['plexar', 'sora'] };
+
+// التصميم المخصّص: مفاصل الواجهة × التصاميم الأربعة
+const CUSTOM_FACETS = [
+  { key: 'surfaces', label: 'الخلفية والأسطح والنصوص', tokens: ['--bg', '--surface', '--surface-2', '--ink', '--ink-soft', '--muted', '--faint', '--line', '--line-soft', '--track'] },
+  { key: 'accent', label: 'اللون المميّز (النحاسي)', tokens: ['--accent', '--accent-strong', '--accent-ink', '--accent-soft', '--accent-soft-2'] },
+  { key: 'states', label: 'ألوان الحالة (منجَز/تأخّر/تنبيه)', tokens: ['--good', '--good-bg', '--warn', '--warn-bg', '--bad', '--bad-bg'] },
+  { key: 'shape', label: 'الشكل والتوقيع (الزوايا/الظلال/الأيقونات)', tokens: ['--r-sm', '--r', '--r-lg', '--r-xl', '--shadow', '--shadow-lg', '--shadow-accent', '--ic-sw', '--ic-cap', '--ic-join', '--graphite', '--glow'] },
+  { key: 'topbar', label: 'الترويسة (الشريط العلوي)', tokens: ['--topbar', '--topbar-ink', '--topbar-line', '--topbar-glass'] },
+  { key: 'ambient', label: 'خلفية الصفحة (توهّج / شبكة)', tokens: ['--ambient', '--grid-bg'] },
+];
+const ALL_CUSTOM_TOKENS = CUSTOM_FACETS.reduce((a, f) => a.concat(f.tokens), []);
+let _tokenCache = null;
+// يقرأ قيم كل الرموز لكل تصميم × وضع من الـ CSS الحيّة (فيبقى متوافقاً مع styles.css)
+function collectDesignTokens() {
+  if (_tokenCache) return _tokenCache;
+  const R = document.documentElement;
+  const savedS = R.getAttribute('data-style'), savedT = R.getAttribute('data-theme');
+  const savedInline = {}; ALL_CUSTOM_TOKENS.forEach((tk) => { savedInline[tk] = R.style.getPropertyValue(tk); });
+  ALL_CUSTOM_TOKENS.forEach((tk) => R.style.removeProperty(tk));
+  const out = {};
+  BASE_DESIGNS.forEach((d) => {
+    out[d] = { light: {}, dark: {} };
+    ['light', 'dark'].forEach((m) => {
+      R.setAttribute('data-style', d); R.setAttribute('data-theme', m);
+      void R.offsetWidth;
+      const cs = getComputedStyle(R);
+      ALL_CUSTOM_TOKENS.forEach((tk) => { out[d][m][tk] = cs.getPropertyValue(tk).trim(); });
+    });
+  });
+  if (savedS) R.setAttribute('data-style', savedS); else R.removeAttribute('data-style');
+  if (savedT) R.setAttribute('data-theme', savedT); else R.removeAttribute('data-theme');
+  ALL_CUSTOM_TOKENS.forEach((tk) => { if (savedInline[tk]) R.style.setProperty(tk, savedInline[tk]); });
+  _tokenCache = out;
+  return out;
+}
+function customChoices() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem('eo_custom') || '{}') || {}; } catch (_) { c = {}; }
+  const out = {};
+  CUSTOM_FACETS.forEach((f) => { out[f.key] = BASE_DESIGNS.indexOf(c[f.key]) >= 0 ? c[f.key] : 'wing'; });
+  return out;
+}
+function setCustomChoice(facet, design) { const c = customChoices(); c[facet] = design; localStorage.setItem('eo_custom', JSON.stringify(c)); }
+function clearCustomProps() { const R = document.documentElement; ALL_CUSTOM_TOKENS.forEach((tk) => R.style.removeProperty(tk)); }
+function applyCustom() {
+  const R = document.documentElement, mode = THEME.mode(), ch = customChoices(), map = collectDesignTokens();
+  CUSTOM_FACETS.forEach((f) => {
+    const d = ch[f.key];
+    f.tokens.forEach((tk) => {
+      const v = map[d] && map[d][mode] ? map[d][mode][tk] : '';
+      if (v) R.style.setProperty(tk, v); else R.style.removeProperty(tk);
+    });
+  });
+}
+const THEME = {
+  design() { const v = localStorage.getItem('eo_design'); return DESIGNS.indexOf(v) >= 0 ? v : 'classic'; },
+  mode() { return localStorage.getItem('eo_theme') === 'dark' ? 'dark' : 'light'; },
+  glass() { return localStorage.getItem('eo_glass') === '1'; },
+  current() { const c = { design: this.design(), mode: this.mode(), glass: this.glass() }; if (c.design === 'custom') c.custom = customChoices(); return c; },
+  applyAttrs() {
+    const r = document.documentElement, d = this.design();
+    r.setAttribute('data-style', d);
+    r.setAttribute('data-theme', this.mode());
+    r.setAttribute('data-glass', this.glass() ? 'on' : 'off');
+    // data-sig يقود التوقيعات: التصميم نفسه للأساسية، ومفصل «الشكل» للمخصّص
+    r.setAttribute('data-sig', d === 'custom' ? customChoices().shape : d);
+    if (d === 'custom') applyCustom(); else clearCustomProps();
+  },
+  set(part, val) {
+    if (part === 'design' && DESIGNS.indexOf(val) >= 0) localStorage.setItem('eo_design', val);
+    else if (part === 'mode') localStorage.setItem('eo_theme', val === 'dark' ? 'dark' : 'light');
+    else if (part === 'glass') localStorage.setItem('eo_glass', val ? '1' : '0');
+    this.applyAttrs(); this.pushServer();
+  },
+  applyObj(t) {
+    if (!t) return;
+    if (DESIGNS.indexOf(t.design) >= 0) localStorage.setItem('eo_design', t.design);
+    if (t.mode) localStorage.setItem('eo_theme', t.mode === 'dark' ? 'dark' : 'light');
+    if (typeof t.glass !== 'undefined') localStorage.setItem('eo_glass', t.glass ? '1' : '0');
+    if (t.custom && typeof t.custom === 'object') localStorage.setItem('eo_custom', JSON.stringify(t.custom));
+    this.applyAttrs();
+  },
+  _timer: null,
+  pushServer() {
+    if (!state.me || !state.me.email) return; // لا دفع في وضع الضيف
+    clearTimeout(this._timer);
+    const cur = this.current();
+    this._timer = setTimeout(() => { fetch('/api/me/theme', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: cur }) }).catch(() => {}); }, 700);
+  },
+  // بعد /api/me: تصميم المستخدم يَغلِب، ثمّ التصميم العامّ (بثّ المدير)، وإلّا الكلاسيكي/المحلّي.
+  reconcile() {
+    const userT = state.me && state.me.theme;
+    const globalT = state.globalTheme;
+    if (userT && (userT.design || userT.mode || typeof userT.glass !== 'undefined')) this.applyObj(userT);
+    else if (globalT && (globalT.design || globalT.mode || typeof globalT.glass !== 'undefined')) this.applyObj(globalT);
+    else this.applyAttrs();
+  },
+};
+window.THEME = THEME;
+THEME.applyAttrs(); // تطبيق فوري من المحلّي (قبل fetchMe) لتقليل الوميض
+
 // ===== Auth =====
 function canEdit() {
   return !!state.meta.canWrite && !!state.me && (state.me.role === 'admin' || state.me.role === 'editor');
@@ -70,11 +188,13 @@ async function fetchMe() {
   if (res.status === 401) { location.href = '/login.html'; throw new Error('redirect'); }
   const data = await res.json();
   state.me = data.user;
+  state.globalTheme = data.global_theme || null; // التصميم العامّ (بثّ المدير)
   state.attachmentsEnabled = !!data.attachmentsEnabled;
   state.telegramEnabled = !!data.telegramEnabled;
   state.telegramBot = data.telegramBot || '';
   state.profile = data.profile || '';
   state.profiles = data.profiles || [];
+  THEME.reconcile(); // طبّق تصميم المستخدم/العامّ بعد معرفة هويته
 }
 function renderUser() {
   if (!state.me) return;
@@ -1920,7 +2040,7 @@ try { state.colWidths = JSON.parse(localStorage.getItem('eo_colwidths') || '{}')
 })();
 (function () {
   const eb = $('expandBtn');
-  const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.textContent = state.expanded ? tr('↕ عرض مضغوط') : tr('↕ عرض موسّع'); } };
+  const sync = () => { if (eb) { eb.classList.toggle('active', state.expanded); eb.innerHTML = icon('expand', '↕') + ' ' + (state.expanded ? tr('عرض مضغوط') : tr('عرض موسّع')); } };
   window._syncExpandBtn = sync;
   if (eb) eb.onclick = () => { state.expanded = !state.expanded; localStorage.setItem('eo_expanded', state.expanded ? '1' : '0'); sync(); render(); };
   sync();
@@ -1983,6 +2103,91 @@ function closeAccount() { $('acctModalBack').classList.remove('open'); }
     } catch (e) { toast('تعذّر الحفظ: ' + e.message, true); }
     sv.disabled = false; sv.textContent = '💾 حفظ';
   };
+})();
+
+// ===== نافذة التصميم والمظهر =====
+function settingsSwatchHTML(tok, k) {
+  const t = (tok[k] && tok[k].light) || {};
+  const col = t['--accent'] || '#bd6a43';
+  return `<button class="theme-swatch" type="button" data-design="${k}" title="${esc(tr(DESIGN_LABELS[k]))}" aria-label="${esc(tr(DESIGN_LABELS[k]))}"><svg class="ic" style="color:${col}"><use href="#i-d-${k}"/></svg></button>`;
+}
+function openSettings() {
+  const tok = collectDesignTokens();
+  const swatches = DESIGNS.map((k) => settingsSwatchHTML(tok, k)).join('');
+  const FL = window.I18N.fontLabels();
+  const defOpt = '<option value="">' + esc(tr('افتراضي (Cairo)')) + '</option>';
+  const arOpts = defOpt + Object.keys(FL.ar).map((v) => `<option value="${v}" ${v === I18N.fontAr ? 'selected' : ''}>${esc(FL.ar[v])}</option>`).join('');
+  const latinOpts = defOpt + Object.keys(FL.latin).map((v) => `<option value="${v}" ${v === I18N.fontLatin ? 'selected' : ''}>${esc(FL.latin[v])}</option>`).join('');
+  const broadcast = isAdmin()
+    ? `<button class="btn btn-gold theme-broadcast" id="setBroadcast" type="button" title="${esc(tr('المدير فقط — يطبّق تصميمك الحالي على كل الحسابات'))}">${icon('megaphone', '📢')} ${esc(tr('تطبيق هذا التصميم على جميع المستخدمين'))}</button>`
+    : '';
+  $('setBody').innerHTML = `
+    <div class="set-box">
+      <div class="set-box-title">${icon('palette', '🎨')} <span>${esc(tr('التصميم'))}</span></div>
+      <div class="theme-picker" id="setSwatches">${swatches}</div>
+      <div id="setCustom"></div>
+      <div class="switch-row"><span>${esc(tr('الوضع الداكن'))}</span><button class="switch ${THEME.mode() === 'dark' ? 'on' : ''}" id="swDark" type="button" role="switch" aria-label="${esc(tr('الوضع الداكن'))}"><span class="knob"></span></button></div>
+      <div class="switch-row"><span>${esc(tr('الشفافية الزجاجية'))}</span><button class="switch ${THEME.glass() ? 'on' : ''}" id="swGlass" type="button" role="switch" aria-label="${esc(tr('الشفافية الزجاجية'))}"><span class="knob"></span></button></div>
+      ${broadcast}
+    </div>
+    <div class="set-box">
+      <div class="set-box-title">${icon('sliders', '🔤')} <span>${esc(tr('الخطوط'))}</span></div>
+      <div class="set-lbl">${esc(tr('خط الواجهة العربية والعناوين'))}</div>
+      <select class="set-sel" id="fontArSel">${arOpts}</select>
+      <div class="set-lbl">${esc(tr('خط اللاتيني والأرقام'))}</div>
+      <select class="set-sel" id="fontLatinSel">${latinOpts}</select>
+    </div>`;
+  const syncSwatches = () => document.querySelectorAll('#setSwatches .theme-swatch').forEach((x) => x.classList.toggle('on', x.getAttribute('data-design') === THEME.design()));
+  const renderCustom = () => {
+    const wrap = $('setCustom');
+    if (THEME.design() !== 'custom') { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    const ch = customChoices();
+    let h = `<p style="margin:8px 0;font-size:12px;color:var(--muted)">${esc(tr('اختر لكل مفصل من الواجهة تصميمه — فينتج تصميمك الهجين الخاص.'))}</p>`;
+    h += '<div class="custom-table-wrap"><table class="custom-table"><thead><tr><th>' + esc(tr('المفصل')) + '</th>';
+    BASE_DESIGNS.forEach((d) => { h += '<th>' + esc(tr(DESIGN_LABELS[d])) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    CUSTOM_FACETS.forEach((f) => {
+      h += '<tr><td>' + esc(tr(f.label)) + '</td>';
+      BASE_DESIGNS.forEach((d) => { h += `<td><input type="radio" name="cf_${f.key}" value="${d}" data-facet="${f.key}" ${ch[f.key] === d ? 'checked' : ''}></td>`; });
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    wrap.innerHTML = h;
+    wrap.querySelectorAll('input[type=radio]').forEach((rb) => rb.addEventListener('change', () => { setCustomChoice(rb.getAttribute('data-facet'), rb.value); THEME.applyAttrs(); THEME.pushServer(); }));
+  };
+  document.querySelectorAll('#setSwatches .theme-swatch').forEach((sw) => sw.addEventListener('click', () => {
+    const k = sw.getAttribute('data-design');
+    THEME.set('design', k); syncSwatches();
+    const f = DESIGN_FONT[k];
+    const a = $('fontArSel'), l = $('fontLatinSel');
+    if (f) { I18N.setFontAr(f[0]); I18N.setFontLatin(f[1]); if (a) a.value = f[0]; if (l) l.value = f[1]; }
+    else if (k === 'classic') { I18N.setFontAr(''); I18N.setFontLatin(''); if (a) a.value = ''; if (l) l.value = ''; }
+    renderCustom();
+  }));
+  syncSwatches(); renderCustom();
+  $('swDark').addEventListener('click', () => { const on = !$('swDark').classList.contains('on'); $('swDark').classList.toggle('on', on); THEME.set('mode', on ? 'dark' : 'light'); });
+  $('swGlass').addEventListener('click', () => { const on = !$('swGlass').classList.contains('on'); $('swGlass').classList.toggle('on', on); THEME.set('glass', on); });
+  $('fontArSel').addEventListener('change', (e) => I18N.setFontAr(e.target.value));
+  $('fontLatinSel').addEventListener('change', (e) => I18N.setFontLatin(e.target.value));
+  const bc = $('setBroadcast');
+  if (bc) bc.addEventListener('click', async () => {
+    if (!confirm(tr('سيُطبَّق التصميم الحالي على جميع المستخدمين (يبقى لكلٍّ تغييره لاحقاً). هل تريد المتابعة؟'))) return;
+    bc.disabled = true;
+    try {
+      const r = await fetch('/api/admin/theme-broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: THEME.current() }) });
+      const d = await r.json(); if (!d.ok) throw new Error(d.error || '');
+      toast(tr('تمّ تطبيق التصميم على جميع المستخدمين') + ' (' + (d.count || 0) + ')');
+    } catch (e) { toast(tr('تعذّر التطبيق') + ': ' + (e.message || ''), true); }
+    bc.disabled = false;
+  });
+  $('setModalBack').classList.add('open');
+}
+function closeSettings() { $('setModalBack').classList.remove('open'); }
+(function () {
+  const b = $('designBtn'); if (b) b.onclick = openSettings;
+  const c = $('setClose'); if (c) c.onclick = closeSettings;
+  const back = $('setModalBack'); if (back) back.onclick = (e) => { if (e.target === back) closeSettings(); };
 })();
 
 // ===== Web Push =====

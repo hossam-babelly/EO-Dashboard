@@ -105,15 +105,17 @@ app.get('/api/me', async (req, res) => {
   if (!auth.authEnabled()) return res.json({ ok: true, user: { name: 'زائر', role: 'admin' }, authDisabled: true, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '' });
   if (!(req.session && req.session.user)) return res.status(401).json({ ok: false, error: 'غير مسجّل الدخول' });
   const user = { ...req.session.user };
-  // رمز التقويم الشخصي + حالة ربط تيليجرام
+  // رمز التقويم الشخصي + حالة ربط تيليجرام + تصميم المستخدم
+  let globalTheme = null;
   if (store.enabled) {
     try {
       const full = (await store.getUsersFull()).find((u) => u.email.toLowerCase() === user.email.toLowerCase());
-      if (full) { user.calToken = full.token; user.phone = full.phone || user.phone || ''; user.telegramLinked = !!full.telegramChatId; }
+      if (full) { user.calToken = full.token; user.phone = full.phone || user.phone || ''; user.telegramLinked = !!full.telegramChatId; user.theme = full.theme || null; }
     } catch { /* تجاهل */ }
+    try { const gv = await store.getSetting('global_theme', ''); globalTheme = gv ? JSON.parse(gv) : null; } catch { /* تجاهل */ }
   }
   const profiles = await availableProfilesFor(req.session.user);
-  res.json({ ok: true, user, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '', profile: activeTab(req), profiles });
+  res.json({ ok: true, user, global_theme: globalTheme, storeEnabled: store.enabled, attachmentsEnabled: drive.enabled, telegramEnabled: telegram.enabled, telegramBot: process.env.TELEGRAM_BOT_USERNAME || '', profile: activeTab(req), profiles });
 });
 
 // البروفايلات المتاحة للمستخدم الحالي
@@ -164,6 +166,42 @@ app.patch('/api/account', requireAuth, async (req, res) => {
     }
     res.json({ ok: true, user: { name: me.name, firstName: me.firstName, role: me.role, email: me.email } });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
+// ===== التصاميم (Theme) لكل مستخدم + بثّ المدير =====
+function sanitizeTheme(t) {
+  if (!t || typeof t !== 'object') return null;
+  const base = ['classic', 'wing', 'bp', 'marsad'];
+  const design = base.concat(['custom']).includes(t.design) ? t.design : 'classic';
+  const mode = t.mode === 'dark' ? 'dark' : 'light';
+  const out = { design, mode, glass: !!t.glass };
+  if (design === 'custom' && t.custom && typeof t.custom === 'object') {
+    const c = {};
+    for (const k of Object.keys(t.custom)) { if (base.includes(t.custom[k])) c[String(k).slice(0, 24)] = t.custom[k]; }
+    out.custom = c;
+  }
+  return out;
+}
+// المستخدم يحفظ تصميمه الشخصي (يَغلِب التصميم العامّ عند الإقلاع)
+app.patch('/api/me/theme', requireAuth, async (req, res) => {
+  try {
+    if (!store.enabled) return res.json({ ok: true }); // بلا تخزين دائم: يبقى محلياً فقط
+    const t = sanitizeTheme((req.body || {}).theme);
+    await store.setUserTheme(String(req.session.user.email).toLowerCase(), t ? JSON.stringify(t) : '');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// المدير يبثّ تصميماً لجميع المستخدمين: يخزّنه عامّاً ويكتبه على تصميم كل المستخدمين (دون تثبيت)
+app.post('/api/admin/theme-broadcast', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const t = sanitizeTheme((req.body || {}).theme);
+    if (!t) return res.status(400).json({ ok: false, error: 'تصميم غير صالح' });
+    const value = JSON.stringify(t);
+    await store.setSetting('global_theme', value);
+    const count = await store.broadcastTheme(value);
+    res.json({ ok: true, count });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // ===== إدارة المستخدمين (مدير) =====

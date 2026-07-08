@@ -2,7 +2,29 @@
 /* توليد تقارير (Word / Excel / PDF) للمهام المعروضة حالياً — بهوية سنكري وشعارها.
    يعتمد على المتغيّرات/الدوال العامة من app.js: state, applyFilters, sortList, esc, parseFollowup, fuShort, TIME_CHIPS, toast */
 
-const RB = { ink: '#211d1a', copper: '#bd6a43', copperDeep: '#a4572f', champagne: '#d8c4b0', cream: '#f7f2ea', line: '#e7ddcf', red: '#b4453c', green: '#5f7457', amber: '#c0822f', muted: '#8a8175' };
+// هوية التقرير: مصمتة/طباعية دائماً (لا تتبع الوضع الداكن ولا الشفافية — لسلامة html2canvas).
+// لكل تصميم لوحة صلبة تُطبَّق على RB عند بدء كل توليد عبر applyReportTheme().
+let RB = { ink: '#211d1a', copper: '#bd6a43', copperDeep: '#a4572f', champagne: '#d8c4b0', cream: '#f7f2ea', line: '#e7ddcf', red: '#b4453c', green: '#5f7457', amber: '#c0822f', muted: '#8a8175' };
+const RB_THEMES = {
+  classic: { ink: '#211d1a', copper: '#bd6a43', copperDeep: '#a4572f', champagne: '#d8c4b0', cream: '#f7f2ea', line: '#e7ddcf', red: '#b4453c', green: '#5f7457', amber: '#c0822f', muted: '#8a8175' },
+  wing: { ink: '#211C18', copper: '#B8603C', copperDeep: '#8A4527', champagne: '#DEC7B4', cream: '#F3E9DF', line: '#E3D6C6', red: '#B4453C', green: '#5E7A55', amber: '#C0822F', muted: '#8A7E72' },
+  bp: { ink: '#2C2F31', copper: '#B0582F', copperDeep: '#43474A', champagne: '#AEB4B6', cream: '#ECECE4', line: '#D2D1C8', red: '#B0463A', green: '#4C7150', amber: '#B07C2C', muted: '#6E6E66' },
+  marsad: { ink: '#14181C', copper: '#B8603C', copperDeep: '#39424A', champagne: '#9BA6AE', cream: '#EEF1F3', line: '#DCE2E6', red: '#B0463A', green: '#4C7150', amber: '#B07C2C', muted: '#66727B' },
+};
+function activeReportDesign() {
+  try { return (window.THEME && window.THEME.design && window.THEME.design()) || document.documentElement.getAttribute('data-style') || 'classic'; }
+  catch (_) { return 'classic'; }
+}
+function applyReportTheme() {
+  const d = activeReportDesign();
+  if (d !== 'custom') { RB = Object.assign({}, RB_THEMES[d] || RB_THEMES.classic); return; }
+  // المخصّص: ركّب لوحة التقرير من مفاصل المستخدم (كلها لوحات فاتحة مصمتة)
+  let ch = {}; try { ch = JSON.parse(localStorage.getItem('eo_custom') || '{}') || {}; } catch (_) { ch = {}; }
+  const base = ['classic', 'wing', 'bp', 'marsad'];
+  const pick = (f) => RB_THEMES[base.indexOf(ch[f]) >= 0 ? ch[f] : 'wing'] || RB_THEMES.classic;
+  const surf = pick('surfaces'), acc = pick('accent'), st = pick('states'), top = pick('topbar');
+  RB = { ink: top.ink, copper: acc.copper, copperDeep: acc.copperDeep, champagne: top.champagne, cream: surf.cream, line: surf.line, red: st.red, green: st.green, amber: st.amber, muted: surf.muted };
+}
 
 const REPORT_COLS = [
   { k: 'i', label: '#', w: 4 },
@@ -464,6 +486,7 @@ async function exportExcel() {
 
 function runExport(btn, fn, label) {
   return async () => {
+    applyReportTheme(); // لوحة ألوان التقرير حسب التصميم الفعّال
     const o = btn.textContent; btn.disabled = true; btn.textContent = '... ' + label;
     try { await fn(); toast('تم توليد ' + label + ' ✓'); }
     catch (e) { toast('تعذّر التوليد: ' + e.message, true); }
@@ -616,6 +639,7 @@ async function trPaginate(blocks, logo, t) {
 }
 async function taskReportPDF(task) {
   try {
+    applyReportTheme(); // لوحة ألوان التقرير حسب التصميم الفعّال
     const logo = await logoSmall(30);
     const blocks = [{ html: trInfoBlock(task) }];
     const dvs = (typeof orderedDeliverables === 'function') ? orderedDeliverables(task) : [];
