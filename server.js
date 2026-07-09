@@ -278,20 +278,27 @@ app.post('/api/admin/profiles', requireAuth, requireRole('admin'), async (req, r
 // إعداد اللوحات اليومية (مدير): توقيت الإرسال العام + مستلِم اللوحة الشاملة لكل بروفايل
 app.get('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const time = store.enabled ? await store.getSetting('digestTime', '') : '';
+    const globalTime = store.enabled ? await store.getSetting('digestTime', '') : '';
     const profiles = await store.getProfiles();
-    const users = (await auth.listUsers()).filter((u) => u.active !== false).map((u) => ({ name: u.name, email: u.email }));
-    res.json({ ok: true, time: time || '', profiles, users, storeEnabled: store.enabled });
+    const full = store.enabled ? (await store.getUsersFull() || []) : (await auth.listUsers());
+    const users = full.filter((u) => u.active !== false).map((u) => ({ name: u.name, email: u.email, digestTime: u.digestTime || '' }));
+    // القيمة الموحّدة للخانة العليا: التوقيت الفعّال (الخاص أو الموحّد) إن تطابق لدى الجميع، وإلا فارغة («--:--»).
+    const validHM = (s) => /^\d{1,2}:\d{2}$/.test(String(s || ''));
+    const eff = users.map((u) => (validHM(u.digestTime) ? u.digestTime : globalTime));
+    const commonTime = (users.length > 0 && eff.every((t) => t && t === eff[0])) ? eff[0] : '';
+    res.json({ ok: true, time: commonTime, globalTime: globalTime || '', profiles, users, storeEnabled: store.enabled });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
     const { time, recipients } = req.body || {};
+    // تعميم توقيت موحّد على جميع المستخدمين (زرّ «تعميم على الجميع») + تخزينه افتراضاً عامّاً للمستخدمين الجدد.
     if (time != null) {
       const t = String(time).trim();
       if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
       await store.setSetting('digestTime', t);
+      await store.broadcastDigestTime(t);
     }
     if (recipients && typeof recipients === 'object') {
       // قيمة كل بروفايل = مصفوفة بُرُد (أو نصّ مفصول بفواصل) → تُخزَّن مفصولة بفواصل
@@ -300,6 +307,18 @@ app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res
         await store.setProfileDigest(tab, list.map((s) => String(s).trim()).filter(Boolean).join(','));
       }
     }
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+// توقيت اللوحة اليومية لمستخدم واحد (فارغ = يستعمل التوقيت الموحّد/الافتراضي)
+app.post('/api/admin/digest/user', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    const t = String((req.body || {}).time || '').trim();
+    if (!email) return res.status(400).json({ ok: false, error: 'البريد مطلوب' });
+    if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
+    await store.setUserDigestTime(email, t);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });

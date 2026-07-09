@@ -100,6 +100,10 @@
     'سيُطبَّق التصميم الحالي على جميع المستخدمين (يبقى لكلٍّ تغييره لاحقاً). هل تريد المتابعة؟': 'The current design will be applied to all users (each can still change it later). Continue?',
     'تمّ تطبيق التصميم على جميع المستخدمين': 'Design applied to all users', 'تعذّر التطبيق': 'Could not apply',
     'المدير فقط — يطبّق تصميمك الحالي على كل الحسابات': 'Admin only — applies your current design to all accounts',
+    // ===== اللوحات اليومية: توقيت لكل مستخدم =====
+    'توقيت الإرسال الموحّد (بتوقيت سوريا)': 'Unified send time (Syria time)', '📢 تعميم على الجميع': '📢 Apply to all',
+    'توقيت كل مستخدم على حدة:': 'Per-user send time:', '💾 حفظ المستلِمين': '💾 Save recipients',
+    'فارغة (--:--) تعني أنّ لبعض المستخدمين توقيتاً مختلفاً. اكتب وقتاً واضغط «تعميم على الجميع» لتوحيدهم.': 'Empty (--:--) means some users have a different time. Enter a time and press “Apply to all” to unify them.',
   };
   // ===== الخطوط القابلة للتبديل (٥ عربية + ٥ لاتينية) — الافتراض غير محدَّد = Cairo (الكلاسيكي مطابق) =====
   const FONT_AR = {

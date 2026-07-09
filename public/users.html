@@ -55,14 +55,18 @@
 
   <div class="card">
     <h2 data-i18n="📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)">📬 اللوحات اليومية (متأخرة / اليوم / خلال ٣ أيام)</h2>
-    <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">تُرسَل تلقائياً يومياً عبر البريد وتيليجرام: <b>لوحة مخصّصة</b> لكل مسؤول معني بمهامه، و<b>لوحة شاملة</b> لكل بروفايل (مهام الجميع مُجمَّعة حسب المسؤول) تُرسَل للمستخدم المحدّد أدناه. (اتركها فارغة لإيقاف الإرسال.)</p>
-    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
-      <div class="fld"><label data-i18n="توقيت الإرسال اليومي (بتوقيت سوريا)">توقيت الإرسال اليومي (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
-      <button class="btn btn-save" id="saveDigestBtn" type="button" data-i18n="💾 حفظ الإعدادات">💾 حفظ الإعدادات</button>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">تُرسَل تلقائياً يومياً عبر البريد وتيليجرام: <b>لوحة مخصّصة</b> لكل مسؤول معني بمهامه، و<b>لوحة شاملة</b> لكل بروفايل (مهام الجميع مُجمَّعة حسب المسؤول) تُرسَل للمستخدمين المحدّدين أدناه. لكل مستخدم <b>توقيت إرسال مستقلّ</b>؛ ويمكن توحيد توقيت واحد للجميع من الخانة العليا. (اترك توقيت مستخدم فارغاً لإيقاف إرساله.)</p>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
+      <div class="fld"><label data-i18n="توقيت الإرسال الموحّد (بتوقيت سوريا)">توقيت الإرسال الموحّد (بتوقيت سوريا)</label><input type="time" id="digestTime"></div>
+      <button class="btn btn-save" id="broadcastDigestBtn" type="button" data-i18n="📢 تعميم على الجميع">📢 تعميم على الجميع</button>
       <button class="btn btn-gold" id="testDigestBtn" type="button" data-i18n="📤 إرسال تجريبي الآن">📤 إرسال تجريبي الآن</button>
     </div>
+    <p style="color:var(--muted);font-size:11.5px;margin-bottom:14px" data-i18n="فارغة (--:--) تعني أنّ لبعض المستخدمين توقيتاً مختلفاً. اكتب وقتاً واضغط «تعميم على الجميع» لتوحيدهم.">فارغة (--:--) تعني أنّ لبعض المستخدمين توقيتاً مختلفاً. اكتب وقتاً واضغط «تعميم على الجميع» لتوحيدهم.</p>
+    <div class="rep-cols-title" data-i18n="توقيت كل مستخدم على حدة:">توقيت كل مستخدم على حدة:</div>
+    <div id="digestUserTimes" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>
     <div class="rep-cols-title" data-i18n="مستلِم اللوحة الشاملة لكل بروفايل:">مستلِم اللوحة الشاملة لكل بروفايل:</div>
     <div id="digestRecipients" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="btn btn-save" id="saveRecipientsBtn" type="button" style="margin-top:12px" data-i18n="💾 حفظ المستلِمين">💾 حفظ المستلِمين</button>
   </div>
 
   <div class="card">
@@ -247,7 +251,21 @@ async function loadDigest() {
     const data = await (await fetch('/api/admin/digest')).json();
     if (!data.ok) return;
     DIGEST_USERS = data.users || [];
-    $('#digestTime').value = data.time || '';
+    $('#digestTime').value = data.time || ''; // موحّد إن تطابق الجميع، وإلا فارغ («--:--»)
+    // توقيت كل مستخدم على حدة (يُحفظ فور التغيير)
+    $('#digestUserTimes').innerHTML = DIGEST_USERS.length
+      ? DIGEST_USERS.map((u) => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="min-width:170px;font-size:13.5px">${escp(u.name || u.email)}</span>
+          <input type="time" class="digest-user-time" data-email="${escp(u.email)}" value="${escp(u.digestTime || '')}" style="font-family:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text)">
+        </div>`).join('')
+      : '<span style="color:var(--muted);font-size:12.5px">لا مستخدمون</span>';
+    document.querySelectorAll('#digestUserTimes .digest-user-time').forEach((inp) => inp.onchange = async () => {
+      try {
+        const res = await fetch('/api/admin/digest/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: inp.dataset.email, time: inp.value }) });
+        const d = await res.json();
+        if (d.ok) { notice('تم تحديد توقيت المستخدم ✓'); loadDigest(); } else notice('خطأ: ' + (d.error || ''), true);
+      } catch (e) { notice('خطأ: ' + e.message, true); }
+    });
     $('#digestRecipients').innerHTML = (data.profiles || []).map((p) => {
       const selected = new Set(String(p.digestTo || '').split(',').map((s) => s.trim()).filter(Boolean));
       const checks = DIGEST_USERS.length
@@ -260,18 +278,30 @@ async function loadDigest() {
     }).join('') || '<span style="color:var(--muted)">لا بروفايلات</span>';
   } catch { /* تجاهل */ }
 }
-$('#saveDigestBtn').onclick = async () => {
+// «تعميم على الجميع»: يطبّق توقيت الخانة العليا على كل المستخدمين (فارغ = إيقاف إرسال الجميع)
+$('#broadcastDigestBtn').onclick = async () => {
+  const t = $('#digestTime').value;
+  if (!confirm(t ? ('سيُطبَّق توقيت ' + t + ' على جميع المستخدمين. متابعة؟') : 'ستُفرَّغ توقيتات جميع المستخدمين (إيقاف الإرسال). متابعة؟')) return;
+  const btn = $('#broadcastDigestBtn'); btn.disabled = true; btn.textContent = '... تعميم';
+  try {
+    const res = await fetch('/api/admin/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: t }) });
+    const data = await res.json();
+    if (data.ok) { notice('تم تعميم التوقيت على الجميع ✓'); loadDigest(); } else notice('خطأ: ' + data.error, true);
+  } catch (e) { notice('خطأ: ' + e.message, true); }
+  btn.disabled = false; btn.textContent = TR('📢 تعميم على الجميع');
+};
+$('#saveRecipientsBtn').onclick = async () => {
   const recipients = {};
   document.querySelectorAll('#digestRecipients .digest-rcpt[data-tab]').forEach((box) => {
     recipients[box.dataset.tab] = [...box.querySelectorAll('input:checked')].map((i) => i.value);
   });
-  const btn = $('#saveDigestBtn'); btn.disabled = true; btn.textContent = '... حفظ';
+  const btn = $('#saveRecipientsBtn'); btn.disabled = true; btn.textContent = '... حفظ';
   try {
-    const res = await fetch('/api/admin/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: $('#digestTime').value, recipients }) });
+    const res = await fetch('/api/admin/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipients }) });
     const data = await res.json();
-    if (data.ok) notice('تم حفظ إعدادات اللوحات اليومية ✓'); else notice('خطأ: ' + data.error, true);
+    if (data.ok) notice('تم حفظ المستلِمين ✓'); else notice('خطأ: ' + data.error, true);
   } catch (e) { notice('خطأ: ' + e.message, true); }
-  btn.disabled = false; btn.textContent = '💾 حفظ الإعدادات';
+  btn.disabled = false; btn.textContent = TR('💾 حفظ المستلِمين');
 };
 $('#testDigestBtn').onclick = async () => {
   if (!confirm('سيُرسَل الآن فوراً إلى المستلِمين والمسؤولين المحدّدين (بريد + تيليجرام)، متجاوزاً التوقيت ومنع التكرار. متابعة؟')) return;
