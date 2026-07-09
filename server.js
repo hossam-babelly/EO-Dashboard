@@ -171,10 +171,22 @@ app.patch('/api/account', requireAuth, async (req, res) => {
 // ===== التصاميم (Theme) لكل مستخدم + بثّ المدير =====
 function sanitizeTheme(t) {
   if (!t || typeof t !== 'object') return null;
-  const base = ['classic', 'wing', 'bp', 'marsad'];
+  const base = ['classic', 'wing', 'bp', 'marsad', 'horizon', 'pearl'];
   const design = base.concat(['custom']).includes(t.design) ? t.design : 'classic';
   const mode = t.mode === 'dark' ? 'dark' : 'light';
   const out = { design, mode, glass: !!t.glass };
+  // مفتاح «لون التصميم» (تركوازي/نحاسي سنكري)
+  if (['teal', 'sankari'].includes(t.accent)) out.accent = t.accent;
+  // متحكّمات العلامة المائية (بحدود مضبوطة خادمياً)
+  if (t.wm && typeof t.wm === 'object') {
+    const clamp = (v, lo, hi) => { const n = Number(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
+    const wm = {};
+    if (t.wm.size != null) { const v = clamp(t.wm.size, 20, 300); if (v != null) wm.size = v; }
+    if (t.wm.op != null) { const v = clamp(t.wm.op, 1, 40); if (v != null) wm.op = v; }
+    if (t.wm.dark != null) { const v = clamp(t.wm.dark, -30, 60); if (v != null) wm.dark = v; }
+    if (t.wm.top) wm.top = true;
+    if (Object.keys(wm).length) out.wm = wm;
+  }
   if (design === 'custom' && t.custom && typeof t.custom === 'object') {
     const c = {};
     for (const k of Object.keys(t.custom)) { if (base.includes(t.custom[k])) c[String(k).slice(0, 24)] = t.custom[k]; }
@@ -988,11 +1000,17 @@ app.post('/api/cron/daily-digest', runDailyDigest);
 app.get('/api/cron/daily-digest', runDailyDigest);
 
 // نبضة التذكيرات بالوقت الدقيق: يستدعيها مجدول خارجي كل دقيقة/خمس دقائق فتصل التذكيرات دون فتح اللوحة
+// قفل تنفيذ داخل العملية: النبضات تأتي من أكثر من مصدر (Apps Script كل دقيقة + GitHub كل ٥ دقائق)،
+// وعند دقيقة إرسال اللوحات قد تستغرق الدورة أكثر من دقيقة، فتتداخل النبضات وتقرأ سجلّ الإرسال قبل
+// اكتمال تسجيله ⇒ رسائل مكرّرة. الحلّ: نبضة واحدة فقط في أي لحظة؛ المتداخلة تُرَدّ فوراً «busy».
+let _tickBusy = false;
 async function runReminderTick(req, res) {
   const secret = req.get('x-cron-secret') || req.query.secret;
   if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return res.status(401).json({ ok: false, error: 'رمز غير صالح' });
   }
+  if (_tickBusy) return res.json({ ok: true, skipped: 'busy' });
+  _tickBusy = true;
   try {
     if (!store.enabled) return res.json({ ok: true, skipped: 'store-disabled' });
     const reminders = await store.getAllReminders();
@@ -1014,6 +1032,8 @@ async function runReminderTick(req, res) {
   } catch (e) {
     console.error('reminder-tick', e.message);
     res.status(500).json({ ok: false, error: e.message });
+  } finally {
+    _tickBusy = false; // تحرير القفل دائماً (نجاحاً أو فشلاً)
   }
 }
 app.post('/api/cron/reminders', runReminderTick);

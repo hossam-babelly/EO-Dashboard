@@ -10,20 +10,34 @@ const RB_THEMES = {
   wing: { ink: '#211C18', copper: '#B8603C', copperDeep: '#8A4527', champagne: '#DEC7B4', cream: '#F3E9DF', line: '#E3D6C6', red: '#B4453C', green: '#5E7A55', amber: '#C0822F', muted: '#8A7E72' },
   bp: { ink: '#2C2F31', copper: '#B0582F', copperDeep: '#43474A', champagne: '#AEB4B6', cream: '#ECECE4', line: '#D2D1C8', red: '#B0463A', green: '#4C7150', amber: '#B07C2C', muted: '#6E6E66' },
   marsad: { ink: '#14181C', copper: '#B8603C', copperDeep: '#39424A', champagne: '#9BA6AE', cream: '#EEF1F3', line: '#DCE2E6', red: '#B0463A', green: '#4C7150', amber: '#B07C2C', muted: '#66727B' },
+  horizon: { ink: '#101828', copper: '#0F9BA8', copperDeep: '#0B7D89', champagne: '#B9C6D2', cream: '#F3F5F9', line: '#E3E8EF', red: '#D6493E', green: '#17936B', amber: '#C77E1E', muted: '#667085' },
+  pearl: { ink: '#221E1A', copper: '#B8603C', copperDeep: '#9A4E30', champagne: '#DECFBB', cream: '#F7F2EA', line: '#E8DFD2', red: '#C24A3F', green: '#3E8E5F', amber: '#C0822F', muted: '#7A7268' },
 };
+// مفتاح «لون التصميم» على التقرير (ألوان مصمتة): يُطبَّق فوق لوحة التصميم
+const RB_ACCENTS = { teal: { copper: '#0F9BA8', copperDeep: '#0B7D89' }, sankari: { copper: '#B8603C', copperDeep: '#9A4E30' } };
 function activeReportDesign() {
   try { return (window.THEME && window.THEME.design && window.THEME.design()) || document.documentElement.getAttribute('data-style') || 'classic'; }
   catch (_) { return 'classic'; }
 }
+function activeReportAccent() {
+  // الاختيار الصريح فقط (بلا اختيار: كل تصميم يبقى بلوحته الافتراضية — الأفق تركوازي أصلاً)
+  try { return localStorage.getItem('eo_accent') || ''; }
+  catch (_) { return ''; }
+}
 function applyReportTheme() {
   const d = activeReportDesign();
-  if (d !== 'custom') { RB = Object.assign({}, RB_THEMES[d] || RB_THEMES.classic); return; }
-  // المخصّص: ركّب لوحة التقرير من مفاصل المستخدم (كلها لوحات فاتحة مصمتة)
-  let ch = {}; try { ch = JSON.parse(localStorage.getItem('eo_custom') || '{}') || {}; } catch (_) { ch = {}; }
-  const base = ['classic', 'wing', 'bp', 'marsad'];
-  const pick = (f) => RB_THEMES[base.indexOf(ch[f]) >= 0 ? ch[f] : 'wing'] || RB_THEMES.classic;
-  const surf = pick('surfaces'), acc = pick('accent'), st = pick('states'), top = pick('topbar');
-  RB = { ink: top.ink, copper: acc.copper, copperDeep: acc.copperDeep, champagne: top.champagne, cream: surf.cream, line: surf.line, red: st.red, green: st.green, amber: st.amber, muted: surf.muted };
+  if (d !== 'custom') { RB = Object.assign({}, RB_THEMES[d] || RB_THEMES.classic); }
+  else {
+    // المخصّص: ركّب لوحة التقرير من مفاصل المستخدم (كلها لوحات فاتحة مصمتة)
+    let ch = {}; try { ch = JSON.parse(localStorage.getItem('eo_custom') || '{}') || {}; } catch (_) { ch = {}; }
+    const base = ['classic', 'wing', 'bp', 'marsad', 'horizon', 'pearl'];
+    const pick = (f) => RB_THEMES[base.indexOf(ch[f]) >= 0 ? ch[f] : 'wing'] || RB_THEMES.classic;
+    const surf = pick('surfaces'), acc = pick('accent'), st = pick('states'), top = pick('topbar');
+    RB = { ink: top.ink, copper: acc.copper, copperDeep: acc.copperDeep, champagne: top.champagne, cream: surf.cream, line: surf.line, red: st.red, green: st.green, amber: st.amber, muted: surf.muted };
+  }
+  // تجاوز اللون الصريح إن اختاره المستخدم
+  const a = activeReportAccent();
+  if (a && RB_ACCENTS[a]) Object.assign(RB, RB_ACCENTS[a]);
 }
 
 const REPORT_COLS = [

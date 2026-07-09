@@ -537,8 +537,13 @@ td.mt-rem { white-space: nowrap; text-align: center; }
      + طبقة مكوّنات راقية + أيقونات SVG + توقيعات + علامة مائية + شفافية + حركة.
    ============================================================ */
 
+/* إعلان نظام الألوان للمتصفح: يمنع «القلب الداكن التلقائي» ويجعل عناصر النماذج الأصلية تطابق الوضع */
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
 /* رموز مرجعية افتراضية (تعادل قيم الكلاسيكي) — إضافية، لا تمسّ أسماء EO القديمة */
 :root {
+  --near-black: #0C0A09;
   --accent: #bd6a43; --accent-strong: #a4572f; --accent-ink: #ffffff;
   --accent-soft: rgba(189,106,67,.10); --accent-soft-2: rgba(189,106,67,.18);
   --ink: #211d1a; --ink-soft: #2b2823; --faint: #a99c90;
@@ -567,7 +572,8 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --accent-soft: rgba(207,122,85,.15); --accent-soft-2: rgba(207,122,85,.24);
   --ink: #f0edeb; --ink-soft: #d9d3cd; --faint: #7c746c; --line: #332f31; --line-soft: #29262a; --track: #2a2528;
   --good: #8fb07f; --good-bg: rgba(95,116,87,.22); --warn: #d9a24e; --warn-bg: rgba(192,130,47,.20); --bad: #d57a6f; --bad-bg: rgba(180,69,60,.24);
-  --topbar: #141213; --topbar-ink: #f0edeb; --topbar-line: #cf7a55; --topbar-glass: rgba(20,18,19,.68);
+  /* الشريط عكس الوضع (قرار المالك): فاتح في الداكن */
+  --topbar: #F0EDEB; --topbar-ink: #1E1C1F; --topbar-line: #cf7a55; --topbar-glass: rgba(240,237,235,.84);
   --shadow-lg: 0 20px 50px rgba(0,0,0,.6); --shadow-accent: 0 8px 22px rgba(207,122,85,.32);
   --glass-surface: rgba(40,36,38,.5); --glass-border: rgba(255,255,255,.08);
 }
@@ -588,7 +594,7 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --ambient: radial-gradient(820px 460px at 100% -8%, rgba(184,96,60,.08), transparent 60%), radial-gradient(680px 520px at -6% 10%, rgba(218,205,193,.20), transparent 62%);
   --blue: #9a7b50; --blue-bg: #efe6d6;
   --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
-  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
   --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
 }
 :root[data-style="wing"][data-theme="dark"] {
@@ -599,7 +605,9 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --accent-soft: rgba(208,124,82,.15); --accent-soft-2: rgba(208,124,82,.24);
   --good: #8FB07F; --good-bg: rgba(94,122,85,.22); --warn: #D9A24E; --warn-bg: rgba(192,130,47,.20); --bad: #D57A6F; --bad-bg: rgba(180,69,60,.24);
   --track: #33271B;
-  --topbar: #120E0B; --topbar-ink: #F2EAE2; --topbar-line: #D07C52; --topbar-glass: rgba(18,14,11,.66);
+  /* الشريط عكس الوضع: فاتح في الداكن + --navy تبقى فحمية (تستعملها الشرائح/رؤوس النوافذ) */
+  --topbar: #F4EFEA; --topbar-ink: #211C18; --topbar-line: #D07C52; --topbar-glass: rgba(244,239,234,.84);
+  --navy: #120E0B; --navy-light: #120E0B;
   --shadow: 0 4px 16px rgba(0,0,0,.42); --shadow-lg: 0 20px 50px rgba(0,0,0,.6); --shadow-accent: 0 8px 22px rgba(208,124,82,.32);
   --glass-surface: rgba(40,32,26,.5); --glass-border: rgba(255,255,255,.08);
   --ambient: radial-gradient(820px 460px at 100% -8%, rgba(208,124,82,.10), transparent 60%), radial-gradient(680px 520px at -6% 10%, rgba(120,80,55,.16), transparent 62%);
@@ -623,7 +631,7 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --grid-bg: linear-gradient(rgba(70,84,90,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(70,84,90,.05) 1px, transparent 1px);
   --blue: #5f727a; --blue-bg: #e7ecee;
   --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
-  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
   --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
 }
 :root[data-style="bp"][data-theme="dark"] {
@@ -635,7 +643,8 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --graphite: #AEB4B6;
   --good: #82A877; --good-bg: rgba(76,113,80,.2); --warn: #CDA054; --warn-bg: rgba(176,124,44,.18); --bad: #D0776B; --bad-bg: rgba(176,70,58,.2);
   --track: #2A2D2A;
-  --topbar: #0F110F; --topbar-ink: #EBEDE9; --topbar-line: #C56B3E; --topbar-glass: rgba(15,17,15,.72);
+  --topbar: #EDEDE7; --topbar-ink: #2C2F31; --topbar-line: #C56B3E; --topbar-glass: rgba(237,237,231,.84);
+  --navy: #0F110F; --navy-light: #0F110F;
   --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 14px 40px rgba(0,0,0,.55); --shadow-accent: 0 3px 12px rgba(197,107,62,.28);
   --glass-surface: rgba(30,32,30,.5); --glass-border: rgba(230,235,230,.08);
   --grid-bg: linear-gradient(rgba(150,170,175,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(150,170,175,.045) 1px, transparent 1px);
@@ -659,7 +668,7 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --ambient: radial-gradient(900px 500px at 100% -12%, rgba(184,96,60,.05), transparent 62%), radial-gradient(680px 520px at -6% 8%, rgba(70,110,130,.06), transparent 62%);
   --blue: #4f7d99; --blue-bg: #e3edf3;
   --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
-  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
   --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
 }
 :root[data-style="marsad"][data-theme="dark"] {
@@ -670,7 +679,8 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --accent-soft: rgba(218,124,78,.14); --accent-soft-2: rgba(218,124,78,.26);
   --good: #63BE86; --good-bg: rgba(99,190,134,.16); --warn: #E3A24E; --warn-bg: rgba(227,162,78,.16); --bad: #E56A5B; --bad-bg: rgba(229,106,91,.16);
   --track: #232B31;
-  --topbar: #0A0E11; --topbar-ink: #EAEEF2; --topbar-line: #DA7C4E; --topbar-glass: rgba(10,14,17,.66);
+  --topbar: #EAEEF2; --topbar-ink: #14181C; --topbar-line: #DA7C4E; --topbar-glass: rgba(234,238,242,.84);
+  --navy: #0A0E11; --navy-light: #0A0E11;
   --glow: 0 0 0 1px rgba(218,124,78,.55), 0 0 22px rgba(218,124,78,.28);
   --shadow: 0 10px 34px rgba(0,0,0,.5); --shadow-lg: 0 22px 60px rgba(0,0,0,.66); --shadow-accent: 0 8px 22px rgba(218,124,78,.3);
   --glass-surface: rgba(24,30,36,.5); --glass-border: rgba(160,190,210,.1);
@@ -678,13 +688,100 @@ td.mt-rem { white-space: nowrap; text-align: center; }
   --blue: #6fa8c4; --blue-bg: rgba(79,125,153,.2); --copper-deep: var(--accent);
 }
 
+/* ============ ④ الأفق (horizon) — SaaS بارد بشريط جانبي · فاتح ============ */
+:root[data-style="horizon"] {
+  --r-sm: 10px; --r: 14px; --r-lg: 18px; --r-xl: 24px;
+  --ic-sw: 1.6;
+  --font-display: var(--font-latin); /* أرقام المؤشرات بخط هندسي بدل السيريف */
+  --bg: #F3F5F9; --surface: #FFFFFF; --surface-2: #F6F8FB;
+  --ink: #101828; --ink-soft: #344054; --muted: #667085; --faint: #98A2B3;
+  --line: #E7EBF0; --line-soft: #F0F3F7;
+  --accent: #0F9BA8; --accent-strong: #0B7D89; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(15,155,168,.10); --accent-soft-2: rgba(15,155,168,.18);
+  --good: #17936B; --good-bg: #E4F5EE; --warn: #C77E1E; --warn-bg: #FAF0DC; --bad: #D6493E; --bad-bg: #FBE7E5;
+  --track: #EEF1F6;
+  --topbar: #101828; --topbar-ink: #EAEEF4; --topbar-line: #0F9BA8; --topbar-glass: rgba(16,24,40,.72);
+  --rail-glass: rgba(16,24,40,.8);
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+  --shadow-lg: 0 24px 48px rgba(16,24,40,.12);
+  --shadow-accent: 0 8px 20px rgba(15,155,168,.25);
+  --glass-surface: rgba(255,255,255,.6); --glass-border: rgba(255,255,255,.8);
+  --ambient: radial-gradient(900px 480px at 88% -10%, rgba(15,155,168,.05), transparent 60%), radial-gradient(700px 500px at -5% 12%, rgba(70,110,160,.05), transparent 62%);
+  --blue: #4f7d99; --blue-bg: #e5eef4;
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+}
+:root[data-style="horizon"][data-theme="dark"] {
+  --bg: #0F141D; --surface: #161D29; --surface-2: #121824;
+  --ink: #E7ECF4; --ink-soft: #C3CCD9; --muted: #8B96A5; --faint: #5D6979;
+  --line: #232C3A; --line-soft: #1B2330;
+  --accent: #33B7C4; --accent-strong: #0F9BA8; --accent-ink: #06181B;
+  --accent-soft: rgba(51,183,196,.14); --accent-soft-2: rgba(51,183,196,.24);
+  --good: #4CC38A; --good-bg: rgba(76,195,138,.16); --warn: #E0A44E; --warn-bg: rgba(224,164,78,.16); --bad: #E56A5B; --bad-bg: rgba(229,106,91,.16);
+  --track: #202938;
+  /* الشريط عكس الوضع: فاتح في الداكن */
+  --topbar: #F3F5F9; --topbar-ink: #101828; --topbar-line: #0F9BA8; --topbar-glass: rgba(243,245,249,.82);
+  --rail-glass: rgba(243,245,249,.78);
+  --navy: #0B0F16; --navy-light: #0B0F16;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.4);
+  --shadow-lg: 0 24px 56px rgba(0,0,0,.6);
+  --shadow-accent: 0 8px 22px rgba(51,183,196,.3);
+  --glass-surface: rgba(24,31,43,.55); --glass-border: rgba(160,190,210,.1);
+  --ambient: radial-gradient(900px 480px at 88% -10%, rgba(51,183,196,.08), transparent 60%);
+  --blue: #6fa8c4; --blue-bg: rgba(79,125,153,.2); --copper-deep: var(--accent);
+}
+
+/* ============ ⑤ اللؤلؤ (pearl) — كبسولي دافئ · فاتح ============ */
+:root[data-style="pearl"] {
+  --r-sm: 12px; --r: 16px; --r-lg: 22px; --r-xl: 28px;
+  --ic-sw: 1.8;
+  --bg: #F7F2EA; --surface: #FFFFFF; --surface-2: #F4EEE4;
+  --ink: #221E1A; --ink-soft: #46403A; --muted: #7A7268; --faint: #A79C8E;
+  --line: #E9E1D3; --line-soft: #F1EBDF;
+  --accent: #B8603C; --accent-strong: #9A4E30; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(184,96,60,.10); --accent-soft-2: rgba(184,96,60,.18);
+  --good: #3E8E5F; --good-bg: #E3F3E9; --warn: #C0822F; --warn-bg: #F8ECCF; --bad: #C24A3F; --bad-bg: #F9E1DC;
+  --track: #ECE4D6;
+  --topbar: #221E1A; --topbar-ink: #F4EEE4; --topbar-line: #B8603C; --topbar-glass: rgba(34,30,26,.78);
+  --shadow: 0 2px 6px rgba(34,30,26,.05), 0 10px 26px rgba(34,30,26,.07);
+  --shadow-lg: 0 22px 50px rgba(34,30,26,.15);
+  --shadow-accent: 0 8px 20px rgba(184,96,60,.28);
+  --glass-surface: rgba(255,255,255,.58); --glass-border: rgba(255,255,255,.75);
+  --ambient: radial-gradient(860px 460px at 92% -8%, rgba(184,96,60,.06), transparent 60%), radial-gradient(700px 520px at -6% 14%, rgba(218,205,193,.25), transparent 62%);
+  --blue: #9a7b50; --blue-bg: #efe6d6;
+  --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
+}
+:root[data-style="pearl"][data-theme="dark"] {
+  --bg: #171310; --surface: #211B16; --surface-2: #1A1511;
+  --ink: #F2EAE0; --ink-soft: #D8CCBF; --muted: #A3968A; --faint: #786C60;
+  --line: #322A21; --line-soft: #281F18;
+  --accent: #D07C52; --accent-strong: #B8603C; --accent-ink: #1A130E;
+  --accent-soft: rgba(208,124,82,.15); --accent-soft-2: rgba(208,124,82,.24);
+  --good: #8FB07F; --good-bg: rgba(94,122,85,.22); --warn: #D9A24E; --warn-bg: rgba(192,130,47,.2); --bad: #D57A6F; --bad-bg: rgba(180,69,60,.24);
+  --track: #33291D;
+  /* الشريط عكس الوضع: فاتح في الداكن */
+  --topbar: #F7F2EA; --topbar-ink: #221E1A; --topbar-line: #B8603C; --topbar-glass: rgba(247,242,234,.84);
+  --navy: #14100D; --navy-light: #14100D;
+  --shadow: 0 2px 6px rgba(0,0,0,.35), 0 12px 30px rgba(0,0,0,.42);
+  --shadow-lg: 0 24px 56px rgba(0,0,0,.6);
+  --shadow-accent: 0 8px 22px rgba(208,124,82,.3);
+  --glass-surface: rgba(40,32,26,.5); --glass-border: rgba(255,255,255,.08);
+  --ambient: radial-gradient(860px 460px at 92% -8%, rgba(208,124,82,.1), transparent 60%);
+  --blue: #c2a06a; --blue-bg: rgba(154,123,80,.22); --copper-deep: var(--accent);
+}
+
 /* ============ التصميم المخصّص (custom): إسناد أسماء EO القديمة إلى الرموز (القيم تُضبط إنلاين من applyCustom) ============ */
 :root[data-style="custom"] {
   --navy: var(--topbar); --navy-light: var(--topbar); --copper: var(--accent); --copper-deep: var(--accent-strong); --gold: var(--accent); --gold-light: var(--accent-strong);
-  --champagne: var(--topbar-ink); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
+  --champagne: var(--faint); --section-bg: var(--surface-2); --border: var(--line); --border-2: var(--line-soft); --text: var(--ink-soft);
   --red: var(--bad); --red-bg: var(--bad-bg); --orange: var(--warn); --orange-bg: var(--warn-bg); --green: var(--good); --green-bg: var(--good-bg); --radius: var(--r-lg);
   --blue: #9a7b50; --blue-bg: #efe6d6;
 }
+/* في الداكن يُقلب --topbar فاتحاً؛ --navy (شرائح/رؤوس نوافذ) تبقى فحمية */
+:root[data-style="custom"][data-theme="dark"] { --navy: var(--near-black); --navy-light: var(--near-black); --blue: #c2a06a; --blue-bg: rgba(154,123,80,.22); }
 
 /* ============ خلفيات الصفحة (توهّج/شبكة/علامة مائية) — للتصاميم غير الكلاسيكية فقط ============ */
 :root:not([data-style="classic"]) main,
@@ -692,9 +789,18 @@ td.mt-rem { white-space: nowrap; text-align: center; }
 :root:not([data-style="classic"]) .page-wrap { position: relative; z-index: 1; }
 :root:not([data-style="classic"]) body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--ambient, transparent); transition: background .4s var(--ease); }
 :root:not([data-style="classic"]) body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--grid-bg, transparent); background-size: 26px 26px; }
-/* علامة سنكري المائية (تصميم جَناح): تغطّي كامل الصفحة وتبقى ثابتة عند التمرير */
-:root[data-sig="wing"] body::after { background: url("/assets/logo-mark.png") no-repeat center center; background-size: cover; opacity: .05; }
-:root[data-sig="wing"][data-theme="dark"] body::after { opacity: .08; }
+/* علامة سنكري المائية: تُفعَّل بـ data-wm (جَناح، أو مخصّص بمفصل «خلفية الصفحة» = جَناح)
+   بمتحكّمات حجم/شفافية/غماقية (تُضبط إنلاين من نافذة العلامة المائية) — ثابتة عند التمرير */
+:root[data-wm="on"] body::after {
+  background: url("/assets/logo-mark.png") no-repeat center center;
+  background-size: var(--wm-size, cover);
+  opacity: var(--wm-opacity, .05);
+  filter: brightness(var(--wm-bright, 1));
+}
+:root[data-wm="on"][data-theme="dark"] body::after { opacity: var(--wm-opacity, .08); }
+/* «العلامة فوق المحتوى»: فوق المحتوى (z:1) ودون الترويسة (z:50) والنوافذ (z:100) */
+:root[data-wm="on"][data-wm-top="1"] body::after { z-index: 2; }
+:root[data-wm="on"] header .logo { cursor: pointer; }
 
 /* ============ أيقونات SVG + آلية «إيموجي/SVG» المزدوجة ============ */
 /* .di يلفّ (إيموجي + svg): الكلاسيكي يُظهر الإيموجي (كما هو تماماً)، وغيره يُظهر الـ SVG */
@@ -823,3 +929,195 @@ svg.ic { width: 1.05em; height: 1.05em; flex: none; fill: none; stroke: currentC
 .custom-table td:first-child, .custom-table th:first-child { text-align: start; font-weight: 700; }
 .custom-table input[type="radio"] { width: 18px; height: 18px; accent-color: var(--copper); cursor: pointer; }
 .theme-broadcast { margin-top: 12px; width: 100%; justify-content: center; }
+
+/* ============================================================
+   مفتاح «لون التصميم» (data-accent: teal | sankari) — لكل التصاميم.
+   النحاسي هو الافتراضي المدمج؛ هذه كتل التركوازي + كتلة سنكري للأفق.
+   ============================================================ */
+:root[data-style="classic"][data-accent="teal"], :root[data-style="wing"][data-accent="teal"],
+:root[data-style="bp"][data-accent="teal"], :root[data-style="marsad"][data-accent="teal"],
+:root[data-style="pearl"][data-accent="teal"] {
+  --accent: #0F9BA8; --accent-strong: #0B7D89; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(15,155,168,.10); --accent-soft-2: rgba(15,155,168,.18);
+  --topbar-line: #0F9BA8; --shadow-accent: 0 8px 20px rgba(15,155,168,.25);
+  /* أسماء EO القديمة (يحتاجها الكلاسيكي الذي لا يُحيل نحاسيّه إلى --accent) */
+  --copper: #0F9BA8; --copper-deep: #0B7D89; --gold: #0F9BA8; --gold-light: #33B7C4;
+}
+:root[data-style="classic"][data-theme="dark"][data-accent="teal"], :root[data-style="wing"][data-theme="dark"][data-accent="teal"],
+:root[data-style="bp"][data-theme="dark"][data-accent="teal"], :root[data-style="marsad"][data-theme="dark"][data-accent="teal"],
+:root[data-style="pearl"][data-theme="dark"][data-accent="teal"] {
+  --accent: #33B7C4; --accent-strong: #0F9BA8; --accent-ink: #06181B;
+  --accent-soft: rgba(51,183,196,.14); --accent-soft-2: rgba(51,183,196,.24);
+  --topbar-line: #0F9BA8; --shadow-accent: 0 8px 22px rgba(51,183,196,.3);
+  --copper: #33B7C4; --copper-deep: #5FC9D4; --gold: #33B7C4; --gold-light: #5FC9D4;
+}
+:root[data-style="horizon"][data-accent="sankari"] {
+  --accent: #B8603C; --accent-strong: #9A4E30; --accent-ink: #FFFFFF;
+  --accent-soft: rgba(184,96,60,.10); --accent-soft-2: rgba(184,96,60,.18);
+  --topbar-line: #B8603C; --shadow-accent: 0 8px 20px rgba(184,96,60,.28);
+}
+:root[data-style="horizon"][data-theme="dark"][data-accent="sankari"] {
+  --accent: #D07C52; --accent-strong: #B8603C; --accent-ink: #1A130E;
+  --accent-soft: rgba(208,124,82,.15); --accent-soft-2: rgba(208,124,82,.24);
+  --topbar-line: #B8603C; --shadow-accent: 0 8px 22px rgba(208,124,82,.3);
+}
+
+/* ============================================================
+   طبقة الشريط (الترويسة): تقرأ --topbar/--topbar-ink فتعكس الوضع تلقائياً
+   («الشريط عكس الوضع» — قرار المالك). الكلاسيكي الفاتح يبقى كما هو تماماً.
+   ============================================================ */
+:root:not([data-style="classic"]) header,
+:root[data-style="classic"][data-theme="dark"] header {
+  background: var(--topbar); color: var(--topbar-ink); border-bottom-color: var(--topbar-line);
+}
+:root:not([data-style="classic"]) header .title h1,
+:root[data-style="classic"][data-theme="dark"] header .title h1 { color: var(--topbar-ink); }
+:root:not([data-style="classic"]) header .title p,
+:root[data-style="classic"][data-theme="dark"] header .title p { color: color-mix(in srgb, var(--topbar-ink) 72%, transparent); }
+:root:not([data-style="classic"]) header .sync,
+:root[data-style="classic"][data-theme="dark"] header .sync { color: color-mix(in srgb, var(--topbar-ink) 62%, transparent); }
+:root:not([data-style="classic"]) header .user-chip,
+:root[data-style="classic"][data-theme="dark"] header .user-chip { background: color-mix(in srgb, var(--topbar-ink) 9%, transparent); color: var(--topbar-ink); }
+:root:not([data-style="classic"]) header .user-chip .role,
+:root[data-style="classic"][data-theme="dark"] header .user-chip .role { color: inherit; opacity: .7; }
+:root:not([data-style="classic"]) header .btn-ghost,
+:root[data-style="classic"][data-theme="dark"] header .btn-ghost {
+  background: color-mix(in srgb, var(--topbar-ink) 9%, transparent);
+  color: var(--topbar-ink);
+  border: 1px solid color-mix(in srgb, var(--topbar-ink) 16%, transparent);
+}
+:root:not([data-style="classic"]) header .btn-ghost:hover,
+:root[data-style="classic"][data-theme="dark"] header .btn-ghost:hover { background: var(--accent); color: var(--accent-ink); }
+/* الشعار (فاتح اللون) على شريط فاتح في الداكن → داخل شريحة فحمية */
+:root[data-theme="dark"] header .logo { background: var(--near-black); border-radius: 10px; padding: 5px 9px; }
+
+/* ============================================================
+   بنية شريط «الأفق» الجانبي (data-bar="horizon") — CSS فقط، نفس عناصر DOM
+   ضيّق افتراضياً (78px، أيقونات فقط) · موسّع بزرّ ☰ (232px، أسماء من attr(title))
+   ============================================================ */
+.rail-toggle { display: none; }
+:root[data-bar="horizon"] main { padding-inline-start: 96px; }
+:root[data-bar="horizon"] header {
+  position: fixed; top: 0; bottom: 0; inset-inline-start: 0; width: 78px; height: auto;
+  flex-direction: column; align-items: stretch; gap: 10px;
+  padding: 14px 10px; overflow-y: auto; overflow-x: hidden;
+  border-bottom: none; border-inline-end: 1px solid color-mix(in srgb, var(--topbar-ink) 14%, transparent);
+  transition: width .25s ease, background-color .4s ease;
+}
+:root[data-bar="horizon"] header .logo {
+  height: auto; justify-content: center; background: var(--near-black); border-radius: var(--r);
+  padding: 10px 8px; min-height: 48px;
+  background-image: url("/assets/logo-mark.png"); background-repeat: no-repeat; background-position: center; background-size: auto 34px;
+}
+:root[data-bar="horizon"] header .logo img { display: none; }
+:root[data-bar="horizon"] header .title { display: none; }
+:root[data-bar="horizon"] .header-actions { margin-inline-start: 0; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; }
+:root[data-bar="horizon"] .header-actions .btn {
+  width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 0; overflow: hidden; white-space: nowrap; border-radius: var(--r);
+}
+:root[data-bar="horizon"] .bell-wrap, :root[data-bar="horizon"] .bell { width: 100%; }
+:root[data-bar="horizon"] .bell-panel { position: fixed; top: 60px; inset-inline-start: 86px; left: auto; }
+:root[data-bar="horizon"] .sync, :root[data-bar="horizon"] .user-chip, :root[data-bar="horizon"] .profile-switch { display: none; }
+:root[data-bar="horizon"] .rail-toggle { display: flex; }
+/* الموسّع */
+:root[data-bar="horizon"][data-rail="wide"] main { padding-inline-start: 248px; }
+:root[data-bar="horizon"][data-rail="wide"] header { width: 232px; padding: 16px 14px; }
+:root[data-bar="horizon"][data-rail="wide"] header .logo { background-image: none; padding: 12px 10px; }
+:root[data-bar="horizon"][data-rail="wide"] header .logo img { display: block; height: 30px; margin: 0 auto; }
+:root[data-bar="horizon"][data-rail="wide"] header .title { display: block; text-align: center; }
+:root[data-bar="horizon"][data-rail="wide"] header .title h1 { font-size: 14px; }
+:root[data-bar="horizon"][data-rail="wide"] header .title p { font-size: 11px; }
+:root[data-bar="horizon"][data-rail="wide"] .header-actions .btn { justify-content: flex-start; padding-inline: 12px; }
+:root[data-bar="horizon"][data-rail="wide"] .header-actions .btn::after { content: attr(title); font-size: 13px; font-weight: 600; }
+:root[data-bar="horizon"][data-rail="wide"] .bell-panel { inset-inline-start: 240px; }
+:root[data-bar="horizon"][data-rail="wide"] .profile-switch { display: block; width: 100%; }
+:root[data-bar="horizon"][data-rail="wide"] .user-chip { display: flex; justify-content: space-between; align-items: center; }
+:root[data-bar="horizon"][data-rail="wide"] .sync { display: block; text-align: center; font-size: 11px; }
+/* زجاجية الشريط الجانبي */
+:root[data-glass="on"][data-bar="horizon"] header {
+  background: var(--rail-glass, var(--topbar-glass));
+  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+}
+/* دون 760px: يعود شريطاً علوياً عادياً */
+@media (max-width: 760px) {
+  :root[data-bar="horizon"] main { padding-inline-start: 14px; }
+  :root[data-bar="horizon"] header {
+    position: sticky; top: 0; bottom: auto; width: auto; flex-direction: row; align-items: center;
+    padding: 12px 16px; overflow: visible; border-inline-end: none; border-bottom: 3px solid var(--topbar-line);
+  }
+  :root[data-bar="horizon"] header .logo { background-image: none; min-height: 0; padding: 5px 9px; }
+  :root[data-bar="horizon"] header .logo img { display: block; height: 34px; }
+  :root[data-bar="horizon"] .header-actions { margin-inline-start: auto; flex-direction: row; align-items: center; width: auto; }
+  :root[data-bar="horizon"] .header-actions .btn { width: auto; height: auto; display: inline-flex; padding: 9px 12px; }
+  :root[data-bar="horizon"] .header-actions .btn::after { content: none; }
+  :root[data-bar="horizon"] .rail-toggle { display: none; }
+  :root[data-bar="horizon"] .bell-panel { position: absolute; top: 52px; inset-inline-start: auto; left: 0; }
+  :root[data-bar="horizon"] .sync, :root[data-bar="horizon"] .user-chip { display: flex; }
+  :root[data-bar="horizon"] .profile-switch { display: block; width: auto; }
+}
+
+/* ============================================================
+   بنية كبسولة «اللؤلؤ» (data-bar="pearl"): ترويسة عائمة شديدة الاستدارة
+   بإطار رفيع بلون التمييز (يتبع مفتاح اللون)
+   ============================================================ */
+:root[data-bar="pearl"] header {
+  position: sticky; top: 10px; margin: 10px 16px 0;
+  border-radius: 999px; padding: 8px 20px;
+  border-bottom: none; border: 1px solid var(--accent);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+}
+:root[data-bar="pearl"] header .title p { display: none; }
+:root[data-bar="pearl"] header .title h1 { font-size: 15px; }
+:root[data-bar="pearl"] header .logo img { height: 34px; }
+:root[data-bar="pearl"] .header-actions .btn { border-radius: 999px; }
+:root[data-bar="pearl"] .bell-panel { border-radius: 18px; }
+
+/* ============ توقيع «الأفق» (data-sig): بطاقات بلا حدود + رأس جدول أبيض + أرقام محايدة بالحبر ============ */
+:root[data-sig="horizon"] .kpi, :root[data-sig="horizon"] .toolbar,
+:root[data-sig="horizon"] .table-wrap, :root[data-sig="horizon"] .kcol,
+:root[data-sig="horizon"] .card { border-color: transparent; }
+:root[data-sig="horizon"] .kpi { border-top-color: var(--line-soft); }
+:root[data-sig="horizon"] .kpi.red { border-top-color: var(--red); }
+:root[data-sig="horizon"] .kpi.orange { border-top-color: var(--orange); }
+:root[data-sig="horizon"] .kpi.green { border-top-color: var(--green); }
+:root[data-sig="horizon"] .kpi.gold { border-top-color: var(--copper); }
+:root[data-sig="horizon"] .kpi.kpi-type { border-top-color: var(--blue); }
+:root[data-sig="horizon"] .kpi.kpi-meet { border-top-color: var(--copper); }
+:root[data-sig="horizon"] thead th { background: var(--surface); color: var(--muted); }
+:root[data-sig="horizon"] thead th:hover { background: var(--surface-2); color: var(--ink); }
+:root[data-sig="horizon"] .kpi.gold .num, :root[data-sig="horizon"] .kpi.kpi-meet .num { color: var(--ink); }
+:root[data-sig="horizon"] .kpi .num { letter-spacing: -.01em; }
+
+/* ============ توقيع «اللؤلؤ» (data-sig): كبسولية عامة + زرّ رئيسي فحمي ============ */
+:root[data-sig="pearl"] .btn { border-radius: 999px; }
+:root[data-sig="pearl"] .view-tab { border-radius: 999px; }
+:root[data-sig="pearl"] .view-group { border-radius: 999px; }
+:root[data-sig="pearl"] .filters select, :root[data-sig="pearl"] .filters input { border-radius: 999px; padding-inline: 16px; }
+:root[data-sig="pearl"] .ms-btn { border-radius: 999px; }
+:root[data-sig="pearl"] .modal input:not([type="date"]):not([type="time"]):not([type="datetime-local"]), :root[data-sig="pearl"] .modal select { border-radius: 999px; padding-inline: 15px; }
+:root[data-sig="pearl"] .modal textarea { border-radius: var(--r-lg); }
+/* الزرّ الرئيسي فحمي (خارج الترويسة — أزرار الترويسة أيقونية تبقى بلون التمييز) */
+:root[data-sig="pearl"] main .btn-gold:not(.icon-only), :root[data-sig="pearl"] .modal .btn-gold,
+:root[data-sig="pearl"] main .btn-save, :root[data-sig="pearl"] .modal .btn-save,
+:root[data-sig="pearl"] .page-wrap .btn-save {
+  background: var(--ink); color: var(--surface); box-shadow: 0 10px 24px rgba(34, 30, 26, .18);
+}
+:root[data-sig="pearl"] main .btn-gold:not(.icon-only):hover, :root[data-sig="pearl"] .modal .btn-gold:hover,
+:root[data-sig="pearl"] main .btn-save:hover, :root[data-sig="pearl"] .modal .btn-save:hover,
+:root[data-sig="pearl"] .page-wrap .btn-save:hover { background: var(--ink-soft); color: var(--surface); }
+:root[data-sig="pearl"] .view-tab.active, :root[data-sig="pearl"] .view-group .view-tab.active,
+:root[data-sig="pearl"] #dataTabs .view-tab.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+:root[data-sig="pearl"] .chip.active { background: var(--ink); border-color: var(--ink); }
+
+/* ============ زرّا مفتاح اللون في نافذة الإعدادات ============ */
+.accent-row { display: flex; gap: 10px; align-items: center; }
+.accent-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; padding: 0; transition: transform .15s var(--ease), border-color .15s, box-shadow .15s; }
+.accent-swatch:hover { transform: translateY(-2px); }
+.accent-swatch.on { border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ============ نافذة العلامة المائية: المنزلقات ============ */
+.wm-row { margin-bottom: 14px; }
+.wm-row label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.wm-row label .wm-val { color: var(--copper-deep); font-weight: 800; }
+.wm-row input[type="range"] { width: 100%; accent-color: var(--copper); }

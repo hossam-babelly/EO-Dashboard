@@ -70,11 +70,25 @@ window.icon = icon;
 // ولكل مستخدم على الخادم (PATCH /api/me/theme). المدير يبثّ للجميع (theme-broadcast).
 // الكلاسيكي = الحالي بالضبط (بلا كسوة ولا SVG).
 // ============================================================
-const DESIGNS = ['classic', 'wing', 'bp', 'marsad', 'custom'];
-const BASE_DESIGNS = ['classic', 'wing', 'bp', 'marsad'];
-const DESIGN_LABELS = { classic: 'الكلاسيكي', wing: 'جَناح سنكري', bp: 'مخطّط الكلك', marsad: 'المِرصَد', custom: 'مخصّص (هجين)' };
+const DESIGNS = ['classic', 'wing', 'bp', 'marsad', 'horizon', 'pearl', 'custom'];
+const BASE_DESIGNS = ['classic', 'wing', 'bp', 'marsad', 'horizon', 'pearl'];
+const DESIGN_LABELS = { classic: 'الكلاسيكي', wing: 'جَناح سنكري', bp: 'مخطّط الكلك', marsad: 'المِرصَد', horizon: 'الأفق', pearl: 'اللؤلؤ', custom: 'مخصّص (هجين)' };
 // الخط المقترح لكل تصميم [عربي, لاتيني] — الكلاسيكي غير مذكور فيبقى Cairo كما هو
-const DESIGN_FONT = { wing: ['tajawal', 'ibmplex'], bp: ['readex', 'space'], marsad: ['plexar', 'sora'] };
+const DESIGN_FONT = { wing: ['tajawal', 'ibmplex'], bp: ['readex', 'space'], marsad: ['plexar', 'sora'], horizon: ['plexar', 'ibmplex'], pearl: ['almarai', 'manrope'] };
+// مفتاح «لون التصميم»: تركوازي/نحاسي سنكري — لكل التصاميم (المخصّص بلا افتراضي: مفصل اللون يقود)
+const ACCENT_VALUES = ['teal', 'sankari'];
+const DESIGN_ACCENT_DEFAULT = { classic: 'sankari', wing: 'sankari', bp: 'sankari', marsad: 'sankari', horizon: 'teal', pearl: 'sankari' };
+// لوحة التجاوز الإنلاين للمخصّص (مفاصله إنلاين فلا تبلغها كتل [data-accent])
+const ACCENT_PALETTE = {
+  teal: {
+    light: { '--accent': '#0F9BA8', '--accent-strong': '#0B7D89', '--accent-ink': '#FFFFFF', '--accent-soft': 'rgba(15,155,168,.10)', '--accent-soft-2': 'rgba(15,155,168,.18)', '--topbar-line': '#0F9BA8' },
+    dark: { '--accent': '#33B7C4', '--accent-strong': '#0F9BA8', '--accent-ink': '#06181B', '--accent-soft': 'rgba(51,183,196,.14)', '--accent-soft-2': 'rgba(51,183,196,.24)', '--topbar-line': '#0F9BA8' },
+  },
+  sankari: {
+    light: { '--accent': '#B8603C', '--accent-strong': '#9A4E30', '--accent-ink': '#FFFFFF', '--accent-soft': 'rgba(184,96,60,.10)', '--accent-soft-2': 'rgba(184,96,60,.18)', '--topbar-line': '#B8603C' },
+    dark: { '--accent': '#D07C52', '--accent-strong': '#B8603C', '--accent-ink': '#1A130E', '--accent-soft': 'rgba(208,124,82,.15)', '--accent-soft-2': 'rgba(208,124,82,.24)', '--topbar-line': '#B8603C' },
+  },
+};
 
 // التصميم المخصّص: مفاصل الواجهة × التصاميم الأربعة
 const CUSTOM_FACETS = [
@@ -82,7 +96,7 @@ const CUSTOM_FACETS = [
   { key: 'accent', label: 'اللون المميّز (النحاسي)', tokens: ['--accent', '--accent-strong', '--accent-ink', '--accent-soft', '--accent-soft-2'] },
   { key: 'states', label: 'ألوان الحالة (منجَز/تأخّر/تنبيه)', tokens: ['--good', '--good-bg', '--warn', '--warn-bg', '--bad', '--bad-bg'] },
   { key: 'shape', label: 'الشكل والتوقيع (الزوايا/الظلال/الأيقونات)', tokens: ['--r-sm', '--r', '--r-lg', '--r-xl', '--shadow', '--shadow-lg', '--shadow-accent', '--ic-sw', '--ic-cap', '--ic-join', '--graphite', '--glow'] },
-  { key: 'topbar', label: 'الترويسة (الشريط العلوي)', tokens: ['--topbar', '--topbar-ink', '--topbar-line', '--topbar-glass'] },
+  { key: 'topbar', label: 'الترويسة (الشريط العلوي)', tokens: ['--topbar', '--topbar-ink', '--topbar-line', '--topbar-glass', '--rail-glass'] },
   { key: 'ambient', label: 'خلفية الصفحة (توهّج / شبكة)', tokens: ['--ambient', '--grid-bg'] },
 ];
 const ALL_CUSTOM_TOKENS = CUSTOM_FACETS.reduce((a, f) => a.concat(f.tokens), []);
@@ -91,7 +105,7 @@ let _tokenCache = null;
 function collectDesignTokens() {
   if (_tokenCache) return _tokenCache;
   const R = document.documentElement;
-  const savedS = R.getAttribute('data-style'), savedT = R.getAttribute('data-theme');
+  const savedS = R.getAttribute('data-style'), savedT = R.getAttribute('data-theme'), savedA = R.getAttribute('data-accent');
   const savedInline = {}; ALL_CUSTOM_TOKENS.forEach((tk) => { savedInline[tk] = R.style.getPropertyValue(tk); });
   ALL_CUSTOM_TOKENS.forEach((tk) => R.style.removeProperty(tk));
   const out = {};
@@ -99,6 +113,8 @@ function collectDesignTokens() {
     out[d] = { light: {}, dark: {} };
     ['light', 'dark'].forEach((m) => {
       R.setAttribute('data-style', d); R.setAttribute('data-theme', m);
+      // تثبيت لون التصميم على افتراضيّه (هويّته) أثناء القراءة — كي لا يتلوّث الجمع باختيار المستخدم الحالي
+      R.setAttribute('data-accent', DESIGN_ACCENT_DEFAULT[d] || 'sankari');
       void R.offsetWidth;
       const cs = getComputedStyle(R);
       ALL_CUSTOM_TOKENS.forEach((tk) => { out[d][m][tk] = cs.getPropertyValue(tk).trim(); });
@@ -106,6 +122,7 @@ function collectDesignTokens() {
   });
   if (savedS) R.setAttribute('data-style', savedS); else R.removeAttribute('data-style');
   if (savedT) R.setAttribute('data-theme', savedT); else R.removeAttribute('data-theme');
+  if (savedA) R.setAttribute('data-accent', savedA); else R.removeAttribute('data-accent');
   ALL_CUSTOM_TOKENS.forEach((tk) => { if (savedInline[tk]) R.style.setProperty(tk, savedInline[tk]); });
   _tokenCache = out;
   return out;
@@ -133,20 +150,73 @@ const THEME = {
   design() { const v = localStorage.getItem('eo_design'); return DESIGNS.indexOf(v) >= 0 ? v : 'classic'; },
   mode() { return localStorage.getItem('eo_theme') === 'dark' ? 'dark' : 'light'; },
   glass() { return localStorage.getItem('eo_glass') === '1'; },
-  current() { const c = { design: this.design(), mode: this.mode(), glass: this.glass() }; if (c.design === 'custom') c.custom = customChoices(); return c; },
+  // اللون الفعّال: اختيار المستخدم ← افتراضي التصميم؛ المخصّص بلا اختيار = '' (مفصل اللون يقود)
+  accent() {
+    const v = localStorage.getItem('eo_accent');
+    if (ACCENT_VALUES.indexOf(v) >= 0) return v;
+    const d = this.design();
+    return d === 'custom' ? '' : (DESIGN_ACCENT_DEFAULT[d] || 'sankari');
+  },
+  // العلامة المائية مفعّلة: تصميم جَناح، أو المخصّص بمفصل «خلفية الصفحة» = جَناح (قرار المالك)
+  wmActive() { const d = this.design(); return d === 'wing' || (d === 'custom' && customChoices().ambient === 'wing'); },
+  // إعدادات العلامة المائية (مضبوطة الحدود): {size 20–300, op 1–40, dark −30…60, top}
+  wmSettings() {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem('eo_wm') || '{}') || {}; } catch (_) { o = {}; }
+    const num = (v, lo, hi) => { const n = Number(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
+    return {
+      size: o.size != null ? num(o.size, 20, 300) : null,
+      op: o.op != null ? num(o.op, 1, 40) : null,
+      dark: o.dark != null ? num(o.dark, -30, 60) : null,
+      top: !!o.top,
+    };
+  },
+  current() {
+    const c = { design: this.design(), mode: this.mode(), glass: this.glass() };
+    const accSel = localStorage.getItem('eo_accent');
+    if (ACCENT_VALUES.indexOf(accSel) >= 0) c.accent = accSel;
+    const w = this.wmSettings();
+    if (w.size != null || w.op != null || w.dark != null || w.top) c.wm = w;
+    if (c.design === 'custom') c.custom = customChoices();
+    return c;
+  },
   applyAttrs() {
     const r = document.documentElement, d = this.design();
     r.setAttribute('data-style', d);
     r.setAttribute('data-theme', this.mode());
     r.setAttribute('data-glass', this.glass() ? 'on' : 'off');
-    // data-sig يقود التوقيعات: التصميم نفسه للأساسية، ومفصل «الشكل» للمخصّص
-    r.setAttribute('data-sig', d === 'custom' ? customChoices().shape : d);
-    if (d === 'custom') applyCustom(); else clearCustomProps();
+    // مفتاح اللون (data-accent): القيمة الفعّالة؛ المخصّص بلا اختيار صريح = بلا سمة
+    const acc = this.accent();
+    if (acc) r.setAttribute('data-accent', acc); else r.removeAttribute('data-accent');
+    // data-sig يقود الشكل/التوقيع، وdata-bar يقود بنية الشريط — مفصلان مستقلان في المخصّص
+    const ch = d === 'custom' ? customChoices() : null;
+    r.setAttribute('data-sig', d === 'custom' ? ch.shape : d);
+    r.setAttribute('data-bar', d === 'custom' ? ch.topbar : d);
+    // عرض شريط الأفق الجانبي (محلي للمتصفح)
+    r.setAttribute('data-rail', localStorage.getItem('eo_rail') === 'wide' ? 'wide' : 'narrow');
+    // العلامة المائية + متحكّماتها (إنلاين)
+    const wmOn = this.wmActive();
+    r.setAttribute('data-wm', wmOn ? 'on' : 'off');
+    const wm = this.wmSettings();
+    if (wmOn && wm.top) r.setAttribute('data-wm-top', '1'); else r.removeAttribute('data-wm-top');
+    if (wmOn && wm.size != null) r.style.setProperty('--wm-size', wm.size + '% auto'); else r.style.removeProperty('--wm-size');
+    if (wmOn && wm.op != null) r.style.setProperty('--wm-opacity', String(wm.op / 100)); else r.style.removeProperty('--wm-opacity');
+    if (wmOn && wm.dark != null) r.style.setProperty('--wm-bright', String((100 - wm.dark) / 100)); else r.style.removeProperty('--wm-bright');
+    if (d === 'custom') {
+      applyCustom();
+      // تجاوز اللون الصريح إنلاين (مفاصل المخصّص إنلاين فلا تبلغها كتل [data-accent])
+      const accSel = localStorage.getItem('eo_accent');
+      if (ACCENT_VALUES.indexOf(accSel) >= 0 && ACCENT_PALETTE[accSel]) {
+        const pal = ACCENT_PALETTE[accSel][this.mode()] || {};
+        Object.keys(pal).forEach((tk) => r.style.setProperty(tk, pal[tk]));
+      }
+    } else clearCustomProps();
   },
   set(part, val) {
     if (part === 'design' && DESIGNS.indexOf(val) >= 0) localStorage.setItem('eo_design', val);
     else if (part === 'mode') localStorage.setItem('eo_theme', val === 'dark' ? 'dark' : 'light');
     else if (part === 'glass') localStorage.setItem('eo_glass', val ? '1' : '0');
+    else if (part === 'accent') { if (ACCENT_VALUES.indexOf(val) >= 0) localStorage.setItem('eo_accent', val); else localStorage.removeItem('eo_accent'); }
     this.applyAttrs(); this.pushServer();
   },
   applyObj(t) {
@@ -154,6 +224,8 @@ const THEME = {
     if (DESIGNS.indexOf(t.design) >= 0) localStorage.setItem('eo_design', t.design);
     if (t.mode) localStorage.setItem('eo_theme', t.mode === 'dark' ? 'dark' : 'light');
     if (typeof t.glass !== 'undefined') localStorage.setItem('eo_glass', t.glass ? '1' : '0');
+    if (ACCENT_VALUES.indexOf(t.accent) >= 0) localStorage.setItem('eo_accent', t.accent);
+    if (t.wm && typeof t.wm === 'object') localStorage.setItem('eo_wm', JSON.stringify(t.wm));
     if (t.custom && typeof t.custom === 'object') localStorage.setItem('eo_custom', JSON.stringify(t.custom));
     this.applyAttrs();
   },
@@ -2125,6 +2197,11 @@ function openSettings() {
     <div class="set-box">
       <div class="set-box-title">${icon('palette', '🎨')} <span>${esc(tr('التصميم'))}</span></div>
       <div class="theme-picker" id="setSwatches">${swatches}</div>
+      <div class="set-lbl">${esc(tr('لون التصميم (المميّز)'))}</div>
+      <div class="accent-row" id="setAccents">
+        <button class="accent-swatch" type="button" data-acc="sankari" title="${esc(tr('نحاسي سنكري'))}" aria-label="${esc(tr('نحاسي سنكري'))}" style="background:#B8603C"></button>
+        <button class="accent-swatch" type="button" data-acc="teal" title="${esc(tr('تركوازي'))}" aria-label="${esc(tr('تركوازي'))}" style="background:#0F9BA8"></button>
+      </div>
       <div id="setCustom"></div>
       <div class="switch-row"><span>${esc(tr('الوضع الداكن'))}</span><button class="switch ${THEME.mode() === 'dark' ? 'on' : ''}" id="swDark" type="button" role="switch" aria-label="${esc(tr('الوضع الداكن'))}"><span class="knob"></span></button></div>
       <div class="switch-row"><span>${esc(tr('الشفافية الزجاجية'))}</span><button class="switch ${THEME.glass() ? 'on' : ''}" id="swGlass" type="button" role="switch" aria-label="${esc(tr('الشفافية الزجاجية'))}"><span class="knob"></span></button></div>
@@ -2138,6 +2215,9 @@ function openSettings() {
       <select class="set-sel" id="fontLatinSel">${latinOpts}</select>
     </div>`;
   const syncSwatches = () => document.querySelectorAll('#setSwatches .theme-swatch').forEach((x) => x.classList.toggle('on', x.getAttribute('data-design') === THEME.design()));
+  // مفتاح اللون: يُظلَّل الزرّ المطابق للّون الفعّال (المخصّص بلا اختيار صريح = لا تظليل)
+  const syncAccents = () => { const a = THEME.accent(); document.querySelectorAll('#setAccents .accent-swatch').forEach((x) => x.classList.toggle('on', !!a && x.getAttribute('data-acc') === a)); };
+  document.querySelectorAll('#setAccents .accent-swatch').forEach((b) => b.addEventListener('click', () => { THEME.set('accent', b.getAttribute('data-acc')); syncAccents(); }));
   const renderCustom = () => {
     const wrap = $('setCustom');
     if (THEME.design() !== 'custom') { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
@@ -2163,9 +2243,9 @@ function openSettings() {
     const a = $('fontArSel'), l = $('fontLatinSel');
     if (f) { I18N.setFontAr(f[0]); I18N.setFontLatin(f[1]); if (a) a.value = f[0]; if (l) l.value = f[1]; }
     else if (k === 'classic') { I18N.setFontAr(''); I18N.setFontLatin(''); if (a) a.value = ''; if (l) l.value = ''; }
-    renderCustom();
+    renderCustom(); syncAccents();
   }));
-  syncSwatches(); renderCustom();
+  syncSwatches(); renderCustom(); syncAccents();
   $('swDark').addEventListener('click', () => { const on = !$('swDark').classList.contains('on'); $('swDark').classList.toggle('on', on); THEME.set('mode', on ? 'dark' : 'light'); });
   $('swGlass').addEventListener('click', () => { const on = !$('swGlass').classList.contains('on'); $('swGlass').classList.toggle('on', on); THEME.set('glass', on); });
   $('fontArSel').addEventListener('change', (e) => I18N.setFontAr(e.target.value));
@@ -2188,6 +2268,42 @@ function closeSettings() { $('setModalBack').classList.remove('open'); }
   const b = $('designBtn'); if (b) b.onclick = openSettings;
   const c = $('setClose'); if (c) c.onclick = closeSettings;
   const back = $('setModalBack'); if (back) back.onclick = (e) => { if (e.target === back) closeSettings(); };
+})();
+
+// ===== نافذة العلامة المائية (النقر على شعار الترويسة عندما تكون مفعّلة) =====
+function openWatermark() {
+  const w = THEME.wmSettings();
+  const size = w.size != null ? w.size : 100;
+  const op = w.op != null ? w.op : (THEME.mode() === 'dark' ? 8 : 5);
+  const dark = w.dark != null ? w.dark : 0;
+  $('wmBody').innerHTML = `
+    <div class="wm-row"><label><span>${esc(tr('حجم العلامة (٪ من عرض الصفحة)'))}</span><span class="wm-val" id="wmSizeVal">${size}%</span></label><input type="range" id="wmSize" min="20" max="300" value="${size}"></div>
+    <div class="wm-row"><label><span>${esc(tr('الشفافية (٪)'))}</span><span class="wm-val" id="wmOpVal">${op}%</span></label><input type="range" id="wmOp" min="1" max="40" value="${op}"></div>
+    <div class="wm-row"><label><span>${esc(tr('غماقية اللون'))}</span><span class="wm-val" id="wmDarkVal">${dark}</span></label><input type="range" id="wmDark" min="-30" max="60" value="${dark}"></div>
+    <div class="switch-row"><span>${esc(tr('العلامة فوق المحتوى'))}</span><button class="switch ${w.top ? 'on' : ''}" id="wmTop" type="button" role="switch" aria-checked="${w.top ? 'true' : 'false'}"><span class="knob"></span></button></div>
+    <button class="btn btn-cancel" id="wmReset" type="button" style="margin-top:10px;width:100%">${esc(tr('↺ إعادة الضبط الافتراضي'))}</button>`;
+  const save = () => {
+    const o = { size: Number($('wmSize').value), op: Number($('wmOp').value), dark: Number($('wmDark').value), top: $('wmTop').classList.contains('on') };
+    localStorage.setItem('eo_wm', JSON.stringify(o));
+    $('wmSizeVal').textContent = o.size + '%'; $('wmOpVal').textContent = o.op + '%'; $('wmDarkVal').textContent = String(o.dark);
+    THEME.applyAttrs(); THEME.pushServer();
+  };
+  ['wmSize', 'wmOp', 'wmDark'].forEach((id) => { $(id).oninput = save; });
+  $('wmTop').onclick = () => { const b = $('wmTop'); b.classList.toggle('on'); b.setAttribute('aria-checked', b.classList.contains('on') ? 'true' : 'false'); save(); };
+  $('wmReset').onclick = () => { localStorage.removeItem('eo_wm'); THEME.applyAttrs(); THEME.pushServer(); openWatermark(); };
+  $('wmModalBack').classList.add('open');
+}
+(function () {
+  const c = $('wmClose'); if (c) c.onclick = () => $('wmModalBack').classList.remove('open');
+  const back = $('wmModalBack'); if (back) back.onclick = (e) => { if (e.target === back) back.classList.remove('open'); };
+  const logo = document.querySelector('header .logo');
+  if (logo) logo.addEventListener('click', () => { if (THEME.wmActive()) openWatermark(); });
+  // زرّ ☰: توسيع/تضييق شريط الأفق الجانبي (محلي للمتصفح)
+  const rt = $('railToggle');
+  if (rt) rt.onclick = () => {
+    localStorage.setItem('eo_rail', localStorage.getItem('eo_rail') === 'wide' ? 'narrow' : 'wide');
+    THEME.applyAttrs();
+  };
 })();
 
 // ===== Web Push =====
