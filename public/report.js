@@ -81,11 +81,12 @@ function reportBgParts(glyph) {
   if (reportIdentity() === 'classic') return { under: '', above: wmDiv(96, .045, 2) };
   const d = reportBgDesign();
   if (d === 'wing') {
-    // بإعدادات المستخدم (الحجم/الشفافية/فوق المحتوى) مع سقف طباعي للشفافية
+    // مثل خلفية الواجهة: علامة الجناح بإعدادات المستخدم (الحجم/الشفافية) — فوق المحتوى دائماً في الطباعة
+    // (البطاقات البيضاء تغطي معظم الصفحة، فالطبقة العليا هي ما يجعلها «تملأ الصفحة» فعلاً) بسقف شفافية طباعي
     let wm = {}; try { wm = JSON.parse(localStorage.getItem('eo_wm') || '{}') || {}; } catch (_) { wm = {}; }
     const size = (wm.size != null && isFinite(Number(wm.size))) ? Math.min(300, Math.max(20, Number(wm.size))) : 96;
-    const op = (wm.op != null && isFinite(Number(wm.op))) ? Math.min(30, Math.max(1, Number(wm.op))) / 100 : .045;
-    return wm.top ? { under: '', above: wmDiv(size, op, 2) } : { under: wmDiv(size, Math.max(op, .04), 0), above: wmDiv(size, .03, 2) };
+    const op = (wm.op != null && isFinite(Number(wm.op))) ? Math.min(12, Math.max(1, Number(wm.op))) / 100 : .045;
+    return { under: '', above: wmDiv(size, op, 2) };
   }
   if (d === 'bp') {
     return { under: `<div style="${abs};z-index:0;overflow:hidden"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="rgrid" width="26" height="26" patternUnits="userSpaceOnUse"><path d="M26 0H0V26" fill="none" stroke="rgba(70,84,90,.09)" stroke-width="1"/></pattern></defs><rect width="100%" height="100%" fill="url(#rgrid)"/></svg></div>`, above: '' };
@@ -363,9 +364,10 @@ function dpSliceHTML(t, num, o) {
   const showDv = !o.cont && o.dvs.length > 0;
   const showEv = o.evs.length > 0;
   if (showDv || showEv) {
-    const dvTitle = `<div style="font-size:8.5px;letter-spacing:1px;color:${RB.copperDeep};font-weight:800;margin-bottom:4px">المخرجات المطلوبة (${o.dvs.filter((d) => d.done).length}/${o.dvs.length})</div>`;
+    // ملاحظة: لا letter-spacing على نصّ عربي — يفكّك اتصال الحروف عند تصيير html2canvas
+    const dvTitle = `<div style="font-size:9px;color:${RB.copperDeep};font-weight:800;margin-bottom:4px">المخرجات المطلوبة (${o.dvs.filter((d) => d.done).length}/${o.dvs.length})</div>`;
     const evNote = o.more > 0 ? ` <span style="color:${RB.amber};font-weight:800">· يتبع +${o.more}</span>` : '';
-    const evTitle = `<div style="font-size:8.5px;letter-spacing:1px;color:${RB.copperDeep};font-weight:800;margin-bottom:5px">سجلّ المتابعة${o.cont ? '' : ` (${o.evTotal} ${o.evTotal === 1 ? 'حدث' : 'أحداث'})`}${evNote}</div>`;
+    const evTitle = `<div style="font-size:9px;color:${RB.copperDeep};font-weight:800;margin-bottom:5px">سجلّ المتابعة${o.cont ? '' : ` (${o.evTotal} ${o.evTotal === 1 ? 'حدث' : 'أحداث'})`}${evNote}</div>`;
     const dvCol = showDv ? `<div style="padding:7px 12px">${dvTitle}${o.dvs.map(dpDvRow).join('')}</div>` : '';
     const evCol = showEv ? `<div style="padding:7px 12px;${showDv ? `border-inline-start:1px solid ${softC(RB.copper, .14)}` : ''}">${evTitle}${dpEventsCols(o.evs)}</div>` : '';
     detail = (showDv && showEv) ? `<div style="display:grid;grid-template-columns:330px 1fr">${dvCol}${evCol}</div>` : (dvCol || evCol);
@@ -886,7 +888,8 @@ function trInfoBlock(t) {
   return `<div class="trblk" style="padding:10px 0 4px"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:${RB.line};border:1px solid ${RB.line};border-radius:10px;overflow:hidden">${cells}</div></div>`;
 }
 function trHeadingBlock(text) {
-  return `<div class="trblk" style="padding:14px 0 8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:10px;letter-spacing:1.5px;color:${RB.copperDeep};font-weight:800">${esc(text)}</span><span style="flex:1;height:1px;background:${softC(RB.copper, .3)}"></span></div></div>`;
+  // لا letter-spacing على العربية (يفكّك الحروف في html2canvas)
+  return `<div class="trblk" style="padding:14px 0 8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:10.5px;color:${RB.copperDeep};font-weight:800">${esc(text)}</span><span style="flex:1;height:1px;background:${softC(RB.copper, .3)}"></span></div></div>`;
 }
 function trDeliverableBlock(d) {
   const box = `<span style="flex:none;width:13px;height:13px;border:1.5px solid ${d.done ? RB.green : RB.copper};border-radius:3px;margin-top:3px;background:${d.done ? RB.green : '#fff'};color:#fff;font-size:9px;line-height:13px;text-align:center;font-weight:800">${d.done ? '✓' : ''}</span>`;
