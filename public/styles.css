@@ -792,7 +792,8 @@ td.mt-rem { white-space: nowrap; text-align: center; }
 /* علامة سنكري المائية: تُفعَّل بـ data-wm (جَناح، أو مخصّص بمفصل «خلفية الصفحة» = جَناح)
    بمتحكّمات حجم/شفافية/غماقية (تُضبط إنلاين من نافذة العلامة المائية) — ثابتة عند التمرير */
 :root[data-wm="on"] body::after {
-  background: url("/assets/logo-mark.png") no-repeat center center;
+  /* الشعار فقط (بلا كتابة) — logo-glyph.png نسخة مقتصّة من logo-mark.png */
+  background: url("/assets/logo-glyph.png") no-repeat center center;
   background-size: var(--wm-size, cover);
   opacity: var(--wm-opacity, .05);
   filter: brightness(var(--wm-bright, 1));

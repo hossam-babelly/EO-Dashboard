@@ -108,6 +108,11 @@
     'حجم العلامة (٪ من عرض الصفحة)': 'Watermark size (% of page width)',
     'الشفافية (٪)': 'Opacity (%)', 'غماقية اللون': 'Color darkness',
     'العلامة فوق المحتوى': 'Watermark above content', '↺ إعادة الضبط الافتراضي': '↺ Reset to default',
+    // ===== نافذة التقرير: الهوية ومستوى التفاصيل =====
+    'هوية التقرير (تشمل تقرير المهمة الواحدة):': 'Report identity (incl. single-task report):',
+    'سنكري الرسمية (ثابتة)': 'Official Sankari (fixed)', 'تتبع تصميم الواجهة': 'Follow UI design',
+    'مستوى التفاصيل (PDF):': 'Detail level (PDF):',
+    'كامل التفاصيل': 'Full details', 'آخر 3 أحداث': 'Last 3 events', 'المخرجات فقط': 'Deliverables only',
     // ===== اللوحات اليومية: توقيت لكل مستخدم =====
     'توقيت الإرسال الموحّد (بتوقيت سوريا)': 'Unified send time (Syria time)', '📢 تعميم على الجميع': '📢 Apply to all',
     'توقيت كل مستخدم على حدة:': 'Per-user send time:', '💾 حفظ المستلِمين': '💾 Save recipients',

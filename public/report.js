@@ -24,7 +24,20 @@ function activeReportAccent() {
   try { return localStorage.getItem('eo_accent') || ''; }
   catch (_) { return ''; }
 }
+// هوية التقرير (خيار المستخدم من نافذة التقرير — يشمل تقرير المهمة الواحدة):
+//   'classic' (الافتراضي) = هوية سنكري الرسمية الثابتة كما في النماذج المعتمدة
+//   'ui' = يتبع تصميم الواجهة المختار (الألوان والخلفية — حتى المخصّص بمفاصله)
+function reportIdentity() {
+  try { return localStorage.getItem('eo_report_theme') === 'ui' ? 'ui' : 'classic'; }
+  catch (_) { return 'classic'; }
+}
+// مستوى تفاصيل PDF القائمة: 'full' كامل السجل · 'last3' آخر ٣ أحداث · 'dv' المخرجات فقط
+function reportDetail() {
+  try { const v = localStorage.getItem('eo_report_detail'); return ['full', 'last3', 'dv'].includes(v) ? v : 'full'; }
+  catch (_) { return 'full'; }
+}
 function applyReportTheme() {
+  if (reportIdentity() === 'classic') { RB = Object.assign({}, RB_THEMES.classic); return; } // الهوية الثابتة
   const d = activeReportDesign();
   if (d !== 'custom') { RB = Object.assign({}, RB_THEMES[d] || RB_THEMES.classic); }
   else {
@@ -38,6 +51,54 @@ function applyReportTheme() {
   // تجاوز اللون الصريح إن اختاره المستخدم
   const a = activeReportAccent();
   if (a && RB_ACCENTS[a]) Object.assign(RB, RB_ACCENTS[a]);
+}
+
+// ===== خلفية صفحات التقرير (آمنة لـ html2canvas: صور محلية + SVG مضمّن، بلا تدرّجات CSS/فلاتر) =====
+let _glyphData = null;
+async function glyphDataUrl() {
+  if (_glyphData != null) return _glyphData;
+  try {
+    const blob = await (await fetch('/assets/logo-glyph.png')).blob();
+    _glyphData = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+  } catch (_) { _glyphData = ''; }
+  return _glyphData;
+}
+// التصميم الذي تُبنى منه الخلفية في وضع «تتبع الواجهة» (المخصّص → مفصل «خلفية الصفحة»)
+function reportBgDesign() {
+  const d = activeReportDesign();
+  if (d !== 'custom') return d;
+  try { const c = JSON.parse(localStorage.getItem('eo_custom') || '{}') || {}; return ['classic', 'wing', 'bp', 'marsad', 'horizon', 'pearl'].includes(c.ambient) ? c.ambient : 'wing'; }
+  catch (_) { return 'wing'; }
+}
+// طبقتا الخلفية {under, above} لكل صفحة:
+//  الهوية الثابتة → علامة الجناح تملأ كل صفحة (افتراضياً؛ فوق المحتوى بشفافية طباعية خفيفة كي لا تحجبها البطاقات)
+//  تتبع الواجهة  → مثل خلفية الواجهة: جَناح=العلامة بإعدادات المستخدم · الكلك=شبكة · مِرصَد/أفق/لؤلؤ=توهّج زاوية · كلاسيكي=بلا
+function reportBgParts(glyph) {
+  const abs = 'position:absolute;inset:0;pointer-events:none';
+  const wmDiv = (widthPct, opacity, z) => glyph
+    ? `<div style="${abs};z-index:${z};display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${glyph}" style="width:${widthPct}%;opacity:${opacity}"></div>`
+    : '';
+  if (reportIdentity() === 'classic') return { under: '', above: wmDiv(96, .045, 2) };
+  const d = reportBgDesign();
+  if (d === 'wing') {
+    // بإعدادات المستخدم (الحجم/الشفافية/فوق المحتوى) مع سقف طباعي للشفافية
+    let wm = {}; try { wm = JSON.parse(localStorage.getItem('eo_wm') || '{}') || {}; } catch (_) { wm = {}; }
+    const size = (wm.size != null && isFinite(Number(wm.size))) ? Math.min(300, Math.max(20, Number(wm.size))) : 96;
+    const op = (wm.op != null && isFinite(Number(wm.op))) ? Math.min(30, Math.max(1, Number(wm.op))) / 100 : .045;
+    return wm.top ? { under: '', above: wmDiv(size, op, 2) } : { under: wmDiv(size, Math.max(op, .04), 0), above: wmDiv(size, .03, 2) };
+  }
+  if (d === 'bp') {
+    return { under: `<div style="${abs};z-index:0;overflow:hidden"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="rgrid" width="26" height="26" patternUnits="userSpaceOnUse"><path d="M26 0H0V26" fill="none" stroke="rgba(70,84,90,.09)" stroke-width="1"/></pattern></defs><rect width="100%" height="100%" fill="url(#rgrid)"/></svg></div>`, above: '' };
+  }
+  if (d === 'marsad' || d === 'horizon' || d === 'pearl') {
+    return { under: `<div style="${abs};z-index:0;overflow:hidden"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="rglow" cx="88%" cy="-6%" r="75%"><stop offset="0%" stop-color="${RB.copper}" stop-opacity=".07"/><stop offset="60%" stop-color="${RB.copper}" stop-opacity="0"/></radialGradient></defs><rect width="100%" height="100%" fill="url(#rglow)"/></svg></div>`, above: '' };
+  }
+  return { under: '', above: '' }; // كلاسيكي (في وضع تتبع الواجهة) = بلا خلفية
+}
+// انتظار تحميل صور العنصر قبل html2canvas (وإلا فاتت العلامة المائية أول تصيير)
+async function awaitImgs(el) {
+  const imgs = [...el.querySelectorAll('img')];
+  await Promise.all(imgs.map((im) => (im.complete ? Promise.resolve() : new Promise((r) => { im.onload = im.onerror = r; }))));
 }
 
 const REPORT_COLS = [
@@ -208,6 +269,140 @@ async function paginate(rows, COLS, logo) {
   }
   if (cur.length) chunks.push(cur);
   return chunks.length ? chunks : [[]];
+}
+
+/* ===================== PDF القائمة — «السجل المفصّل المدمج» (النموذج المعتمد) =====================
+   لكل مهمة «شريحة»: سطر رئيسي (حقول الجدول المختارة) بشريط حالة ملوّن على الحافة،
+   وتحته المخرجات (يمين) وسجلّ المتابعة كاملاً بعمودين متوازيين (يسار).
+   صفحات A4 عرضية بارتفاع ثابت + ترويسة متكررة + بطاقات مؤشرات في الصفحة الأولى + ترقيم صفحات.
+   المهمة الأطول من صفحة تُقسَّم على مستوى الأحداث بشرائح «(تتمة)» — لا يُقصّ حدث في منتصفه. */
+const DP_PAGE_H = 730; // ارتفاع الصفحة عند عرض 1040 (نسبة A4 العرضية تقريباً)
+function softC(hex, a) {
+  const h = String(hex || '#8a8175').replace('#', '');
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(f, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function dpToday() { return (typeof todayISO === 'function') ? todayISO() : new Date().toISOString().slice(0, 10); }
+function dpDiff(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d1 = new Date(iso + 'T00:00:00'), d0 = new Date(dpToday() + 'T00:00:00');
+  return Math.round((d1 - d0) / 86400000);
+}
+function dpRel(diff) { return (typeof relFromDiffC === 'function') ? relFromDiffC(diff) : ''; }
+function dpPill(text, colorHex) { return `<span style="display:inline-block;border-radius:20px;padding:1px 10px;font-size:9.5px;font-weight:800;color:${colorHex};background:${softC(colorHex, .14)};white-space:nowrap">${esc(text)}</span>`; }
+function dpStatusColor(s) { return s === 'منجزة' ? RB.green : s === 'متوقفة' ? RB.red : s === 'قيد التنفيذ' ? RB.copperDeep : RB.muted; }
+function dpStripe(t, diff) {
+  if (t.status === 'منجزة') return RB.green;
+  if (diff != null && diff < 0) return RB.red;
+  if (diff === 0) return RB.amber;
+  return RB.champagne;
+}
+function dpDvRow(d) {
+  const box = `<span style="flex:none;width:11px;height:11px;border:1.5px solid ${d.done ? RB.green : RB.copper};border-radius:3px;margin-top:2px;background:${d.done ? RB.green : '#fff'};color:#fff;font-size:8px;line-height:11px;text-align:center;font-weight:800">${d.done ? '✓' : ''}</span>`;
+  const who = d.assignee ? `<span style="display:inline-block;background:${softC(RB.copperDeep, .13)};color:${RB.copperDeep};border-radius:9px;padding:0 7px;font-size:8.5px;font-weight:700;margin-inline-start:5px;white-space:nowrap">${esc(d.assignee)}</span>` : '';
+  const dr = d.dateRaw || d.dateIso || '';
+  const chip = (bg, txt) => `<span style="display:inline-block;background:${bg};color:#fff;border-radius:9px;padding:0 7px;font-size:8.5px;font-weight:700;margin-inline-start:4px;white-space:nowrap">${txt}</span>`;
+  const when = !dr ? '' : (d.done
+    ? chip(RB.green, '✓ ' + esc(typeof trDoneRel === 'function' ? trDoneRel(d.diffDays) : 'أُنجز'))
+    : chip(trDateColor(d.diffDays), esc(dr) + (dpRel(d.diffDays) ? ' · ' + esc(dpRel(d.diffDays)) : '')));
+  return `<div style="display:flex;gap:6px;align-items:flex-start;padding:3.5px 0;border-bottom:1px dashed ${softC(RB.copper, .16)};font-size:10px">${box}<span style="min-width:0;color:${d.done ? RB.muted : RB.ink};${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.text)}${who}${when}</span></div>`;
+}
+function dpEventHTML(e) {
+  const meta = e.manual
+    ? `<span style="color:${RB.muted}">حدث يدوي</span>`
+    : `${esc(typeof fuShort === 'function' ? fuShort(e.date, e.time) : (e.date || ''))} — <b style="color:${RB.copperDeep}">${esc(e.author || '')}</b>`;
+  return `<div style="position:relative;padding-inline-start:13px;padding-bottom:6px">
+      <span style="position:absolute;inset-inline-start:-4px;top:3px;width:7px;height:7px;border-radius:50%;background:${e.manual ? RB.champagne : RB.copper}"></span>
+      <div style="font-size:9px;color:${RB.muted}">${meta}</div>
+      <div style="font-size:10.5px;color:${RB.ink};white-space:pre-line;line-height:1.5">${esc(e.text || '')}</div></div>`;
+}
+function dpEventsCols(evs) {
+  const col = (list) => `<div style="border-inline-start:1.5px solid ${RB.line};min-width:0">${list.map(dpEventHTML).join('')}</div>`;
+  if (evs.length < 3) return col(evs);
+  const half = Math.ceil(evs.length / 2);
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">${col(evs.slice(0, half))}${col(evs.slice(half))}</div>`;
+}
+// o = { dvs, evs (الأحدث أولاً), evTotal, more (أحداث مؤجلة للتتمة), colset, cont }
+function dpSliceHTML(t, num, o) {
+  const diff = dpDiff(t.deadlineIso);
+  const stripe = dpStripe(t, diff);
+  const cs = o.colset;
+  let head;
+  if (o.cont) {
+    head = `<div style="display:flex;align-items:center;gap:10px;background:${RB.cream};border-bottom:1px solid ${RB.line};padding:5px 12px;font-size:10px">
+        <span style="font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;color:${RB.copper};font-size:13px">${num}</span>
+        <b style="color:${RB.ink}">${esc(t.project || '')}</b>
+        ${t.file ? `<span style="color:${RB.muted};font-size:9px">الملف: ${esc(t.file)}</span>` : ''}
+        <span style="color:${RB.copperDeep};font-weight:800">(تتمة سجلّ المتابعة)</span></div>`;
+  } else {
+    const cells = [];
+    const cell = (l, v) => cells.push(`<span style="padding:0 10px;border-inline-start:1px solid ${RB.line}"><span style="display:block;font-size:8.5px;color:${RB.muted}">${l}</span><span style="font-size:10px;font-weight:700;color:${RB.ink}">${v}</span></span>`);
+    if (cs.has('type')) cell('النوع', esc(t.type || '—'));
+    if (cs.has('owner')) cell('المسؤول', esc((t.owner || '—').replace(/\n+/g, '، ')));
+    if (cs.has('linkedTo') && t.linkedTo) cell('مرتبط بـ', esc(t.linkedTo.replace(/\n+/g, '، ')));
+    if (cs.has('deadline')) {
+      const dl = t.deadlineIso || t.deadlineRaw || '—';
+      const c = t.status === 'منجزة' ? RB.green : diff != null && diff < 0 ? RB.red : diff === 0 ? RB.amber : RB.ink;
+      const rel = (t.status !== 'منجزة' && diff != null) ? ` <span style="font-weight:400;color:${c}">(${esc(dpRel(diff))})</span>` : '';
+      cell('الموعد', `<span style="color:${c}">${esc(dl)}</span>${rel}`);
+    }
+    if (t.created) cell('الإنشاء', esc(t.created));
+    if (t.status === 'منجزة' && t.completed) cell('تاريخ الإنجاز', `<span style="color:${RB.green}">${esc(t.completed)}</span>`);
+    if (cs.has('notes') && t.notes) cells.push(`<span style="padding:0 10px;border-inline-start:1px solid ${RB.line};max-width:220px"><span style="display:block;font-size:8.5px;color:${RB.muted}">ملاحظات</span><span style="font-size:9.5px;color:${RB.ink}">${esc(t.notes)}</span></span>`);
+    const pills = [];
+    if (cs.has('priority') && t.priority) pills.push(dpPill(t.priority, priColor(t.priority)));
+    if (cs.has('status')) pills.push(dpPill(t.status || '—', dpStatusColor(t.status)));
+    head = `<div style="display:flex;align-items:center;flex-wrap:wrap;row-gap:3px;background:${RB.cream};border-bottom:1px solid ${RB.line};padding:6px 12px 6px 10px">
+        <span style="font-family:'Cormorant Garamond',Georgia,serif;font-size:14px;font-weight:700;color:${RB.copper};padding-inline-end:8px">${num}</span>
+        <span style="min-width:130px;padding-inline-end:6px"><span style="display:block;font-weight:800;font-size:11.5px;color:${RB.ink}">${esc(t.project || '—')}</span>${t.file ? `<span style="font-size:9px;color:${RB.muted}">الملف: ${esc(t.file)}</span>` : ''}</span>
+        ${cells.join('')}
+        <span style="margin-inline-start:auto;display:flex;gap:5px;padding-inline-start:8px">${pills.join('')}</span></div>`;
+  }
+  let detail = '';
+  const showDv = !o.cont && o.dvs.length > 0;
+  const showEv = o.evs.length > 0;
+  if (showDv || showEv) {
+    const dvTitle = `<div style="font-size:8.5px;letter-spacing:1px;color:${RB.copperDeep};font-weight:800;margin-bottom:4px">المخرجات المطلوبة (${o.dvs.filter((d) => d.done).length}/${o.dvs.length})</div>`;
+    const evNote = o.more > 0 ? ` <span style="color:${RB.amber};font-weight:800">· يتبع +${o.more}</span>` : '';
+    const evTitle = `<div style="font-size:8.5px;letter-spacing:1px;color:${RB.copperDeep};font-weight:800;margin-bottom:5px">سجلّ المتابعة${o.cont ? '' : ` (${o.evTotal} ${o.evTotal === 1 ? 'حدث' : 'أحداث'})`}${evNote}</div>`;
+    const dvCol = showDv ? `<div style="padding:7px 12px">${dvTitle}${o.dvs.map(dpDvRow).join('')}</div>` : '';
+    const evCol = showEv ? `<div style="padding:7px 12px;${showDv ? `border-inline-start:1px solid ${softC(RB.copper, .14)}` : ''}">${evTitle}${dpEventsCols(o.evs)}</div>` : '';
+    detail = (showDv && showEv) ? `<div style="display:grid;grid-template-columns:330px 1fr">${dvCol}${evCol}</div>` : (dvCol || evCol);
+  }
+  return `<div class="dpslice" style="border:1px solid ${RB.line};border-inline-start:4px solid ${stripe};border-radius:10px;margin-bottom:10px;background:#fff;overflow:hidden">${head}${detail}</div>`;
+}
+function dpBand(logo, count) {
+  const img = logo && logo.url ? `<img src="${logo.url}" width="${logo.w}" height="${logo.h}" style="width:${logo.w}px;height:${logo.h}px">` : '';
+  return `<div style="background:${RB.ink};padding:10px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${RB.copper}">
+      <div><div style="font-size:16px;font-weight:800;color:#fff">تقرير المهام المفصّل</div>
+      <div style="font-size:10px;color:${RB.champagne};margin-top:2px">${esc(reportFiltersText())} &nbsp;·&nbsp; ${count} مهمة &nbsp;·&nbsp; ${esc(nowText())}</div></div>${img}</div>`;
+}
+function dpTiles(ts) {
+  const today = dpToday();
+  const total = ts.length;
+  const run = ts.filter((t) => t.status === 'قيد التنفيذ').length;
+  const late = ts.filter((t) => t.status !== 'منجزة' && t.deadlineIso && t.deadlineIso < today).length;
+  const done = ts.filter((t) => t.status === 'منجزة').length;
+  const pct = total ? Math.round(done / total * 100) : 0;
+  const tile = (v, l, c) => `<div style="flex:1;border-radius:9px;padding:7px 13px;background:${softC(c, .13)};color:${c};display:flex;justify-content:space-between;align-items:center"><span style="font-size:17px;font-weight:900">${v}</span><span style="font-size:9.5px;font-weight:700">${l}</span></div>`;
+  return `<div style="display:flex;gap:9px;padding:9px 28px 0">${tile(total, 'إجمالي المهام', RB.copperDeep)}${tile(run, 'قيد التنفيذ', RB.amber)}${tile(late, 'متأخرة', RB.red)}${tile(pct + '%', 'نسبة الإنجاز', RB.green)}</div>`;
+}
+function dpPage(slicesHtml, o) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;height:${DP_PAGE_H}px;position:relative;overflow:hidden;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
+      ${o.bg.under}
+      <div style="position:relative;z-index:1">${dpBand(o.logo, o.count)}${o.first ? dpTiles(o.tasks) : ''}<div style="padding:10px 28px 0">${slicesHtml}</div></div>
+      ${o.bg.above}
+      <div style="position:absolute;z-index:3;inset-inline:28px;bottom:0;height:30px;border-top:1px solid ${RB.line};display:flex;align-items:center;justify-content:space-between;font-size:9px;color:${RB.muted}"><span>© مجموعة سنكري القابضة — الإدارة التنفيذية</span><span>صفحة ${o.pageNo} من ${o.pageCount}</span></div></div>`;
+}
+function dpMeasure(html, width) {
+  const m = document.createElement('div');
+  m.style.cssText = `position:absolute;left:-12000px;top:0;width:${width}px;visibility:hidden`;
+  m.innerHTML = html;
+  document.body.appendChild(m);
+  const h = m.firstElementChild ? m.firstElementChild.getBoundingClientRect().height : 0;
+  m.remove();
+  return h;
 }
 
 // ===== شكل التقرير: جدول (افتراضي) / كانبان / تقويم =====
@@ -383,28 +578,93 @@ async function exportLayoutWord() {
   dl(new Blob(['﻿', doc], { type: 'application/msword' }), reportName() + '.doc');
 }
 
-// PDF: نرسم كل صفحة كصورة مستقلّة ونضيفها لصفحة PDF — لا قصّ، مهام كاملة، ترويسة مكرّرة
+// PDF القائمة: «السجل المفصّل المدمج» — كل مهمة بشريحتها المفصّلة (مخرجات + سجلّ متابعة)
 async function exportPDF() {
   if (!(curData() === 'tasks' && curShape() === 'table')) return exportLayoutPDF();
-  const rows = reportTasks().map(reportRow);
-  const COLS = activeCols();
-  const logo = await logoSmall(34);
-  const chunks = await paginate(rows, COLS, logo);
+  const tasks = reportTasks();
+  const det = reportDetail();
+  const colset = new Set(activeCols().map((c) => c.k));
+  const logo = await logoSmall(30);
+  const glyph = await glyphDataUrl();
+  const bg = reportBgParts(glyph);
+  try { await document.fonts.ready; } catch { /* تجاهل */ }
+
+  // ميزانيات الارتفاع (صفحة ثابتة الارتفاع + ترويسة متكررة + مؤشرات في الأولى + تذييل)
+  const CONTENT_W = 984; // 1040 − 28×2
+  const FOOT = 30, PADTOP = 10, SAFE = 8;
+  const bandH = dpMeasure(dpBand(logo, tasks.length), 1040);
+  const tilesH = tasks.length ? dpMeasure(dpTiles(tasks), 1040) : 0;
+  const availFirst = DP_PAGE_H - bandH - tilesH - PADTOP - FOOT - SAFE;
+  const availNext = DP_PAGE_H - bandH - PADTOP - FOOT - SAFE;
+
+  // توزيع الشرائح على الصفحات (مع تقسيم الأحداث للمهمة الأطول من صفحة)
+  const pages = [];
+  let cur = [], used = 0, avail = availFirst;
+  const pushPage = () => { pages.push(cur); cur = []; used = 0; avail = availNext; };
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    const num = i + 1;
+    const dvs = (colset.has('deliverable') && typeof orderedDeliverables === 'function') ? orderedDeliverables(t) : [];
+    let evsAll = (colset.has('followup') && det !== 'dv') ? orderedEventsReport(t).slice().reverse() : []; // الأحدث أولاً
+    const evTotal = evsAll.length;
+    if (det === 'last3' && evsAll.length > 3) evsAll = evsAll.slice(0, 3);
+    let html = dpSliceHTML(t, num, { dvs, evs: evsAll, evTotal, more: 0, colset, cont: false });
+    let h = dpMeasure(html, CONTENT_W) + 10;
+    if (h <= availNext) {
+      // تتسع في صفحة فارغة: إن لم تتسع في المتبقي انتقل لصفحة جديدة
+      if (h > avail - used && cur.length) pushPage();
+      cur.push(html); used += h;
+      continue;
+    }
+    // أطول من صفحة: قلّص أحداث الجزء الأول حتى يتسع، والبقية شرائح «(تتمة)»
+    let k = evsAll.length, firstHtml = html, firstH = h;
+    while (k > 0) {
+      firstHtml = dpSliceHTML(t, num, { dvs, evs: evsAll.slice(0, k), evTotal, more: evsAll.length - k, colset, cont: false });
+      firstH = dpMeasure(firstHtml, CONTENT_W) + 10;
+      if (firstH <= availNext) break;
+      k--;
+    }
+    if (k === 0) {
+      // حتى بأقل الأحداث لا تتسع (محتوى ضخم جداً) — صفحة مستقلة ويشرّحها أمان addCanvasPaged
+      k = Math.min(1, evsAll.length); // firstHtml من آخر دورة = الشريحة بحدث واحد (أو بلا أحداث)
+      if (cur.length) pushPage();
+      cur.push(firstHtml); pushPage();
+    } else {
+      if (firstH > avail - used && cur.length) pushPage();
+      cur.push(firstHtml); used += firstH;
+    }
+    let rest = evsAll.slice(k);
+    while (rest.length) {
+      let kk = rest.length, contHtml = '', contH = 0;
+      while (kk > 0) {
+        contHtml = dpSliceHTML(t, num, { dvs: [], evs: rest.slice(0, kk), evTotal, more: rest.length - kk, colset, cont: true });
+        contH = dpMeasure(contHtml, CONTENT_W) + 10;
+        if (contH <= availNext) break;
+        kk--;
+      }
+      if (kk === 0) { kk = 1; contHtml = dpSliceHTML(t, num, { dvs: [], evs: rest.slice(0, 1), evTotal, more: rest.length - 1, colset, cont: true }); contH = dpMeasure(contHtml, CONTENT_W) + 10; }
+      if (contH > avail - used && cur.length) pushPage();
+      cur.push(contHtml); used += contH;
+      rest = rest.slice(kk);
+    }
+  }
+  if (cur.length) pushPage();
+  if (!pages.length) pages.push([`<div style="padding:36px;text-align:center;color:${RB.muted};font-size:13px">لا توجد مهام مطابقة.</div>`]);
+
+  // تصيير كل صفحة صورة مستقلة وإضافتها للـ PDF
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-  const pw = pdf.internal.pageSize.getWidth();
-  let gi = 0;
-  for (let ci = 0; ci < chunks.length; ci++) {
+  for (let p = 0; p < pages.length; p++) {
     const el = document.createElement('div');
     el.style.cssText = 'position:absolute;left:-12000px;top:0;width:1040px;background:#fff';
-    el.innerHTML = pageHTML(COLS, logo, rows.length, chunks[ci].map((r) => rowHTML(COLS, r, gi++)).join(''), true);
+    el.innerHTML = dpPage(pages[p].join(''), { logo, count: tasks.length, first: p === 0, pageNo: p + 1, pageCount: pages.length, bg, tasks });
     document.body.appendChild(el);
     try { await document.fonts.ready; } catch { /* تجاهل */ }
-    await new Promise((r) => setTimeout(r, 40));
+    await awaitImgs(el);
+    await new Promise((r) => setTimeout(r, 30));
     const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1040 });
     el.remove();
-    if (ci > 0) pdf.addPage();
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, canvas.height * pw / canvas.width);
+    addCanvasPaged(pdf, canvas, p === 0);
   }
   pdf.save(reportName() + '.pdf');
 }
@@ -524,9 +784,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const isTaskTable = curData() === 'tasks' && curShape() === 'table';
     if (colsWrap) colsWrap.style.display = isTaskTable ? '' : 'none';
     if (excelBtnEl) excelBtnEl.style.display = isTaskTable ? '' : 'none';
+    const dtw = document.getElementById('repDetailWrap'); if (dtw) dtw.style.display = isTaskTable ? '' : 'none';
     if (info) info.textContent = `سيُصدَّر حسب العرض الحالي: ${curData() === 'meetings' ? 'الاجتماعات' : 'المهام'} — ${SHAPE_AR[curShape()] || 'جدول'}`;
     back.classList.add('open');
   };
+  // هوية التقرير (ثابتة/تتبع الواجهة) + مستوى التفاصيل — تُحفظ لكل متصفح وتشمل تقرير المهمة الواحدة
+  const idWrap = document.getElementById('repIdentity');
+  if (idWrap) {
+    const sync = () => [...idWrap.querySelectorAll('.rep-lay')].forEach((b) => b.classList.toggle('active', b.dataset.v === reportIdentity()));
+    idWrap.addEventListener('click', (e) => { const b = e.target.closest('.rep-lay'); if (!b) return; try { localStorage.setItem('eo_report_theme', b.dataset.v); } catch (_) {} sync(); });
+    sync();
+  }
+  const dtWrap = document.getElementById('repDetail');
+  if (dtWrap) {
+    const sync = () => [...dtWrap.querySelectorAll('.rep-lay')].forEach((b) => b.classList.toggle('active', b.dataset.v === reportDetail()));
+    dtWrap.addEventListener('click', (e) => { const b = e.target.closest('.rep-lay'); if (!b) return; try { localStorage.setItem('eo_report_detail', b.dataset.v); } catch (_) {} sync(); });
+    sync();
+  }
   const cl = document.getElementById('reportClose'); if (cl) cl.onclick = close;
   if (back) back.onclick = (e) => { if (e.target === back) close(); };
   const pdf = document.getElementById('reportPdf'); if (pdf) pdf.onclick = runExport(pdf, exportPDF, 'PDF');
@@ -535,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ===================== تقرير المهمة الواحدة (PDF بورتريه A4، بند لا يُقسَّم بين صفحتين) ===================== */
-const TR_W = 780, TR_PAGE_H = 1085; // عرض العرض/القياس + ارتفاع صفحة A4 بورتريه متحفّظ عند هذا العرض
+const TR_W = 780; // عرض القياس/التصيير لصفحة تقرير المهمة
 
 // لون شارة موعد المخرَج حسب القرب (٤ حالات): متأخر / اليوم / خلال ٣ / بعيد
 function trDateColor(diff) {
@@ -545,7 +819,6 @@ function trDateColor(diff) {
   if (diff <= 3) return '#9a7b50';
   return RB.muted;
 }
-function trPill(text, color) { return `<span style="display:inline-block;padding:2px 11px;border-radius:20px;font-size:12px;font-weight:800;color:${color};background:#fff;border:1.5px solid ${color}">${esc(text)}</span>`; }
 
 // ترتيب الاجتماعات: المنتهية أولاً، ثم المجدولة حسب موعدها، ثم المطلوبة
 function orderedMeetingsReport(t) {
@@ -567,70 +840,93 @@ function orderedEventsReport(t) {
   });
 }
 
-function trHeaderBlock(logo, t) {
-  const img = logo && logo.url ? `<img src="${logo.url}" width="${logo.w}" height="${logo.h}" style="width:${logo.w}px;height:${logo.h}px">` : '';
-  const title = `${esc(t.project || 'مهمة')}${t.file ? ' — ' + esc(t.file) : ''}`;
-  return `<div style="background:${RB.ink};padding:14px 22px;display:flex;align-items:center;justify-content:space-between;border-bottom:4px solid ${RB.copper}">
-      <div><div style="font-size:19px;font-weight:800;color:#fff">تقرير المهمة</div><div style="font-size:12.5px;color:${RB.champagne};margin-top:3px">${title}</div></div>${img}</div>
-    <div style="padding:8px 22px;background:${RB.cream};border-bottom:1px solid ${RB.line};font-size:11.5px;color:${RB.copperDeep}"><b>تاريخ التقرير:</b> ${esc(nowText())} &nbsp;•&nbsp; مجموعة سنكري القابضة — الإدارة التنفيذية</div>`;
-}
-function trInfoBlock(t) {
-  const rows = [
-    ['المشروع', esc(t.project || '—')], ['الملف', esc(t.file || '—')], ['النوع', esc(t.type || '—')],
-    ['تاريخ إنشاء المهمة', esc(t.created || t.createdIso || '—')], ['الموعد / الدورية', esc(t.deadlineRaw || t.deadlineIso || '—')],
-    ['الأولوية', trPill(t.priority || '—', priColor(t.priority))], ['الحالة', trPill(t.status || '—', stColor(t.status))],
-    ['المسؤول المعني', esc((t.owner || '—').replace(/\n+/g, '، '))], ['مرتبط بـ', esc((t.linkedTo || '—').replace(/\n+/g, '، '))],
-  ];
-  const cells = rows.map(([l, v]) => `<div style="border:1px solid ${RB.line};border-radius:8px;padding:8px 11px;background:#fff">
-      <div style="font-size:10.5px;color:${RB.muted};font-weight:700;margin-bottom:3px">${l}</div>
-      <div style="font-size:13px;color:${RB.ink};font-weight:600">${v}</div></div>`).join('');
-  return `<div class="trblk" style="padding:14px 22px 4px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${cells}</div></div>`;
-}
-function trHeadingBlock(text) {
-  return `<div class="trblk" style="padding:14px 22px 6px"><div style="font-size:15px;font-weight:800;color:${RB.ink};border-bottom:2px solid ${RB.copper};padding-bottom:5px">${esc(text)}</div></div>`;
-}
+/* «صحيفة المهمة» (النموذج المعتمد): صفحة طولية بطابع الأوراق الرسمية —
+   ترويسة سيريفية برقم المهمة، عنوان وشارات، شبكة بيانات، المخرجات، الاجتماعات، ثم سجلّ المتابعة كاملاً بخيط زمني. */
+const TR_PAGE_FULL = 1100; // ارتفاع الصفحة الثابت عند عرض 780 (نسبة A4 الطولية تقريباً)
+function trPaperBg() { return reportIdentity() === 'classic' ? '#fdfaf5' : '#ffffff'; }
 function trDoneRel(diff) {
   if (typeof doneRelC === 'function') return doneRelC(diff);
   if (diff == null) return 'منجَز';
   return diff < 0 ? `أُنجز متأخراً ${Math.abs(diff)} يوم` : diff === 0 ? 'أُنجز في الموعد' : `أُنجز قبل ${diff} يوم`;
 }
-function trDeliverableBlock(d, n) {
-  const pill = (bg, txt) => `<span style="display:inline-block;padding:1px 9px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:${bg}">${txt}</span>`;
-  const date = !d.dateRaw
-    ? `<span style="font-size:11px;color:${RB.muted}">بلا موعد</span>`
-    : d.done
-      ? pill(RB.green, `✓ ${esc(d.dateRaw)} · ${esc(trDoneRel(d.diffDays))}`)              // منجَز: عدّاد مُجمَّد
-      : pill(trDateColor(d.diffDays), `📅 ${esc(d.dateRaw)} · ${esc(relFromDiffC(d.diffDays))}`);
-  const who = d.assignee ? `<span style="font-size:11px;color:${RB.copperDeep};font-weight:700">👤 ${esc(d.assignee)}</span>` : '';
-  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-inline-start:3px solid ${d.done ? RB.green : RB.copper};border-radius:8px;padding:9px 12px;background:${d.done ? '#f3f6f0' : '#fff'}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div style="font-size:11px;color:${RB.muted};font-weight:700">${d.done ? '✓ منجَز' : '○ قيد التنفيذ'} · مخرج ${n}</div><div style="display:flex;gap:8px;align-items:center">${who}${date}</div></div>
-      <div style="font-size:13px;color:${RB.ink};font-weight:600;${d.done ? 'text-decoration:line-through;opacity:.7' : ''}">${esc(d.text)}</div></div></div>`;
+function trMastheadHTML(t, cont) {
+  const num = String(t.num || '').trim();
+  return `<div class="trmast" style="display:flex;justify-content:space-between;align-items:flex-end;padding:24px 34px 12px;border-bottom:2.5px solid ${RB.ink}">
+      <div><div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:700;letter-spacing:2.5px;color:${RB.ink}">SANKARI</div>
+      <div style="font-size:8.5px;letter-spacing:3px;color:${RB.copperDeep};font-weight:700;margin-top:1px">HOLDING GROUP</div></div>
+      <div style="text-align:left"><div style="font-size:9px;color:${RB.muted}">تقرير مهمة${cont ? ' — (تتمة)' : ''}</div>
+      ${num ? `<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:700;color:${RB.champagne};line-height:1">${esc(num.length < 2 ? '0' + num : num)}</div>` : `<div style="font-weight:800;font-size:11px;color:${RB.ink}">${esc(nowText())}</div>`}</div></div>`;
 }
-const TR_MST = { done: { t: 'تم', c: RB.green }, scheduled: { t: 'مجدول', c: RB.copperDeep }, required: { t: 'مطلوب', c: RB.amber } };
+function trTitleBlock(t) {
+  const diff = dpDiff(t.deadlineIso);
+  const dl = t.deadlineRaw || t.deadlineIso || '';
+  const dlColor = t.status === 'منجزة' ? RB.green : diff != null && diff < 0 ? RB.red : diff === 0 ? RB.amber : RB.ink;
+  const rel = (typeof relText === 'function') ? relText(t) : (diff != null ? dpRel(diff) : '');
+  const badges = [
+    t.priority ? dpPill(t.priority, priColor(t.priority)) : '',
+    dpPill(t.status || '—', dpStatusColor(t.status)),
+    dl ? `<span style="font-size:11px;font-weight:800;color:${dlColor}">الموعد ${esc(dl)}${rel ? ' · ' + esc(rel) : ''}</span>` : '',
+  ].filter(Boolean).join('');
+  return `<div class="trblk" style="padding:14px 0 2px">
+      <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:24px;font-weight:700;color:${RB.ink};line-height:1.3">${esc(t.project || 'مهمة')}</div>
+      <div style="font-size:10.5px;color:${RB.muted};margin:2px 0 10px">${t.file ? 'الملف: ' + esc(t.file) + ' · ' : ''}الإدارة التنفيذية — مجموعة سنكري القابضة</div>
+      <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">${badges}</div></div>`;
+}
+function trInfoBlock(t) {
+  const rows = [
+    ['النوع', esc(t.type || '—')],
+    ['المسؤول المعني', esc((t.owner || '—').replace(/\n+/g, '، '))],
+    ['تاريخ الإنشاء', esc(t.created || t.createdIso || '—')],
+    ['مرتبط بـ', esc((t.linkedTo || '—').replace(/\n+/g, '، '))],
+    ['الموعد / الدورية', esc(t.deadlineRaw || t.deadlineIso || '—')],
+    t.status === 'منجزة' && t.completed ? ['تاريخ الإنجاز', `<span style="color:${RB.green};font-weight:800">${esc(t.completed)}</span>`] : null,
+    t.notes ? ['ملاحظات', esc(t.notes)] : null,
+  ].filter(Boolean);
+  const cells = rows.map(([l, v]) => `<div style="background:#fff;padding:8px 12px"><div style="font-size:8.5px;color:${RB.muted}">${l}</div><div style="font-size:11px;font-weight:800;color:${RB.ink};margin-top:1px">${v}</div></div>`).join('');
+  return `<div class="trblk" style="padding:10px 0 4px"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:${RB.line};border:1px solid ${RB.line};border-radius:10px;overflow:hidden">${cells}</div></div>`;
+}
+function trHeadingBlock(text) {
+  return `<div class="trblk" style="padding:14px 0 8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:10px;letter-spacing:1.5px;color:${RB.copperDeep};font-weight:800">${esc(text)}</span><span style="flex:1;height:1px;background:${softC(RB.copper, .3)}"></span></div></div>`;
+}
+function trDeliverableBlock(d) {
+  const box = `<span style="flex:none;width:13px;height:13px;border:1.5px solid ${d.done ? RB.green : RB.copper};border-radius:3px;margin-top:3px;background:${d.done ? RB.green : '#fff'};color:#fff;font-size:9px;line-height:13px;text-align:center;font-weight:800">${d.done ? '✓' : ''}</span>`;
+  const who = d.assignee ? `<span style="display:inline-block;background:${softC(RB.copperDeep, .13)};color:${RB.copperDeep};border-radius:10px;padding:0 8px;font-size:9.5px;font-weight:700;margin-inline-start:6px;white-space:nowrap">${esc(d.assignee)}</span>` : '';
+  const dr = d.dateRaw || d.dateIso || '';
+  const chip = (bg, txt) => `<span style="display:inline-block;background:${bg};color:#fff;border-radius:10px;padding:0 8px;font-size:9.5px;font-weight:700;margin-inline-start:5px;white-space:nowrap">${txt}</span>`;
+  const when = !dr ? '' : (d.done
+    ? chip(RB.green, '✓ ' + esc(dr) + ' · ' + esc(trDoneRel(d.diffDays)))
+    : chip(trDateColor(d.diffDays), esc(dr) + (dpRel(d.diffDays) ? ' · ' + esc(dpRel(d.diffDays)) : '')));
+  return `<div class="trblk" style="padding:0"><div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px dashed ${softC(RB.copper, .18)};font-size:11.5px">${box}<span style="min-width:0;line-height:1.6;color:${d.done ? RB.muted : RB.ink};${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.text)}${who}${when}</span></div></div>`;
+}
+const TR_MST = { done: { t: 'تم', c: () => RB.green }, scheduled: { t: 'مجدول', c: () => RB.copperDeep }, required: { t: 'مطلوب', c: () => RB.amber } };
 function trMeetingBlock(m) {
   const st = TR_MST[m.status] || TR_MST.required;
-  const when = (m.status === 'scheduled' && m.datetime) ? `<span style="font-size:11px;color:${RB.muted}">🕓 ${esc(m.datetime)}</span>` : '';
-  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-radius:8px;padding:9px 12px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <div style="font-size:13px;color:${RB.ink};font-weight:700">🤝 ${esc(m.title)}</div>
-      <div style="display:flex;gap:8px;align-items:center">${when}${trPill(st.t, st.c)}</div></div></div>`;
+  const when = (m.status === 'scheduled' && m.datetime) ? `<span style="font-size:10px;color:${RB.muted}">${esc(m.datetime)}</span>` : '';
+  return `<div class="trblk" style="padding:0"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed ${softC(RB.copper, .18)}">
+      <span style="font-size:11.5px;color:${RB.ink};font-weight:700">${esc(m.title)}</span>
+      <span style="display:flex;gap:6px;align-items:center">${when}${dpPill(st.t, st.c())}</span></div></div>`;
 }
 function trEventBlock(e) {
-  const meta = e.manual ? 'متابعة (يدوي)' : `${esc(e.author || '')} · ${esc((typeof fuShort === 'function') ? fuShort(e.date, e.time) : (e.date || ''))}`;
-  return `<div class="trblk" style="padding:0 22px 8px"><div style="border:1px solid ${RB.line};border-radius:8px;padding:9px 12px;background:#fff">
-      <div style="font-size:11px;color:${RB.copperDeep};font-weight:700;margin-bottom:4px">${meta}</div>
-      <div style="font-size:12.5px;color:${RB.ink};white-space:pre-line">${esc(e.text || '')}</div></div></div>`;
+  const meta = e.manual
+    ? `<span style="color:${RB.muted}">حدث يدوي</span>`
+    : `${esc(typeof fuShort === 'function' ? fuShort(e.date, e.time) : (e.date || ''))} — <b style="color:${RB.copperDeep}">${esc(e.author || '')}</b>`;
+  return `<div class="trblk" style="padding:0"><div style="position:relative;padding-inline-start:15px;padding-bottom:9px;border-inline-start:1.5px solid ${RB.line};margin-inline-start:3px">
+      <span style="position:absolute;inset-inline-start:-4.5px;top:3px;width:8px;height:8px;border-radius:50%;background:${e.manual ? RB.champagne : RB.copper}"></span>
+      <div style="font-size:10px;color:${RB.muted}">${meta}</div>
+      <div style="font-size:11.5px;color:${RB.ink};white-space:pre-line;line-height:1.65;margin-top:1px">${esc(e.text || '')}</div></div></div>`;
 }
-function trPageHTML(logo, t, blocks) {
-  return `<div class="rpt-page" dir="rtl" style="width:100%;background:#fff;box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
-      ${trHeaderBlock(logo, t)}
-      <div class="trbody">${blocks.map((b) => b.html).join('')}</div>
-      <div style="padding:6px 22px 12px;font-size:10px;color:${RB.muted};text-align:center">© مجموعة سنكري القابضة — الإدارة التنفيذية</div></div>`;
+function trPageHTML(t, blocks, o) {
+  return `<div class="rpt-page" dir="rtl" style="width:100%;height:${TR_PAGE_FULL}px;position:relative;overflow:hidden;background:${trPaperBg()};box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
+      ${o.bg.under}
+      <div style="position:relative;z-index:1">${trMastheadHTML(t, o.cont)}<div class="trbody" style="padding:0 34px">${blocks.map((b) => b.html).join('')}</div></div>
+      ${o.bg.above}
+      <div style="position:absolute;z-index:3;inset-inline:34px;bottom:0;height:34px;border-top:1px solid ${RB.line};display:flex;align-items:center;justify-content:space-between;font-size:9.5px;color:${RB.muted}"><span>© مجموعة سنكري القابضة — الإدارة التنفيذية</span><span>${esc(nowText())}</span><span>صفحة ${o.pageNo} من ${o.pageCount}</span></div></div>`;
 }
 // قياس ارتفاع كل بند وتوزيع البنود على صفحات دون تقسيم أي بند (مع إبقاء العنوان مع أول بنده)
-async function trPaginate(blocks, logo, t) {
+async function trPaginate(blocks, t, bg) {
   const m = document.createElement('div');
   m.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;visibility:hidden`;
-  m.innerHTML = trPageHTML(logo, t, blocks);
+  m.innerHTML = trPageHTML(t, blocks, { bg, pageNo: 1, pageCount: 1, cont: false });
   document.body.appendChild(m);
   try { await document.fonts.ready; } catch { /* تجاهل */ }
   await new Promise((r) => setTimeout(r, 20));
@@ -639,12 +935,12 @@ async function trPaginate(blocks, logo, t) {
   const contentTop = body.getBoundingClientRect().top - page.getBoundingClientRect().top;
   const hts = [...m.querySelectorAll('.trblk')].map((e) => e.getBoundingClientRect().height);
   m.remove();
-  const FOOTER = 34;
-  const avail = Math.max(200, TR_PAGE_H - contentTop - FOOTER);
+  const FOOTER = 40;
+  const avail = Math.max(200, TR_PAGE_FULL - contentTop - FOOTER);
   const pages = []; let cur = [], used = 0;
   for (let i = 0; i < blocks.length; i++) {
     const h = hts[i] || 24;
-    const nextH = (blocks[i].keepNext && i + 1 < blocks.length) ? (hts[i + 1] || 24) : 0; // العنوان يبقى مع أول بند
+    const nextH = (blocks[i].keepNext && i + 1 < blocks.length) ? (hts[i + 1] || 24) : 0; // العنوان يبقى مع أول بنده
     if (cur.length && used + h + nextH > avail) { pages.push(cur); cur = []; used = 0; }
     cur.push(blocks[i]); used += h;
   }
@@ -653,24 +949,26 @@ async function trPaginate(blocks, logo, t) {
 }
 async function taskReportPDF(task) {
   try {
-    applyReportTheme(); // لوحة ألوان التقرير حسب التصميم الفعّال
-    const logo = await logoSmall(30);
-    const blocks = [{ html: trInfoBlock(task) }];
+    applyReportTheme(); // هوية التقرير (ثابتة أو تتبع الواجهة)
+    const glyph = await glyphDataUrl();
+    const bg = reportBgParts(glyph);
+    const blocks = [{ html: trTitleBlock(task) }, { html: trInfoBlock(task) }];
     const dvs = (typeof orderedDeliverables === 'function') ? orderedDeliverables(task) : [];
-    if (dvs.length) { blocks.push({ html: trHeadingBlock('📋 المخرجات المطلوبة'), keepNext: true }); dvs.forEach((d, i) => blocks.push({ html: trDeliverableBlock(d, i + 1) })); }
+    if (dvs.length) { blocks.push({ html: trHeadingBlock(`المخرجات المطلوبة (${dvs.filter((d) => d.done).length}/${dvs.length})`), keepNext: true }); dvs.forEach((d) => blocks.push({ html: trDeliverableBlock(d) })); }
     const mts = orderedMeetingsReport(task);
-    if (mts.length) { blocks.push({ html: trHeadingBlock('🤝 الاجتماعات'), keepNext: true }); mts.forEach((mm) => blocks.push({ html: trMeetingBlock(mm) })); }
-    const evs = orderedEventsReport(task);
-    if (evs.length) { blocks.push({ html: trHeadingBlock('🗒️ سجلّ المتابعة اليومية'), keepNext: true }); evs.forEach((ev) => blocks.push({ html: trEventBlock(ev) })); }
-    const pages = await trPaginate(blocks, logo, task);
+    if (mts.length) { blocks.push({ html: trHeadingBlock('الاجتماعات'), keepNext: true }); mts.forEach((mm) => blocks.push({ html: trMeetingBlock(mm) })); }
+    const evs = orderedEventsReport(task).slice().reverse(); // الأحدث أولاً
+    if (evs.length) { blocks.push({ html: trHeadingBlock(`سجلّ المتابعة اليومية (${evs.length} ${evs.length === 1 ? 'حدث' : 'أحداث'})`), keepNext: true }); evs.forEach((ev) => blocks.push({ html: trEventBlock(ev) })); }
+    const pages = await trPaginate(blocks, task, bg);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     for (let i = 0; i < pages.length; i++) {
       const el = document.createElement('div');
       el.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;background:#fff`;
-      el.innerHTML = trPageHTML(logo, task, pages[i]);
+      el.innerHTML = trPageHTML(task, pages[i], { bg, pageNo: i + 1, pageCount: pages.length, cont: i > 0 });
       document.body.appendChild(el);
       try { await document.fonts.ready; } catch { /* تجاهل */ }
+      await awaitImgs(el);
       await new Promise((r) => setTimeout(r, 40));
       const canvas = await html2canvas(el.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: TR_W });
       el.remove();

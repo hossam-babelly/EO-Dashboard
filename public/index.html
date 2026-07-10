@@ -139,6 +139,19 @@
     <div class="modal-body">
       <p style="color:var(--muted);font-size:13px;margin-bottom:12px">يصدّر المهام المعروضة حالياً (حسب الفلاتر والبطاقات المختارة) بهوية سنكري.</p>
       <div class="rep-viewinfo" id="reportViewInfo"></div>
+      <div class="rep-cols-title" data-i18n="هوية التقرير (تشمل تقرير المهمة الواحدة):">هوية التقرير (تشمل تقرير المهمة الواحدة):</div>
+      <div class="rep-layout" id="repIdentity">
+        <button class="rep-lay" type="button" data-v="classic" data-i18n="سنكري الرسمية (ثابتة)">سنكري الرسمية (ثابتة)</button>
+        <button class="rep-lay" type="button" data-v="ui" data-i18n="تتبع تصميم الواجهة">تتبع تصميم الواجهة</button>
+      </div>
+      <div id="repDetailWrap">
+        <div class="rep-cols-title" data-i18n="مستوى التفاصيل (PDF):">مستوى التفاصيل (PDF):</div>
+        <div class="rep-layout" id="repDetail">
+          <button class="rep-lay" type="button" data-v="full" data-i18n="كامل التفاصيل">كامل التفاصيل</button>
+          <button class="rep-lay" type="button" data-v="last3" data-i18n="آخر 3 أحداث">آخر 3 أحداث</button>
+          <button class="rep-lay" type="button" data-v="dv" data-i18n="المخرجات فقط">المخرجات فقط</button>
+        </div>
+      </div>
       <div id="reportColsWrap">
         <div class="rep-cols-title">الأعمدة الظاهرة في التقرير:</div>
         <div class="rep-cols" id="reportCols"></div>
