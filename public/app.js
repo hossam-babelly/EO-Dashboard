@@ -1563,7 +1563,7 @@ function openModal(id) {
     reminderSection(t);
   $('mHeadActions').innerHTML = `<button class="mh-icon" id="mReport" title="تقرير المهمة (PDF)">📄</button>` + (canEdit() ? `<button class="mh-icon" id="mEdit" title="تعديل المهمة">✏️</button><button class="mh-icon mh-del" id="mDel" title="حذف المهمة">🗑</button>` : '');
   $('mFoot').innerHTML = '';
-  { const rb = $('mReport'); if (rb) rb.onclick = () => { if (typeof taskReportPDF === 'function') taskReportPDF(t); else toast('وحدة التقارير غير جاهزة', true); }; }
+  { const rb = $('mReport'); if (rb) rb.onclick = () => { if (typeof taskReportWithChoice === 'function') taskReportWithChoice(t); else if (typeof taskReportPDF === 'function') taskReportPDF(t); else toast('وحدة التقارير غير جاهزة', true); }; }
   if (canEdit()) { $('mEdit').onclick = () => openEdit(t); $('mDel').onclick = () => removeTask(t.id); }
   bindFollowup(t);
   bindDeliverable(t);

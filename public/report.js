@@ -787,6 +787,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (colsWrap) colsWrap.style.display = isTaskTable ? '' : 'none';
     if (excelBtnEl) excelBtnEl.style.display = isTaskTable ? '' : 'none';
     const dtw = document.getElementById('repDetailWrap'); if (dtw) dtw.style.display = isTaskTable ? '' : 'none';
+    // مزامنة أزرار الهوية/التفاصيل مع القيمة المخزّنة (قد تتغيّر من نافذة تقرير المهمة)
+    document.querySelectorAll('#repIdentity .rep-lay').forEach((b) => b.classList.toggle('active', b.dataset.v === reportIdentity()));
+    document.querySelectorAll('#repDetail .rep-lay').forEach((b) => b.classList.toggle('active', b.dataset.v === reportDetail()));
     if (info) info.textContent = `سيُصدَّر حسب العرض الحالي: ${curData() === 'meetings' ? 'الاجتماعات' : 'المهام'} — ${SHAPE_AR[curShape()] || 'جدول'}`;
     back.classList.add('open');
   };
@@ -851,11 +854,14 @@ function trDoneRel(diff) {
   if (diff == null) return 'منجَز';
   return diff < 0 ? `أُنجز متأخراً ${Math.abs(diff)} يوم` : diff === 0 ? 'أُنجز في الموعد' : `أُنجز قبل ${diff} يوم`;
 }
-function trMastheadHTML(t, cont) {
+function trMastheadHTML(t, cont, logo) {
   const num = String(t.num || '').trim();
-  return `<div class="trmast" style="display:flex;justify-content:space-between;align-items:flex-end;padding:24px 34px 12px;border-bottom:2.5px solid ${RB.ink}">
-      <div><div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:700;letter-spacing:2.5px;color:${RB.ink}">SANKARI</div>
-      <div style="font-size:8.5px;letter-spacing:3px;color:${RB.copperDeep};font-weight:700;margin-top:1px">HOLDING GROUP</div></div>
+  // شعار سنكري الرسمي دائماً في الترويسة (مهما كانت هوية التقرير) — داخل شريحة فحمية لأن الشعار فاتح اللون
+  const brand = logo && logo.url
+    ? `<span style="display:inline-block;background:${RB.ink};border-radius:10px;padding:7px 13px;line-height:0"><img src="${logo.url}" width="${logo.w}" height="${logo.h}" style="width:${logo.w}px;height:${logo.h}px"></span>`
+    : `<span style="font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:700;letter-spacing:2.5px;color:${RB.ink}">SANKARI</span>`;
+  return `<div class="trmast" style="display:flex;justify-content:space-between;align-items:flex-end;padding:22px 34px 12px;border-bottom:2.5px solid ${RB.ink}">
+      <div>${brand}</div>
       <div style="text-align:left"><div style="font-size:9px;color:${RB.muted}">تقرير مهمة${cont ? ' — (تتمة)' : ''}</div>
       ${num ? `<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:700;color:${RB.champagne};line-height:1">${esc(num.length < 2 ? '0' + num : num)}</div>` : `<div style="font-weight:800;font-size:11px;color:${RB.ink}">${esc(nowText())}</div>`}</div></div>`;
 }
@@ -921,15 +927,15 @@ function trEventBlock(e) {
 function trPageHTML(t, blocks, o) {
   return `<div class="rpt-page" dir="rtl" style="width:100%;height:${TR_PAGE_FULL}px;position:relative;overflow:hidden;background:${trPaperBg()};box-sizing:border-box;font-family:'Cairo',Arial,sans-serif;color:${RB.ink}">
       ${o.bg.under}
-      <div style="position:relative;z-index:1">${trMastheadHTML(t, o.cont)}<div class="trbody" style="padding:0 34px">${blocks.map((b) => b.html).join('')}</div></div>
+      <div style="position:relative;z-index:1">${trMastheadHTML(t, o.cont, o.logo)}<div class="trbody" style="padding:0 34px">${blocks.map((b) => b.html).join('')}</div></div>
       ${o.bg.above}
       <div style="position:absolute;z-index:3;inset-inline:34px;bottom:0;height:34px;border-top:1px solid ${RB.line};display:flex;align-items:center;justify-content:space-between;font-size:9.5px;color:${RB.muted}"><span>© مجموعة سنكري القابضة — الإدارة التنفيذية</span><span>${esc(nowText())}</span><span>صفحة ${o.pageNo} من ${o.pageCount}</span></div></div>`;
 }
 // قياس ارتفاع كل بند وتوزيع البنود على صفحات دون تقسيم أي بند (مع إبقاء العنوان مع أول بنده)
-async function trPaginate(blocks, t, bg) {
+async function trPaginate(blocks, t, bg, logo) {
   const m = document.createElement('div');
   m.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;visibility:hidden`;
-  m.innerHTML = trPageHTML(t, blocks, { bg, pageNo: 1, pageCount: 1, cont: false });
+  m.innerHTML = trPageHTML(t, blocks, { bg, logo, pageNo: 1, pageCount: 1, cont: false });
   document.body.appendChild(m);
   try { await document.fonts.ready; } catch { /* تجاهل */ }
   await new Promise((r) => setTimeout(r, 20));
@@ -955,6 +961,7 @@ async function taskReportPDF(task) {
     applyReportTheme(); // هوية التقرير (ثابتة أو تتبع الواجهة)
     const glyph = await glyphDataUrl();
     const bg = reportBgParts(glyph);
+    const logo = await logoSmall(26); // الشعار الرسمي في الترويسة مهما كانت الهوية
     const blocks = [{ html: trTitleBlock(task) }, { html: trInfoBlock(task) }];
     const dvs = (typeof orderedDeliverables === 'function') ? orderedDeliverables(task) : [];
     if (dvs.length) { blocks.push({ html: trHeadingBlock(`المخرجات المطلوبة (${dvs.filter((d) => d.done).length}/${dvs.length})`), keepNext: true }); dvs.forEach((d) => blocks.push({ html: trDeliverableBlock(d) })); }
@@ -962,13 +969,13 @@ async function taskReportPDF(task) {
     if (mts.length) { blocks.push({ html: trHeadingBlock('الاجتماعات'), keepNext: true }); mts.forEach((mm) => blocks.push({ html: trMeetingBlock(mm) })); }
     const evs = orderedEventsReport(task).slice().reverse(); // الأحدث أولاً
     if (evs.length) { blocks.push({ html: trHeadingBlock(`سجلّ المتابعة اليومية (${evs.length} ${evs.length === 1 ? 'حدث' : 'أحداث'})`), keepNext: true }); evs.forEach((ev) => blocks.push({ html: trEventBlock(ev) })); }
-    const pages = await trPaginate(blocks, task, bg);
+    const pages = await trPaginate(blocks, task, bg, logo);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     for (let i = 0; i < pages.length; i++) {
       const el = document.createElement('div');
       el.style.cssText = `position:absolute;left:-12000px;top:0;width:${TR_W}px;background:#fff`;
-      el.innerHTML = trPageHTML(task, pages[i], { bg, pageNo: i + 1, pageCount: pages.length, cont: i > 0 });
+      el.innerHTML = trPageHTML(task, pages[i], { bg, logo, pageNo: i + 1, pageCount: pages.length, cont: i > 0 });
       document.body.appendChild(el);
       try { await document.fonts.ready; } catch { /* تجاهل */ }
       await awaitImgs(el);
@@ -982,3 +989,34 @@ async function taskReportPDF(task) {
     if (typeof toast === 'function') toast('تم توليد تقرير المهمة ✓');
   } catch (e) { if (typeof toast === 'function') toast('تعذّر توليد التقرير: ' + e.message, true); }
 }
+
+// ===== منتقي هوية التقرير قبل توليد تقرير المهمة الواحدة (نفس خيار تقرير القائمة، ونفس المفتاح المخزّن) =====
+let _trPendingTask = null;
+function taskReportWithChoice(task) {
+  const back = document.getElementById('trIdModalBack');
+  if (!back) return taskReportPDF(task);
+  _trPendingTask = task;
+  const wrap = document.getElementById('trRepIdentity');
+  if (wrap) [...wrap.querySelectorAll('.rep-lay')].forEach((b) => b.classList.toggle('active', b.dataset.v === reportIdentity()));
+  back.classList.add('open');
+}
+window.taskReportWithChoice = taskReportWithChoice;
+(function () {
+  const back = document.getElementById('trIdModalBack');
+  if (!back) return;
+  const wrap = document.getElementById('trRepIdentity');
+  if (wrap) wrap.addEventListener('click', (e) => {
+    const b = e.target.closest('.rep-lay'); if (!b) return;
+    try { localStorage.setItem('eo_report_theme', b.dataset.v); } catch (_) { /* تجاهل */ }
+    [...wrap.querySelectorAll('.rep-lay')].forEach((x) => x.classList.toggle('active', x === b));
+  });
+  const close = () => back.classList.remove('open');
+  const c = document.getElementById('trIdClose'); if (c) c.onclick = close;
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  const go = document.getElementById('trIdGo');
+  if (go) go.onclick = async () => {
+    const t = _trPendingTask; if (!t) return;
+    go.disabled = true; const o = go.textContent; go.textContent = '... توليد';
+    try { await taskReportPDF(t); close(); } finally { go.disabled = false; go.textContent = o; }
+  };
+})();
