@@ -67,7 +67,24 @@ app.get('/', (req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// no-cache للـ HTML/CSS/JS: المتصفح وتطبيق الأندرويد يعيدان التحقق كل مرة
+// (مع ETag يكون الردّ 304 خفيفاً) — WebView قد يحتفظ بنسخ قديمة أياماً فلا تصل التحديثات.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(html|css|js)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
+
+// ============================ تطبيق الأندرويد (الحزمة 33) ============================
+// ملف الـ APK يبنيه GitHub Actions تلقائياً ويضعه في public/apk/ (لا يوجد في حزم ZIP).
+const APK_PATH = path.join(__dirname, 'public', 'apk', 'eo-dashboard.apk');
+// إعدادات عامة بلا مصادقة (تلزم شاشة الدخول وتطبيق الأندرويد قبل الدخول):
+// name = الاسم المعروض داخل التطبيق (يعدّله المدير) · apk = هل ملف التطبيق منشور على الخادم.
+app.get('/api/app-config', async (req, res) => {
+  let name = 'EO-Dashboard';
+  try { name = await store.getSetting('app_name', 'EO-Dashboard') || 'EO-Dashboard'; } catch (e) { /* الاسم الافتراضي */ }
+  res.json({ ok: true, name, apk: fs.existsSync(APK_PATH) });
+});
 
 // ===== المصادقة =====
 function requireAuth(req, res, next) {
@@ -213,6 +230,17 @@ app.post('/api/admin/theme-broadcast', requireAuth, requireRole('admin'), async 
     await store.setSetting('global_theme', value);
     const count = await store.broadcastTheme(value);
     res.json({ ok: true, count });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// المدير فقط يعدّل اسم تطبيق الأندرويد (يظهر داخل التطبيق وشاشة المهام فور فتحه متصلاً؛
+// اسم الأيقونة على الشاشة الرئيسية يتبدّل مع تثبيت APK محدَّث — قيد نظام أندرويد).
+app.post('/api/admin/app-config', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل (اضبط DATA_SHEET_ID).' });
+    const name = String((req.body || {}).name || '').trim().slice(0, 40) || 'EO-Dashboard';
+    await store.setSetting('app_name', name);
+    res.json({ ok: true, name });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

@@ -1,0 +1,4 @@
+// جذر مشروع الأندرويد — لا يُبنى محلياً؛ يبنيه GitHub Actions (انظر .github/workflows/build-apk.yml)
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

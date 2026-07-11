@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EO-Dashboard</string>
+    <string name="choose_file">Choose a file</string>
+    <string name="downloading">Downloading…</string>
+    <string name="download_failed">Could not save the file</string>
+    <string name="saved_downloads">Saved to Downloads: %1$s</string>
+    <string name="channel_downloads">Downloads</string>
+    <string name="tap_to_open">Tap to open the file</string>
+</resources>

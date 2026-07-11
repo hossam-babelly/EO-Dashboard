@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- اسم الأيقونة على الشاشة الرئيسية (يتبدّل مع كل APK محدَّث؛ الاسم داخل التطبيق ديناميكي من الخادم) -->
+    <string name="app_name">EO-Dashboard</string>
+    <string name="choose_file">اختر ملفاً</string>
+    <string name="downloading">جارٍ التنزيل…</string>
+    <string name="download_failed">تعذّر حفظ الملف</string>
+    <string name="saved_downloads">حُفظ في التنزيلات: %1$s</string>
+    <string name="channel_downloads">التنزيلات</string>
+    <string name="tap_to_open">اضغط لفتح الملف</string>
+</resources>

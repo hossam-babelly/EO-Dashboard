@@ -169,6 +169,16 @@ async function logoDataUrl() {
 }
 
 function dl(blob, name) {
+  // داخل تطبيق الأندرويد: روابط blob لا تعمل في WebView —
+  // يُسلَّم الملف للجسر الأصلي فيحفظه في «التنزيلات» مع إشعار يفتح الملف.
+  if (window.AndroidBridge && window.AndroidBridge.saveBase64) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try { window.AndroidBridge.saveBase64(name, blob.type || 'application/octet-stream', String(fr.result).split(',')[1] || ''); } catch (e) { /* جسر قديم */ }
+    };
+    fr.readAsDataURL(blob);
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
@@ -566,7 +576,7 @@ async function exportLayoutPDF() {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
   addCanvasPaged(pdf, canvas, true);
-  pdf.save(reportName() + '.pdf');
+  dl(pdf.output('blob'), reportName() + '.pdf'); // عبر dl كي يمرّ بجسر الأندرويد عند الحاجة
 }
 
 async function exportLayoutWord() {
@@ -668,7 +678,7 @@ async function exportPDF() {
     el.remove();
     addCanvasPaged(pdf, canvas, p === 0);
   }
-  pdf.save(reportName() + '.pdf');
+  dl(pdf.output('blob'), reportName() + '.pdf'); // عبر dl كي يمرّ بجسر الأندرويد عند الحاجة
 }
 
 // Word: نضع نفس صور صفحات الـ PDF (كل صفحة صورة كاملة) فيصبح مطابقاً للـ PDF بصرياً
@@ -807,7 +817,8 @@ document.addEventListener('DOMContentLoaded', () => {
     sync();
   }
   const cl = document.getElementById('reportClose'); if (cl) cl.onclick = close;
-  if (back) back.onclick = (e) => { if (e.target === back) close(); };
+  // النقر على الخلفية لا يغلق النافذة على الهاتف (لمسات خاطئة)
+  if (back) back.onclick = (e) => { if (e.target === back && window.innerWidth > 760) close(); };
   const pdf = document.getElementById('reportPdf'); if (pdf) pdf.onclick = runExport(pdf, exportPDF, 'PDF');
   const word = document.getElementById('reportWord'); if (word) word.onclick = runExport(word, exportWord, 'Word');
   const excel = document.getElementById('reportExcel'); if (excel) excel.onclick = runExport(excel, exportExcel, 'Excel');
@@ -985,7 +996,7 @@ async function taskReportPDF(task) {
       addCanvasPaged(pdf, canvas, i === 0); // يشرّح أي صفحة تتجاوز الطول احتياطاً
     }
     const fn = `تقرير-${(task.project || 'مهمة')}${task.file ? '-' + task.file : ''}`.replace(/[\\/:*?"<>|]+/g, '_');
-    pdf.save(fn + '.pdf');
+    dl(pdf.output('blob'), fn + '.pdf'); // عبر dl كي يمرّ بجسر الأندرويد عند الحاجة
     if (typeof toast === 'function') toast('تم توليد تقرير المهمة ✓');
   } catch (e) { if (typeof toast === 'function') toast('تعذّر توليد التقرير: ' + e.message, true); }
 }
@@ -1012,7 +1023,7 @@ window.taskReportWithChoice = taskReportWithChoice;
   });
   const close = () => back.classList.remove('open');
   const c = document.getElementById('trIdClose'); if (c) c.onclick = close;
-  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target === back && window.innerWidth > 760) close(); });
   const go = document.getElementById('trIdGo');
   if (go) go.onclick = async () => {
     const t = _trPendingTask; if (!t) return;

@@ -1,0 +1,16 @@
+// EO-Dashboard — غلاف أندرويد (الحزمة 33)
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "EO-Dashboard"
+include ':app'

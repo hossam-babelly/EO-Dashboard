@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=33">
 <script>
 /* تطبيق التصميم/الوضع/الخط المحفوظ فوراً (قبل الرسم) لتوافق شاشة الدخول مع اختيار المستخدم */
 (function () { try {
@@ -67,13 +67,55 @@
     <label for="password" data-i18n="كلمة المرور">كلمة المرور</label>
     <div class="pw-wrap" style="margin-bottom:16px"><input id="password" type="password" autocomplete="current-password" required style="margin-bottom:0"><button type="button" class="pw-eye" data-target="password" aria-label="إظهار كلمة المرور">👁</button></div>
     <button type="submit" id="btn" data-i18n="دخول">دخول</button>
+    <!-- رابط تحميل تطبيق الأندرويد — يظهر فقط عند وجود ملف APK منشور، ويختفي داخل التطبيق -->
+    <a id="apkLogin" class="apk-link" href="/apk/eo-dashboard.apk" download="EO-Dashboard.apk" style="display:none">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 15a7 7 0 0 1 14 0v2.2H5z"/><path d="m7.6 8.6-1.7-2.5M16.4 8.6l1.7-2.5"/><path d="M9.3 12.3h.01M14.7 12.3h.01"/><path d="M7 20.5v-3.3M17 20.5v-3.3M12 21v-3.8"/></svg>
+      <span data-i18n="تحميل تطبيق الأندرويد">تحميل تطبيق الأندرويد</span>
+    </a>
+    <!-- شارة الإصدار: إصدار حزمة الويب + إصدار التطبيق داخل الغلاف — لتشخيص أي جهاز فوراً -->
+    <div id="eoVer" style="margin-top:10px;font-size:10.5px;color:#8a8178;text-align:center;opacity:.8"></div>
   </div>
   <div class="login-body" id="chooserBody" style="display:none">
     <p style="font-weight:800;color:var(--navy);text-align:center;margin-bottom:16px" data-i18n="اختر البروفايل للدخول">اختر البروفايل للدخول</p>
     <div id="profileChoices" style="display:flex;flex-direction:column;gap:10px"></div>
   </div>
 </form>
-<script src="/i18n.js"></script>
+<script src="/i18n.js?v=33"></script>
+<script>
+// ===== تطبيق الأندرويد (الحزمة 33): رابط التحميل + الاسم الديناميكي + شارة الإصدار =====
+(function () {
+  // شارة الإصدار: رقم حزمة الويب من ?v= في وسم i18n.js + إصدار التطبيق من الجسر
+  try {
+    let t = '';
+    const s = document.querySelector('script[src*="i18n.js?v="]');
+    const m = s ? String(s.getAttribute('src')).match(/v=(\d+)/) : null;
+    if (m) t = tr('إصدار المنصّة') + ' ' + m[1];
+    if (window.AndroidBridge && window.AndroidBridge.getVersion) {
+      try { const av = window.AndroidBridge.getVersion(); if (av) t += (t ? ' · ' : '') + tr('إصدار التطبيق') + ' ' + av; } catch (e) { /* جسر قديم */ }
+    }
+    const v = document.getElementById('eoVer'); if (v && t) v.textContent = t;
+  } catch (e) { /* تجاهل */ }
+  // تحذير WebView القديم داخل التطبيق (مرة واحدة — قبل الدخول)
+  if (window.AndroidBridge) {
+    try {
+      const m2 = navigator.userAgent.match(/Chrome\/(\d+)/);
+      if (m2 && Number(m2[1]) < 90 && !localStorage.getItem('eo_wv_warn')) {
+        localStorage.setItem('eo_wv_warn', '1');
+        alert(tr('نسخة مكوّن عرض الويب (WebView) على هذا الهاتف قديمة وقد تظهر الواجهة بشكل غير سليم — حدّث تطبيق «Android System WebView» من متجر Google Play ثم أعد فتح التطبيق.'));
+      }
+    } catch (e) { /* تجاهل */ }
+  }
+  // رابط التحميل: يظهر فقط إذا كان APK منشوراً ولسنا داخل التطبيق + إبلاغ الجسر بالاسم
+  fetch('/api/app-config').then((r) => r.json()).then((cfg) => {
+    const inApp = !!window.AndroidBridge;
+    const a = document.getElementById('apkLogin');
+    if (a && cfg && cfg.apk && !inApp) a.style.display = 'flex';
+    if (inApp && window.AndroidBridge.setAppName && cfg && cfg.name) {
+      try { window.AndroidBridge.setAppName(String(cfg.name)); } catch (e) { /* جسر قديم */ }
+    }
+  }).catch(() => { /* يبقى الرابط مخفياً */ });
+})();
+</script>
 <script>
 document.querySelectorAll('.pw-eye').forEach((b) => b.onclick = () => {
   const t = document.getElementById(b.dataset.target);

@@ -2098,6 +2098,153 @@ async function load(refresh = false) {
   if (db) db.onclick = () => { if (window.I18N) I18N.setDir(I18N.dir === 'ltr' ? 'rtl' : 'ltr'); };
 })();
 
+// ============================================================
+// تطبيق الأندرويد (الحزمة 33): زرّ التحميل + الاسم الديناميكي + شارات الإصدار
+// window.AndroidBridge يوجد فقط داخل تطبيق الأندرويد (جسر أصلي يحقنه الغلاف):
+// - داخل التطبيق: يُخفى زرّ التحميل ويُبلَّغ الجسرُ الاسمَ المعروض (يظهر في شاشة المهام فوراً).
+// - على المتصفح: يظهر الزرّ فقط إذا كان ملف APK منشوراً على الخادم (public/apk/).
+// ============================================================
+async function loadAppConfig() {
+  try {
+    const res = await fetch('/api/app-config');
+    const cfg = await res.json();
+    state.appCfg = cfg || {};
+    const inApp = !!window.AndroidBridge;
+    const show = !!(cfg && cfg.apk) && !inApp;
+    const tb = $('apkBtn'); if (tb) tb.style.display = show ? '' : 'none';
+    if (inApp && window.AndroidBridge.setAppName && cfg && cfg.name) {
+      try { window.AndroidBridge.setAppName(String(cfg.name)); } catch (e) { /* جسر قديم */ }
+    }
+    // تحذير WebView القديم: محرّك أقدم من Chrome 90 يكسر عرض الواجهة داخل التطبيق (مرة واحدة)
+    if (inApp) {
+      const m = navigator.userAgent.match(/Chrome\/(\d+)/);
+      if (m && Number(m[1]) < 90 && !localStorage.getItem('eo_wv_warn')) {
+        localStorage.setItem('eo_wv_warn', '1');
+        alert(tr('نسخة مكوّن عرض الويب (WebView) على هذا الهاتف قديمة وقد تظهر الواجهة بشكل غير سليم — حدّث تطبيق «Android System WebView» من متجر Google Play ثم أعد فتح التطبيق.'));
+      }
+    }
+  } catch (e) { /* يبقى الزرّ مخفياً */ }
+}
+
+// إصدار حزمة الويب — يُقرأ تلقائياً من ?v= في وسم السكربت (بلا صيانة يدوية)
+function webBundleVersion() {
+  const s = document.querySelector('script[src*="app.js?v="]');
+  const m = s ? String(s.getAttribute('src')).match(/v=(\d+)/) : null;
+  return m ? m[1] : '';
+}
+// سطر الإصدارات: إصدار حزمة الويب + إصدار التطبيق داخل الغلاف — لتشخيص أي جهاز فوراً
+function versionLineText() {
+  let t = '';
+  const wv = webBundleVersion(); if (wv) t = tr('إصدار المنصّة') + ' ' + wv;
+  if (window.AndroidBridge && window.AndroidBridge.getVersion) {
+    try { const av = window.AndroidBridge.getVersion(); if (av) t += (t ? ' · ' : '') + tr('إصدار التطبيق') + ' ' + av; } catch (e) { /* جسر قديم */ }
+  }
+  return t;
+}
+
+// ---------------- قائمة الهاتف المنسدلة ⌄ ----------------
+// تجمع أزرار الترويسة الثانوية (اللغة/الاتجاه/إشعارات المتصفح/تحميل التطبيق/المستخدمون/
+// التصميم/حسابي) في قائمة تنسدل من زرّ ⌄ على الشاشات الضيقة، مع اسم المستخدم ودوره
+// وسطر الإصدارات أعلاها. كل عنصر ينفّذ نقرة الزرّ الأصلي نفسه فيرث منطقه كاملاً
+// (بما فيه إخفاء «المستخدمون» لغير المدير وزرّ APK بلا ملف منشور).
+function toggleMoreMenu() {
+  const old = document.getElementById('moreMenu');
+  if (old) { old.remove(); return; }
+  const menu = document.createElement('div');
+  menu.id = 'moreMenu'; menu.className = 'more-menu';
+  let head = '';
+  if (state.me) {
+    const roleAr = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' }[state.me.role] || '';
+    const vTxt = versionLineText();
+    head = `<div class="mm-user"><b>${esc(state.me.name || state.me.email || '')}</b><span>${esc(tr(roleAr))}</span>${vTxt ? `<span style="opacity:.7">${esc(vTxt)}</span>` : ''}</div>`;
+  }
+  menu.innerHTML = head;
+  const items = [
+    { btn: $('langBtn'), label: (window.I18N && I18N.lang === 'en') ? 'العربية' : 'English', html: '<span class="mm-lang">' + ((window.I18N && I18N.lang === 'en') ? 'ع' : 'EN') + '</span>' },
+    { btn: $('dirBtn'), label: tr('اتجاه الواجهة'), ic: 'swap', em: '⇄' },
+    { btn: $('apkBtn'), label: tr('تحميل تطبيق الأندرويد'), ic: 'android', em: '🤖' },
+    { btn: $('pushBtn'), label: tr('إشعارات المتصفح'), ic: 'monitor', em: '🖥️' },
+    { btn: $('usersBtn'), label: tr('المستخدمون'), ic: 'users', em: '👥' },
+    { btn: $('designBtn'), label: tr('التصميم والمظهر'), ic: 'palette', em: '🎨' },
+    { btn: $('accountBtn'), label: tr('حسابي'), ic: 'gear', em: '⚙' },
+  ];
+  items.forEach((it) => {
+    if (!it.btn || it.btn.style.display === 'none') return; // يرث قواعد الظهور من الزرّ الأصلي
+    const row = document.createElement('button');
+    row.type = 'button'; row.className = 'mm-item';
+    row.innerHTML = (it.ic ? icon(it.ic, it.em) : it.html) + '<span class="mm-label"></span>';
+    row.querySelector('.mm-label').textContent = it.label;
+    row.addEventListener('click', () => { closeMoreMenu(); it.btn.click(); });
+    menu.appendChild(row);
+  });
+  // تتموضع تحت الترويسة بمحاذاة جهة الأزرار
+  const hd = document.querySelector('header');
+  const tb = hd ? hd.getBoundingClientRect() : { bottom: 54 };
+  menu.style.top = Math.round(tb.bottom + 6) + 'px';
+  document.body.appendChild(menu);
+  // إغلاق عند النقر خارجها أو التمرير
+  setTimeout(() => {
+    document.addEventListener('click', _mmOutside);
+    window.addEventListener('scroll', closeMoreMenu, { once: true });
+  }, 0);
+}
+function _mmOutside(e) {
+  const menu = document.getElementById('moreMenu');
+  if (menu && !menu.contains(e.target)) closeMoreMenu();
+}
+function closeMoreMenu() {
+  const menu = document.getElementById('moreMenu');
+  if (menu) menu.remove();
+  document.removeEventListener('click', _mmOutside);
+}
+
+// ---------------- زرّ الرجوع في الهاتف ----------------
+// يستدعيها غلاف الأندرويد عند ضغط زرّ الرجوع: تُغلق القائمة/اللوحة/النافذة المفتوحة.
+// 'handled' = عولج داخلياً؛ 'exit' = تاريخ WebView ثم الخروج.
+window.eoAppBack = function () {
+  try {
+    if (document.getElementById('moreMenu')) { closeMoreMenu(); return 'handled'; }
+    const bp = $('bellPanel'); if (bp && bp.classList.contains('open')) { bp.classList.remove('open'); return 'handled'; }
+    const ms = document.querySelector('.ms.open'); if (ms) { ms.classList.remove('open'); return 'handled'; }
+    // النوافذ: الطبقات العليا أولاً (العلامة المائية/هوية تقرير المهمة فوق غيرها)
+    const backs = [
+      ['wmModalBack', () => { $('wmModalBack').classList.remove('open'); }],
+      ['trIdModalBack', () => { $('trIdModalBack').classList.remove('open'); }],
+      ['setModalBack', closeSettings],
+      ['acctModalBack', closeAccount],
+      ['mtgRemBack', closeMeetingReminder],
+      ['reportModalBack', () => { $('reportModalBack').classList.remove('open'); }],
+      ['modalBack', closeModal],
+    ];
+    for (let i = 0; i < backs.length; i++) {
+      const b = $(backs[i][0]);
+      if (b && b.classList.contains('open')) { backs[i][1](); return 'handled'; }
+    }
+  } catch (e) { /* يخرج */ }
+  return 'exit';
+};
+
+// حزام أمان للهاتف: قصّ كل النوافذ على القياس المرئي الفعلي بالبكسل —
+// يعمل حتى لو فشلت قواعد CSS على WebView قديم (يتجاوز max-width الإنلاين في HTML).
+function clampModalsToViewport() {
+  const vv = window.visualViewport;
+  const visW = Math.round(Math.min(window.innerWidth, vv ? vv.width : window.innerWidth));
+  const visH = Math.round(Math.min(window.innerHeight, vv ? vv.height : window.innerHeight));
+  document.querySelectorAll('.modal-back .modal').forEach((m) => {
+    if (m.dataset.mw == null) m.dataset.mw = m.style.maxWidth || '';
+    if (visW <= 760) {
+      m.style.setProperty('max-width', (visW - 20) + 'px', 'important');
+      m.style.setProperty('max-height', (visH - 28) + 'px', 'important');
+    } else {
+      m.style.removeProperty('max-height');
+      m.style.maxWidth = m.dataset.mw;
+    }
+  });
+}
+window.addEventListener('resize', clampModalsToViewport);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', clampModalsToViewport);
+clampModalsToViewport();
+
 // ===== Events =====
 $('refreshBtn').onclick = () => load(true);
 $('addBtn').onclick = () => openEdit(null);
@@ -2193,6 +2340,17 @@ function openSettings() {
   const broadcast = isAdmin()
     ? `<button class="btn btn-gold theme-broadcast" id="setBroadcast" type="button" title="${esc(tr('المدير فقط — يطبّق تصميمك الحالي على كل الحسابات'))}">${icon('megaphone', '📢')} ${esc(tr('تطبيق هذا التصميم على جميع المستخدمين'))}</button>`
     : '';
+  // اسم تطبيق الأندرويد (المدير فقط): يظهر داخل التطبيق فور فتحه متصلاً
+  const appBox = isAdmin()
+    ? `<div class="set-box">
+      <div class="set-box-title">${icon('android', '🤖')} <span>${esc(tr('اسم تطبيق الأندرويد'))}</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="set-sel" id="setAppName" type="text" maxlength="40" style="flex:1;min-width:0;margin:0">
+        <button class="btn btn-gold" id="setAppNameSave" type="button">${esc(tr('حفظ'))}</button>
+      </div>
+      <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${esc(tr('يظهر داخل التطبيق فور فتحه متصلاً — أمّا اسم الأيقونة على الشاشة الرئيسية فيتغيّر مع تثبيت نسخة محدَّثة من التطبيق (قيد نظام أندرويد).'))}</p>
+    </div>`
+    : '';
   $('setBody').innerHTML = `
     <div class="set-box">
       <div class="set-box-title">${icon('palette', '🎨')} <span>${esc(tr('التصميم'))}</span></div>
@@ -2213,7 +2371,7 @@ function openSettings() {
       <select class="set-sel" id="fontArSel">${arOpts}</select>
       <div class="set-lbl">${esc(tr('خط اللاتيني والأرقام'))}</div>
       <select class="set-sel" id="fontLatinSel">${latinOpts}</select>
-    </div>`;
+    </div>${appBox}`;
   const syncSwatches = () => document.querySelectorAll('#setSwatches .theme-swatch').forEach((x) => x.classList.toggle('on', x.getAttribute('data-design') === THEME.design()));
   // مفتاح اللون: يُظلَّل الزرّ المطابق للّون الفعّال (المخصّص بلا اختيار صريح = لا تظليل)
   const syncAccents = () => { const a = THEME.accent(); document.querySelectorAll('#setAccents .accent-swatch').forEach((x) => x.classList.toggle('on', !!a && x.getAttribute('data-acc') === a)); };
@@ -2261,13 +2419,30 @@ function openSettings() {
     } catch (e) { toast(tr('تعذّر التطبيق') + ': ' + (e.message || ''), true); }
     bc.disabled = false;
   });
+  // حفظ اسم تطبيق الأندرويد (المدير)
+  const anIn = $('setAppName');
+  if (anIn) {
+    anIn.value = (state.appCfg && state.appCfg.name) || 'EO-Dashboard';
+    $('setAppNameSave').onclick = async () => {
+      const sb = $('setAppNameSave');
+      sb.disabled = true;
+      try {
+        const r = await fetch('/api/admin/app-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: anIn.value.trim() }) });
+        const d = await r.json(); if (!d.ok) throw new Error(d.error || '');
+        state.appCfg = Object.assign({}, state.appCfg, { name: d.name });
+        anIn.value = d.name;
+        toast(tr('تم الحفظ') + ' ✓');
+      } catch (e) { toast(tr('تعذّر الحفظ') + (e.message ? ': ' + e.message : ''), true); }
+      sb.disabled = false;
+    };
+  }
   $('setModalBack').classList.add('open');
 }
 function closeSettings() { $('setModalBack').classList.remove('open'); }
 (function () {
   const b = $('designBtn'); if (b) b.onclick = openSettings;
   const c = $('setClose'); if (c) c.onclick = closeSettings;
-  const back = $('setModalBack'); if (back) back.onclick = (e) => { if (e.target === back) closeSettings(); };
+  const back = $('setModalBack'); if (back) back.onclick = (e) => { if (e.target === back && window.innerWidth > 760) closeSettings(); };
 })();
 
 // ===== نافذة العلامة المائية (النقر على شعار الترويسة عندما تكون مفعّلة) =====
@@ -2295,7 +2470,7 @@ function openWatermark() {
 }
 (function () {
   const c = $('wmClose'); if (c) c.onclick = () => $('wmModalBack').classList.remove('open');
-  const back = $('wmModalBack'); if (back) back.onclick = (e) => { if (e.target === back) back.classList.remove('open'); };
+  const back = $('wmModalBack'); if (back) back.onclick = (e) => { if (e.target === back && window.innerWidth > 760) back.classList.remove('open'); };
   const logo = document.querySelector('header .logo');
   if (logo) logo.addEventListener('click', () => { if (THEME.wmActive()) openWatermark(); });
   // زرّ ☰: توسيع/تضييق شريط الأفق الجانبي (محلي للمتصفح)
@@ -2348,8 +2523,12 @@ let searchTimer;
 $('fSearch').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value; render(); }, 200); };
 $('resetBtn').onclick = () => { Object.assign(state, { time: 'all', projects: [], owners: [], linked: [], priorities: [], statuses: [], types: [], search: '' }); $('fSearch').value = ''; render(); };
 $('mClose').onclick = closeModal;
-(function () { const c = $('mtgRemClose'); if (c) c.onclick = closeMeetingReminder; const b = $('mtgRemBack'); if (b) b.onclick = (e) => { if (e.target === b) closeMeetingReminder(); }; })();
+// النقر على الخلفية لا يغلق النوافذ على الهاتف (≤760 — لمسات خاطئة)؛ الإغلاق بزرّ ✕
+(function () { const c = $('mtgRemClose'); if (c) c.onclick = closeMeetingReminder; const b = $('mtgRemBack'); if (b) b.onclick = (e) => { if (e.target === b && window.innerWidth > 760) closeMeetingReminder(); }; })();
 // لا تُغلق نافذة المهمة بالنقر خارجها — فقط عبر زر ✕ (حفاظاً على التعديلات غير المحفوظة)
+// زرّ قائمة الهاتف المنسدلة ⌄ (يظهر على الشاشات الضيقة فقط)
+(function () { const mb = $('moreBtn'); if (mb) mb.onclick = (e) => { e.stopPropagation(); toggleMoreMenu(); }; })();
 
+loadAppConfig(); // لا ننتظرها — مستقلّة عن المصادقة
 load();
 setInterval(() => { if (!$('modalBack').classList.contains('open') && !$('mtgRemBack').classList.contains('open')) load(true); }, 30000);

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- شاشة افتتاحية فحمية بشعار سنكري (windowBackground يظهر حتى تحميل الصفحة) -->
+    <style name="Theme.EODashboard" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="android:statusBarColor">@color/charcoal</item>
+        <item name="android:navigationBarColor">@color/charcoal</item>
+    </style>
+</resources>

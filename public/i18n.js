@@ -118,6 +118,14 @@
     'توقيت الإرسال الموحّد (بتوقيت سوريا)': 'Unified send time (Syria time)', '📢 تعميم على الجميع': '📢 Apply to all',
     'توقيت كل مستخدم على حدة:': 'Per-user send time:', '💾 حفظ المستلِمين': '💾 Save recipients',
     'فارغة (--:--) تعني أنّ لبعض المستخدمين توقيتاً مختلفاً. اكتب وقتاً واضغط «تعميم على الجميع» لتوحيدهم.': 'Empty (--:--) means some users have a different time. Enter a time and press “Apply to all” to unify them.',
+    // ===== تطبيق الأندرويد (الحزمة 33) =====
+    'تحميل تطبيق الأندرويد': 'Download the Android app',
+    'اسم تطبيق الأندرويد': 'Android app name',
+    'يظهر داخل التطبيق فور فتحه متصلاً — أمّا اسم الأيقونة على الشاشة الرئيسية فيتغيّر مع تثبيت نسخة محدَّثة من التطبيق (قيد نظام أندرويد).': 'Shown inside the app as soon as it opens online — the home-screen icon name only changes when an updated APK is installed (Android limitation).',
+    'المزيد': 'More', 'اتجاه الواجهة': 'Interface direction', 'إشعارات المتصفح': 'Browser notifications',
+    'إصدار المنصّة': 'Platform build', 'إصدار التطبيق': 'App version',
+    'تم الحفظ': 'Saved', 'تعذّر الحفظ': 'Could not save',
+    'نسخة مكوّن عرض الويب (WebView) على هذا الهاتف قديمة وقد تظهر الواجهة بشكل غير سليم — حدّث تطبيق «Android System WebView» من متجر Google Play ثم أعد فتح التطبيق.': 'The WebView component on this phone is outdated and the interface may render incorrectly — update the “Android System WebView” app from Google Play, then reopen the app.',
   };
   // ===== الخطوط القابلة للتبديل (٥ عربية + ٥ لاتينية) — الافتراض غير محدَّد = Cairo (الكلاسيكي مطابق) =====
   const FONT_AR = {
