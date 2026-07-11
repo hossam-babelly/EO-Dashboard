@@ -1,0 +1,46 @@
+// EO-Dashboard — تطبيق الغلاف (WebView صرف، بلا أي تبعيات خارجية)
+plugins {
+    id 'com.android.application'
+}
+
+// رقم الإصدار يمرَّر من GitHub Actions (-PverCode=رقم التشغيل) كي يقبل أندرويد التحديث فوق النسخة المثبتة
+def verCode = (project.findProperty('verCode') ?: '1') as Integer
+
+android {
+    namespace 'com.sankari.eodashboard'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.sankari.eodashboard'
+        minSdk 24
+        targetSdk 34
+        versionCode verCode
+        versionName '1.' + verCode
+    }
+
+    signingConfigs {
+        release {
+            def ks = rootProject.file('signing/keystore.jks')
+            if (ks.exists()) {
+                storeFile ks
+                storePassword 'sankari-eodash-2026'
+                keyAlias 'eodash'
+                keyPassword 'sankari-eodash-2026'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (rootProject.file('signing/keystore.jks').exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
