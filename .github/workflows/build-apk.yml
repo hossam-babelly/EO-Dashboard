@@ -1,0 +1,61 @@
+# ============================================================================
+#  بناء تطبيق الأندرويد تلقائياً (الحزمة 33)
+#  عند أي رفع يلمس android/ يبني GitHub APK موقّعاً ويضعه في public/apk/
+#  فيخدمه الرابط مباشرة (زرّ «تحميل تطبيق الأندرويد») ويعيد Render النشر.
+#  مفتاح التوقيع يُنشأ مرة واحدة ويُحفظ في المستودع (خاص) — ثباته شرط
+#  كي يقبل أندرويد تثبيت التحديثات فوق النسخ المثبتة. لا يُحذف أبداً.
+# ============================================================================
+name: Build Android APK
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Generate signing keystore if missing
+        run: |
+          if [ ! -f android/signing/keystore.jks ]; then
+            mkdir -p android/signing
+            keytool -genkeypair -v -keystore android/signing/keystore.jks -alias eodash \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass sankari-eodash-2026 -keypass sankari-eodash-2026 \
+              -dname "CN=EO-Dashboard, O=Sankari Holding, C=SY"
+          fi
+
+      - name: Build signed release APK
+        working-directory: android
+        run: gradle assembleRelease -PverCode=${{ github.run_number }} --no-daemon
+
+      - name: Publish APK into repo (served at /apk/eo-dashboard.apk)
+        run: |
+          mkdir -p public/apk
+          cp android/app/build/outputs/apk/release/app-release.apk public/apk/eo-dashboard.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/apk/eo-dashboard.apk android/signing/keystore.jks
+          git commit -m "build: Android APK #${{ github.run_number }} [skip ci]" || echo "no changes"
+          git push
