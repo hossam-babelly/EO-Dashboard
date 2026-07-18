@@ -434,30 +434,63 @@ app.post('/api/admin/digest/test', requireAuth, requireRole('admin'), async (req
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// ===== جدولة النبضة (فترات عمل الخادم والتذكيرات) — الحزمة 34 =====
+// ===== جدولة النبضة (فترات عمل الخادم والتذكيرات) — الحزمة 34، ومفتاح «إجبار الإيقاظ» الحزمة 35 =====
 // المدير يحدّد أيام الأسبوع وفترة اليوم (بتوقيت دمشق) التي يعمل فيها زناد Apps Script،
-// مع إمكانية التعطيل الكامل (تُحفظ كل الإعدادات وتعود عند إعادة التفعيل) و«الإيقاظ المسبق»
-// (يوقظ الخادمَ قبل كل موعد إرسال بهذه الدقائق حتى خارج الفترة كي تصل التذكيرات في وقتها).
-// التخزين في settings.trigger؛ السكربت يقرؤه من الشيت مباشرةً فلا يوقظ Render لمعرفة حاله.
+// مع مفتاحين مستقلَّين: «النبضة مفعّلة» (enabled = طرقات الدقيقة داخل الفترة)
+// و«إجبار الإيقاظ» (force = إيقاظ الخادم قبل كل موعد إرسال بمهلة prewake — يعمل حتى مع تعطيل النبضة).
+// الحالات الأربع: enabled+force = فترة + إيقاظ خارجها · enabled فقط = الفترة حصراً (لا إيقاظ خارجها)
+// · force فقط = لا فترة إطلاقاً لكن يستيقظ قبل كل إرسال · كلاهما معطَّل = لا يستيقظ أبداً.
 // أيام الأسبوع بترقيم JS: 0=الأحد .. 6=السبت.
-const TRIGGER_DEFAULT = { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59', prewake: 5 };
+//
+// ⚠️ طبقة ترجمة (كي لا يحتاج سكربت Apps Script v3 الملصوق أيَّ تعديل):
+// السكربت يقرأ من settings.trigger الحقول {enabled, days, start, end, prewake} فقط ويفهمها هكذا:
+// enabled=false ⇒ صمت تام · days=[] ⇒ لا فترة (إيقاظ مسبق فقط) · prewake=0 ⇒ لا إيقاظ خارج الفترة.
+// لذا يخزّن الخادم القيم «المترجمة» للسكربت في هذه الحقول، ويحفظ اختيارات المدير الحرفية في
+// حقل فرعي `ui` هو مصدر الحقيقة لواجهة الإعدادات (GET يعيد بناء المنطق منه):
+//   enabled+force  ⇒ {enabled:true,  days:أيام المدير, prewake:N}
+//   enabled فقط    ⇒ {enabled:true,  days:أيام المدير, prewake:0}
+//   force فقط      ⇒ {enabled:true,  days:[],          prewake:N}
+//   كلاهما معطَّل  ⇒ {enabled:false}
+const TRIGGER_DEFAULT = { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59', prewake: 5, force: true };
 function sanitizeTrigger(o) {
   if (!o || typeof o !== 'object') return null;
   const validHM = (s) => /^\d{1,2}:\d{2}$/.test(String(s || ''));
   const days = Array.isArray(o.days)
     ? [...new Set(o.days.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b)
     : TRIGGER_DEFAULT.days.slice();
-  const prewake = Math.min(120, Math.max(0, parseInt(o.prewake, 10) || 0));
+  let prewake = Math.min(120, Math.max(0, parseInt(o.prewake, 10) || 0));
+  const force = !!o.force;
+  if (force && prewake === 0) prewake = 5; // إجبار الإيقاظ يحتاج مهلة — صفر مع force يُرفع للافتراضي
   return {
     enabled: o.enabled !== false,
-    days, // قائمة فارغة = لا فترة عمل (وضع «الإيقاظ المسبق فقط» إن كان مفعّلاً)
+    days, // قائمة فارغة = لا فترة عمل
     start: validHM(o.start) ? o.start : TRIGGER_DEFAULT.start,
     end: validHM(o.end) ? o.end : TRIGGER_DEFAULT.end,
     prewake,
+    force,
   };
 }
+// المنطق (اختيارات المدير) → الصيغة المخزّنة التي يفهمها سكربت v3 (انظر جدول الترجمة أعلاه)
+function triggerToStored(t) {
+  const stored = { enabled: t.enabled || t.force, days: t.days.slice(), start: t.start, end: t.end, prewake: t.prewake };
+  if (t.enabled && !t.force) stored.prewake = 0;      // الفترة حصراً — لا إيقاظ خارجها
+  if (!t.enabled && t.force) stored.days = [];         // لا فترة إطلاقاً — إيقاظ مسبق فقط
+  stored.ui = { enabled: t.enabled, force: t.force, days: t.days.slice(), prewake: t.prewake }; // اختيارات المدير الحرفية
+  return stored;
+}
+// الصيغة المخزّنة → المنطق: من ui إن وُجد؛ وإلا صيغة الحزمة 34 القديمة.
+// اشتقاق force للقديمة يطابق سلوكَها الفعلي: الإيقاظ المسبق كان يعمل فقط مع النبضة المفعّلة وprewake>0
+// (المعطَّلة كلياً تبقى «المفتاحين معطَّلين» — لا يُخترع لها إجبار لم يكن يعمل).
+function storedToTrigger(s) {
+  if (s && s.ui && typeof s.ui === 'object') {
+    return sanitizeTrigger({ enabled: s.ui.enabled, force: s.ui.force, days: s.ui.days, start: s.start, end: s.end, prewake: s.ui.prewake });
+  }
+  const legacy = sanitizeTrigger(s);
+  if (legacy) legacy.force = legacy.enabled && legacy.prewake > 0;
+  return legacy;
+}
 async function getTriggerCfg() {
-  try { const v = await store.getSetting('trigger', ''); const o = v ? sanitizeTrigger(JSON.parse(v)) : null; return o || { ...TRIGGER_DEFAULT, days: TRIGGER_DEFAULT.days.slice() }; }
+  try { const v = await store.getSetting('trigger', ''); const o = v ? storedToTrigger(JSON.parse(v)) : null; return o || { ...TRIGGER_DEFAULT, days: TRIGGER_DEFAULT.days.slice() }; }
   catch { return { ...TRIGGER_DEFAULT, days: TRIGGER_DEFAULT.days.slice() }; }
 }
 app.get('/api/admin/trigger', requireAuth, requireRole('admin'), async (req, res) => {
@@ -469,7 +502,7 @@ app.post('/api/admin/trigger', requireAuth, requireRole('admin'), async (req, re
     if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
     const t = sanitizeTrigger((req.body || {}).trigger);
     if (!t) return res.status(400).json({ ok: false, error: 'إعدادات غير صالحة' });
-    await store.setSetting('trigger', JSON.stringify(t));
+    await store.setSetting('trigger', JSON.stringify(triggerToStored(t)));
     scheduleUpcomingRefresh(); // تحديث «مواعيد الإرسال القادمة» فوراً كي يعمل الإيقاظ المسبق بالجدول الجديد
     res.json({ ok: true, trigger: t });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
