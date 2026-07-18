@@ -77,7 +77,7 @@ EODashboard/
 ├── android/                  # تطبيق الأندرويد: غلاف WebView صرف (Java، صفر تبعيات) — انظر القسم ١٨
 │   ├── settings.gradle, build.gradle, gradle.properties
 │   └── app/ (build.gradle، AndroidManifest.xml، MainActivity.java، res/: أيقونات + Splash + strings)
-├── .github/workflows/ (daily-digest.yml, reminders.yml, build-apk.yml)   # الزناد + بناء APK السحابي
+├── .github/workflows/ (daily-digest.yml, reminders.yml [يدوي فقط منذ 34], build-apk.yml)   # ملخص يومي + فحص يدوي + بناء APK
 ├── .claude/launch.json       # إعداد معاينة محلية (اختياري)
 └── render.yaml, .env.example, README.md (هذا الملف)، package.json, .node-version
 ```
@@ -118,6 +118,9 @@ EODashboard/
 - **`settings`:** `key, value`. يحوي:
   - `digestTime` = **التوقيت الموحّد/الافتراضي** للّوحات اليومية (يُستعمل لمن لم يُخصَّص له توقيت خاص، ولكل مستخدم جديد).
   - `global_theme` = التصميم العامّ الذي يبثّه المدير للجميع.
+  - `app_name` = اسم تطبيق الأندرويد المعروض.
+  - `trigger` = **جدولة النبضة** (JSON: `{enabled, days:[0=الأحد..6=السبت], start, end, prewake}`) — انظر ١١.١.
+  - `upcoming_sends` = **مواعيد الإرسال القادمة** يكتبها الخادم (JSON: `{updatedAt, times:["YYYY-MM-DD HH:MM"…]}` دمشقية، حتى 300 موعد) ليقرأها سكربت الإيقاظ المسبق من الشيت مباشرة — لا تُحرَّر يدوياً.
 
 ---
 
@@ -226,7 +229,7 @@ EODashboard/
 - **أيام التذكير:** يوم الموعد · قبل يوم · قبل ٣ · قبل أسبوع + **تواريخ ثابتة**.
 - **التذكير الافتراضي للمسؤول:** `{telegram, قبل يوم, 10:00}` يُطبَّق خادمياً كبديل ضمني لكل مهمة مؤرّخة + كل مسؤول بلا تذكير صريح.
 - **تذكيرات الاجتماعات** (من زرّ 🔔 في قائمة الاجتماعات) و**تذكيرات مواعيد المخرجات** (هدف مستقلّ لكل مخرَج مؤرّخ غير منجَز، `refId = taskRow#d{idx}`).
-- **الإطلاق خادمي:** `GET/POST /api/cron/reminders` (محميّة `CRON_SECRET`) كل دقيقة. المنطق في `notify.js: sendScheduledReminders`؛ توقيت دمشق؛ يُطلق كل ظهور ضمن `[now − grace, now]` (`REMINDER_GRACE_MIN=120`).
+- **الإطلاق خادمي:** `GET/POST /api/cron/reminders` (محميّة `CRON_SECRET`) كل دقيقة — **وطرْق السكربت محكوم بـ«جدولة النبضة» منذ الحزمة 34 (انظر ١١.١)**. المنطق في `notify.js: sendScheduledReminders`؛ توقيت دمشق؛ يُطلق كل ظهور ضمن `[now − grace, now]` (`REMINDER_GRACE_MIN=120`).
 - **منع التكرار:** تبويب `sent`، مفتاح `occKey = email|refId|date|HH:MM|repeatIdx|method` (يعتمد التوقيت الفعلي).
 
 ---
@@ -249,7 +252,7 @@ EODashboard/
   - **قائمة «توقيت كل مستخدم على حدة»**: حقل وقت لكل مستخدم يُحفظ فور تغييره (`POST /api/admin/digest/user {email,time}`).
   - **مستلِمو اللوحة الشاملة** لكل بروفايل + زرّ حفظهم.
   - **«📤 إرسال تجريبي الآن»** (`POST /api/admin/digest/test`, force): يتجاوز التوقيت ومنع التكرار للجميع.
-- **الجدولة:** نبضة الدقيقة (`/api/cron/reminders`) تستدعي `sendDailyBoards`. **منع تكرار مستقلّ لكل قناة** (بريد/تيليجرام) بمفاتيح منفصلة.
+- **الجدولة:** نبضة الدقيقة (`/api/cron/reminders`) تستدعي `sendDailyBoards`. **منع تكرار مستقلّ لكل قناة** (بريد/تيليجرام) بمفاتيح منفصلة. **منذ الحزمة 34 النبضة نفسها محكومة بـ«جدولة النبضة»** (١١.١): لوحة توقيتُها خارج فترة العمل تصل فقط عبر «الإيقاظ المسبق» (نافذة الإرسال 180 دقيقة تتحمّل التأخّر).
 - **حماية من التكرار (مهم — لا تُرجَع):** (١) **قفل تنفيذ داخل العملية** على نبضة `/api/cron/reminders` — النبضات تأتي من مصدرين (Apps Script كل دقيقة + GitHub كل ٥ دقائق)، وعند دقيقة الإرسال قد تطول الدورة فتتداخل النبضات وتعيد الإرسال؛ القفل يجعل نبضة واحدة فقط تعمل والمتداخلة تُرَدّ فوراً `busy`. (٢) **تسجيل مفاتيح منع التكرار تدريجياً** في تبويب `sent` فور نجاح كل إرسال (لا في نهاية الدورة) — فلا يعيد أي انقطاع/تداخل إرسال ما أُرسل فعلاً. (٣) workflow التذكيرات في GitHub بمهلة (`timeout-minutes` + `curl --max-time`).
 
 ---
@@ -264,15 +267,171 @@ EODashboard/
 
 ---
 
-## ١١) سكربت Apps Script (في ملف EO-Dashboard-Tasks — خارج المشروع)
+## ١١) سكربت Apps Script (في ملف EO-Dashboard-Tasks — خارج المشروع) + جدولة النبضة
 
-يُلصَق كاملاً في Extensions → Apps Script. وظيفتاه: (1) **تلوين الكتل** بالتناوب عبر RichText للأعمدة المتوازية (المتابعة/السجل/المخرج المطلوب/مواعيد المخرجات) — `onEdit` للتعديل اليدوي و`colorAll` للتلوين الأوّلي؛ (2) **زناد التذكيرات** `pingReminders` (مؤقّت كل دقيقة) يطرق `/api/cron/reminders` (يبقي Render مستيقظاً + يُطلق التذكيرات واللوحات). **مهم:** `onEdit` لا يُطلَق على كتابة API، لذا **الخادم نفسه يلوّن** هذه الأعمدة بعد كل كتابة.
+يُلصَق كاملاً في Extensions → Apps Script. وظيفتاه: (1) **تلوين الكتل** بالتناوب عبر RichText للأعمدة المتوازية (المتابعة/السجل/المخرج المطلوب/مواعيد المخرجات) — `onEdit` للتعديل اليدوي و`colorAll` للتلوين الأوّلي؛ (2) **زناد التذكيرات** `pingReminders` (مؤقّت كل دقيقة) — ومنذ الحزمة 34 صار **يحترم «جدولة النبضة»** التي يضبطها المدير من صفحة المستخدمين. **مهم:** `onEdit` لا يُطلَق على كتابة API، لذا **الخادم نفسه يلوّن** هذه الأعمدة بعد كل كتابة.
+
+### ١١.١ جدولة النبضة (الحزمة 34) — فترات عمل الخادم والتذكيرات
+
+**الغاية:** توفير ساعات استضافة Render المحدودة — الخادم ينام خارج فترة العمل ويستيقظ عند الحاجة فقط.
+
+- **إعدادات المدير** (users.html → بطاقة «⏱ جدولة النبضة»): أيام الأسبوع + بداية/نهاية الفترة (بتوقيت دمشق) + **الإيقاظ المسبق** بالدقائق (0 = معطّل) + **مفتاح تعطيل كامل** (تُحفظ كل الإعدادات وتعود عند إعادة التفعيل). تُخزَّن في `settings.trigger` (JSON: `{enabled, days:[0=الأحد..6=السبت], start, end, prewake}`). نهاية أصغر من البداية = فترة تعبر منتصف الليل. أيام فارغة = وضع «الإيقاظ المسبق فقط».
+- **السكربت يقرأ الإعدادات من ملف البيانات مباشرةً** (`SpreadsheetApp.openById(DATA_SHEET_ID)` → تبويب `settings`) — لا عبر HTTP، كي لا يوقظ الخادم لمجرد معرفة حاله. لذا صار `DATA_SHEET_ID` ثابتاً ثالثاً في رأس السكربت (بجانب APP_URL وCRON_SECRET).
+- **داخل الفترة:** طرقة كل دقيقة كالسابق (الخادم مستيقظ، المنصة سريعة، التذكيرات لحظية).
+- **خارج الفترة:** لا طرقات ⇒ Render ينام (خطة Render المجانية تنيم الخدمة بعد ~15 دقيقة بلا طلبات). أول فتح للرابط/التطبيق بعد النوم يستغرق ~30–60 ثانية (إقلاع بارد) — والجلسات لا تضيع (انظر ١٢).
+- **الإيقاظ المسبق:** الخادم يكتب في `settings.upcoming_sends` قائمة «مواعيد الإرسال القادمة» (أفق 50 ساعة — يغطي يوم عطلة كاملاً بين فترتي عمل، وكل استيقاظ يجدّد القائمة فتتسلسل التغطية): كل ظهورات التذكيرات (الصريحة + الافتراضي الضمني + الاجتماعات + المخرجات المؤرّخة) + توقيتات اللوحات اليومية الفعّالة، بصيغة `YYYY-MM-DD HH:MM` دمشقية. تُحدَّث مع كل نبضة (تُكتب عند التغيّر فقط) وعند كل إقلاع وبعد أي تعديل يغيّر المواعيد (بمهلة تجميع 5 ثوانٍ). السكربت — حتى خارج الفترة — يطرق في المدى `[الموعد − prewake, الموعد + 3 دقائق]` فيستيقظ الخادم وتُرسَل الرسالة في وقتها (سماحية الإطلاق 120 دقيقة تغطي أي تأخّر إقلاع).
+- **fail-open:** أي فشل في قراءة الإعدادات من الشيت ⇒ السكربت يطرق طرقة احتياطية كي لا تتوقف التذكيرات بصمت. التعطيل الكامل الصريح (`enabled=false`) هو وحده ما يوقف الطرق نهائياً.
+- **حارس جانب الخادم لا يوجد عمداً:** النافذة تحكم **جدول الطرْق** فقط؛ أي نبضة تصل (يدوية/تشخيصية/إيقاظ مسبق) تُعالَج طبيعياً — هذا ما يجعل الإيقاظ المسبق والفحص اليدوي يعملان.
+- **جدولة GitHub أُلغيت** (`reminders.yml` صار workflow_dispatch يدوياً فقط — إبقاء كرون ٥ دقائق كان سيُبقي Render مستيقظاً دائماً ويُبطل الميزة). `daily-digest.yml` بقي كما هو (طرقة واحدة يومياً 08:00 دمشق للملخص القديم — أثرها على ساعات الاستضافة لا يُذكر).
+
+السكربت الكامل الحالي (يُلصَق كاملاً؛ تُملأ الثوابت الثلاثة؛ يُشغَّل `colorAll` مرة ثم `setupReminderTrigger` مرة):
+
+```javascript
+var COLOR_ODD = '#c0392b', COLOR_EVEN = '#1f5fad';
+var FU_NAMES = ['نتائج المتابعة اليومية', 'تفاصيل المتابعة اليومية'];
+
+// الأعمدة التي تُلوَّن كتلها بالتناوب (كل كتلة = حدث/مخرَج). الكتلة i في كل عمود تأخذ نفس اللون.
+var COLOR_COLS = [
+  FU_NAMES,
+  ['السجل'],
+  ['المخرج المطلوب'],
+  ['مواعيد المخرجات', 'مواعيد المخرَجات', 'تواريخ المخرجات']
+];
+
+function isProfileSheet(sh) {
+  var H = headerRowOf(sh); var r = headerRow(sh, H);
+  return r.indexOf('المشروع') > -1 && (r.indexOf('المسؤول المعني') > -1 || r.indexOf('المخرج المطلوب') > -1);
+}
+function coloredCols(hdr) {
+  var out = [];
+  for (var i = 0; i < COLOR_COLS.length; i++) { var c = idx(hdr, COLOR_COLS[i]); if (c) out.push(c); }
+  return out;
+}
+function onEdit(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet();
+  if (!isProfileSheet(sh)) return;
+  var H = headerRowOf(sh);
+  if (e.range.getRow() <= H) return;
+  var hdr = headerRow(sh, H), row = e.range.getRow(), col = e.range.getColumn();
+  var cols = coloredCols(hdr);
+  if (cols.indexOf(col) > -1) { for (var i = 0; i < cols.length; i++) paint(sh, row, cols[i]); }
+}
+function colorAll() {
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    if (!isProfileSheet(sh)) return;
+    var H = headerRowOf(sh), hdr = headerRow(sh, H);
+    var cols = coloredCols(hdr), n = sh.getLastRow() - H;
+    for (var i = 0; i < n; i++) { for (var j = 0; j < cols.length; j++) paint(sh, H + 1 + i, cols[j]); }
+  });
+}
+function paint(sh, row, col) { var cell = sh.getRange(row, col), v = String(cell.getValue() || ''); if (v.trim()) cell.setRichTextValue(buildRich(v)); }
+function buildRich(text) {
+  var b = SpreadsheetApp.newRichTextValue().setText(text), re = /\n[ \t]*\n+/g, start = 0, k = 0, m;
+  var c = function (s, e, i) { if (e > s) b.setTextStyle(s, e, SpreadsheetApp.newTextStyle().setForegroundColor(i % 2 === 0 ? COLOR_ODD : COLOR_EVEN).build()); };
+  while ((m = re.exec(text)) !== null) { c(start, m.index, k++); start = m.index + m[0].length; }
+  c(start, text.length, k); return b.build();
+}
+function idx(hdr, names) { for (var i = 0; i < names.length; i++) { var p = hdr.indexOf(String(names[i]).replace(/\s+/g, ' ').trim()); if (p > -1) return p + 1; } return 0; }
+function headerRow(sh, H) { return sh.getRange(H, 1, 1, sh.getLastColumn()).getValues()[0].map(function (s) { return String(s).replace(/\s+/g, ' ').trim(); }); }
+function headerRowOf(sh) {
+  var vals = sh.getRange(1, 1, 6, sh.getLastColumn()).getValues();
+  for (var i = 0; i < vals.length; i++) { var r = vals[i].map(function (s) { return String(s).replace(/\s+/g, ' ').trim(); }); if (r.indexOf('المشروع') > -1 && (r.indexOf('المسؤول المعني') > -1 || r.indexOf('المخرج المطلوب') > -1)) return i + 1; }
+  return 3;
+}
+
+// ===== نبضة التذكيرات (الإصدار 3 — الحزمة 34: يحترم «جدولة النبضة» من إعدادات المنصّة) =====
+var APP_URL = 'https://project-form-o7sl.onrender.com';
+var CRON_SECRET = 'PUT_CRON_SECRET_HERE';       // نفس قيمة CRON_SECRET في Render
+var DATA_SHEET_ID = 'PUT_DATA_SHEET_ID_HERE';   // معرّف ملف البيانات الخاص (وليس ملف المهام هذا)
+var TZ_OFFSET_MIN = 180;                        // توقيت دمشق UTC+3
+
+function pingReminders() {
+  try {
+    var dec = shouldPing_();
+    if (!dec.ping) return;
+    var res = UrlFetchApp.fetch(APP_URL + '/api/cron/reminders?secret=' + encodeURIComponent(CRON_SECRET),
+      { method: 'get', muteHttpExceptions: true, followRedirects: true });
+    Logger.log('reminders tick (' + dec.why + '): ' + res.getResponseCode());
+  } catch (e) {
+    // أي فشل في قراءة الإعدادات ⇒ طرقة احتياطية (fail-open) كي لا تتوقف التذكيرات بصمت
+    try {
+      UrlFetchApp.fetch(APP_URL + '/api/cron/reminders?secret=' + encodeURIComponent(CRON_SECRET),
+        { method: 'get', muteHttpExceptions: true, followRedirects: true });
+      Logger.log('reminders tick (fail-open): ' + e);
+    } catch (e2) { Logger.log('reminders tick error: ' + e2); }
+  }
+}
+function shouldPing_() {
+  var cfg = readTrigger_();
+  if (!cfg.enabled) return { ping: false, why: 'disabled' };
+  var dNow = new Date(Date.now() + TZ_OFFSET_MIN * 60000); // «ساعة دمشق» عبر دوال getUTC*
+  var day = dNow.getUTCDay(); // 0=الأحد .. 6=السبت
+  var min = dNow.getUTCHours() * 60 + dNow.getUTCMinutes();
+  var s = hm_(cfg.start), e = hm_(cfg.end);
+  var inTime = (s <= e) ? (min >= s && min <= e) : (min >= s || min <= e); // نهاية أصغر من بداية = فترة تعبر منتصف الليل
+  if (cfg.days.indexOf(day) > -1 && inTime) return { ping: true, why: 'window' };
+  if (cfg.prewake > 0) {
+    var sends = readUpcoming_(), nowMs = Date.now();
+    for (var i = 0; i < sends.length; i++) {
+      var t = parseStamp_(sends[i]);
+      if (t && nowMs >= t - cfg.prewake * 60000 && nowMs <= t + 3 * 60000) return { ping: true, why: 'prewake' };
+    }
+  }
+  return { ping: false, why: 'outside' };
+}
+function hm_(s) { var p = String(s || '0:0').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+function parseStamp_(s) { // "YYYY-MM-DD HH:MM" بتوقيت دمشق → epoch ms
+  var m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) - TZ_OFFSET_MIN * 60000;
+}
+function readTrigger_() {
+  var def = { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59', prewake: 5 };
+  var v = readSetting_('trigger');
+  if (!v) return def;
+  try {
+    var o = JSON.parse(v);
+    return {
+      enabled: o.enabled !== false,
+      days: (o.days && o.days.length != null) ? o.days : def.days, // قائمة فارغة مقبولة = «إيقاظ مسبق فقط»
+      start: o.start || def.start, end: o.end || def.end,
+      prewake: Number(o.prewake) || 0
+    };
+  } catch (e) { return def; }
+}
+function readUpcoming_() {
+  var v = readSetting_('upcoming_sends');
+  if (!v) return [];
+  try { var o = JSON.parse(v); return (o && o.times) || []; } catch (e) { return []; }
+}
+var _settingsCache = null;
+function readSetting_(key) { // قراءة تبويب settings من ملف البيانات مباشرة (لا HTTP — لا يوقظ الخادم)
+  if (!_settingsCache) {
+    var sh = SpreadsheetApp.openById(DATA_SHEET_ID).getSheetByName('settings');
+    if (!sh) return '';
+    var last = sh.getLastRow();
+    var vals = last >= 2 ? sh.getRange(2, 1, last - 1, 2).getValues() : [];
+    _settingsCache = {};
+    for (var i = 0; i < vals.length; i++) _settingsCache[String(vals[i][0]).trim()] = String(vals[i][1] == null ? '' : vals[i][1]);
+  }
+  return _settingsCache[key] || '';
+}
+function setupReminderTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'pingReminders') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('pingReminders').timeBased().everyMinutes(1).create();
+}
+```
 
 ---
 
 ## ١٢) المصادقة والأدوار
 
 `requireAuth` · `requireRole('editor'|'admin')` · `requireWrite` (يتطلب حساب الخدمة). الأدوار: **admin** (كل شيء + إدارة المستخدمين) · **editor** (تعديل المهام) · **viewer** (قراءة + تذكيرات شخصية). bcrypt لكلمات المرور. بمجرد وجود مستخدم في `users` يُتجاهَل `USERS_JSON`.
+
+**إحياء الجلسة بعد نوم الخادم (الحزمة 34):** جلسات express-session في ذاكرة العملية وتُفقد مع كل نوم/إعادة تشغيل — ومع «جدولة النبضة» صار النوم يومياً. الحلّ: كوكي `eo_remember` موقّعة (HMAC-SHA256 بسرّ الجلسة `SESSION_SECRET`) تُضبَط عند الدخول وتحمل `{البريد، البروفايل المختار، انتهاء ٧ أيام}`؛ وسيط مبكّر في server.js يعيد بناء الجلسة منها (بالتحقق من وجود المستخدم وفعاليته في التخزين — كلمة المرور لا تُخزَّن في الكوكي) ويستعيد نفس البروفايل. تُحدَّث عند تبديل البروفايل وتُمسح عند الخروج. المستخدم المعطَّل/المحذوف لا تُحيا جلسته. **النتيجة: لا أحد يُسجَّل خروجه بعد الاستيقاظ، وكل الإعدادات الشخصية أصلاً دائمة** (localStorage في جهاز المستخدم + عمود `users.theme` في الشيت — نوم الخادم لا يمسّها).
 
 ---
 
@@ -284,6 +443,7 @@ EODashboard/
 - **البروفايلات:** `GET /api/profiles` · `POST /api/profile` · `GET|POST /api/admin/profiles`.
 - **المستخدمون (admin):** `GET|POST /api/admin/users` · `PATCH /api/admin/users/:email` · `DELETE /api/admin/users/:email`.
 - **اللوحات اليومية (admin):** `GET /api/admin/digest` (توقيت موحّد + توقيت كل مستخدم + المستلِمون) · `POST /api/admin/digest` (توقيت موحّد/تعميم + المستلِمون) · **`POST /api/admin/digest/user` (توقيت مستخدم واحد)** · `POST /api/admin/digest/test`.
+- **جدولة النبضة (admin):** `GET /api/admin/trigger` (الإعدادات الحالية أو الافتراضي) · `POST /api/admin/trigger {trigger:{enabled,days,start,end,prewake}}` (حفظ + تحديث مواعيد الإرسال القادمة).
 - **المهام:** `GET /api/tasks` · `PATCH|POST|DELETE /api/tasks[/:row]` · `POST /api/tasks/:row/status`.
 - **المتابعة:** `POST /api/tasks/:row/followup` · `PATCH|DELETE /api/tasks/:row/followup/:idx`.
 - **المخرجات:** `POST /api/tasks/:row/deliverable` · `PATCH|DELETE /api/tasks/:row/deliverable/:idx` · `.../toggle` · `.../assignee` · `.../date`.
@@ -312,7 +472,9 @@ EODashboard/
 - **تيليجرام:** حدّ 4096 (يُقسَّم) · لا يصل قبل الربط · فاصلة صامتة · 429 يُعاد.
 - **اللوحات:** منع التكرار مستقلّ لكل قناة · **التوقيت الآن لكل مستخدم** (الفارغ = إيقاف إرساله) · الموحّد = افتراض لمن بلا توقيت.
 - **التصاميم:** الكلاسيكي = الحالي بالضبط (بإيموجي)؛ أي كسوة/SVG للتصاميم الأخرى فقط. الأعمدة الجديدة (theme/digestTime) تُنشأ تلقائياً.
-- Render المجاني ينام؛ زناد الدقيقة يبقيه مستيقظاً. معاينة PDF/تلوين الشيت/الإرسال الفعلي لا تظهر محلياً.
+- Render المجاني ينام؛ **زناد الدقيقة يبقيه مستيقظاً داخل «جدولة النبضة» فقط (منذ الحزمة 34)** — خارجها ينام عمداً لتوفير الساعات، وأول فتح بعد النوم ~30–60 ثانية. معاينة PDF/تلوين الشيت/الإرسال الفعلي لا تظهر محلياً.
+- **جدولة النبضة (الحزمة 34):** لا تُعِد كرون GitHub في `reminders.yml` (يُبطل الميزة) · السكربت يقرأ `settings` من ملف البيانات مباشرة (fail-open عند فشل القراءة) · النافذة تحكم جدول الطرْق فقط — لا حارس نافذة في الخادم (عمداً؛ الإيقاظ المسبق والفحص اليدوي يعتمدان عليه) · `collectUpcomingSends` في notify.js **مرآة** لمنطق أهداف `sendScheduledReminders` — أي تعديل هناك يُطبَّق هنا · تذكيرٌ خارج فترة العمل يصل فقط إن كان «الإيقاظ المسبق» مفعّلاً.
+- **الجلسات:** كوكي الإحياء `eo_remember` موقّعة بـ`SESSION_SECRET` — تغيير هذا السرّ يُسجّل خروج الجميع (متوقَّع).
 - **تطبيق الأندرويد (قواعد صلبة — انظر القسم ١٨):** روابط blob لا تعمل في WebView (كل الحفظ عبر `dl()` وجسر `saveBase64`) · keystore ثابت لا يُحذف أبداً · لا `inset`/`inset-inline-*` في القواعد البنيوية (WebView قديم) · لا `setUseWideViewPort(true)` أبداً · `?v=` يُرفَع كل حزمة (قاعدة القسم ٠) · النوافذ على الهاتف ضمن الشاشة بهوامش (شكل معتمد من مالك Pro-Dashboard — لا أعرض من الشاشة ولا ملء شاشة) · الخلفية لا تُغلق النوافذ باللمس على الهاتف · عرض الصفحة لا يتجاوز الشاشة إطلاقاً (قصّ عند `main`).
 
 ---
@@ -331,6 +493,7 @@ EODashboard/
 - **إصلاح تكرار اللوحات اليومية:** قفل تنفيذ على نبضة التذكيرات + تسجيل مفاتيح منع التكرار تدريجياً فور كل إرسال + مهلة على workflow (انظر ٩).
 - **إعادة تصميم تقارير PDF:** تقرير القائمة = «السجل المفصّل المدمج» (شرائح بكامل المخرجات والمتابعة) وتقرير المهمة = «صحيفة المهمة»؛ خيار «هوية التقرير» (ثابتة/تتبع الواجهة) + «مستوى التفاصيل»؛ علامة الجناح (شعار فقط — `logo-glyph.png` الجديد) افتراضية على خلفية كل صفحات التقرير، وعلامة الواجهة صارت بالشعار فقط أيضاً (انظر ٧.١١ و٦.٦).
 - **الحزمة 33 — تطبيق الأندرويد + طبقة استجابة الهاتف** (القسم ١٨): غلاف WebView صرف حول الرابط الحي، بناء APK سحابي عبر GitHub Actions، زرّا تحميل (شاشة الدخول + الترويسة)، اسم التطبيق من إعدادات المدير، حفظ التقارير عبر جسر أصلي + إشعار يفتح الملف، ترويسة هجينة بقائمة ⌄ على الهاتف، نوافذ ضمن الشاشة، منع التمرير الأفقي، شارات إصدار، ترقيم أصول `?v=` + ترويسات no-cache.
+- **الحزمة 34 — جدولة النبضة + إحياء الجلسات** (القسمان ١١.١ و١٢): المدير يحدّد أيام وفترة عمل زناد التذكيرات (بتوقيت دمشق) مع تعطيل كامل يحفظ الإعدادات و«إيقاظ مسبق» بالدقائق يوقظ الخادم قبل كل موعد إرسال حتى خارج الفترة (عبر `settings.trigger` + `settings.upcoming_sends` يقرؤهما السكربت من الشيت مباشرة)؛ سكربت Apps Script إصدار 3؛ كرون GitHub في `reminders.yml` أُلغي (يدوي فقط)؛ كوكي `eo_remember` تعيد بناء الجلسات بعد النوم فلا يُسجَّل خروج أحد؛ بطاقة «⏱ جدولة النبضة» في صفحة المستخدمين.
 
 ---
 

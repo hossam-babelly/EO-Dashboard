@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
 const sheets = require('./lib/sheets');
@@ -55,6 +56,57 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
+
+// ===== إحياء الجلسة بعد نوم/إعادة تشغيل الخادم (الحزمة 34) =====
+// جلسات express-session تعيش في ذاكرة العملية، فتُفقد عند كل نوم/استيقاظ لـRender —
+// ومع «جدولة النبضة» صار النوم يومياً، فكان الجميع سيُسجَّل خروجهم كل استيقاظ.
+// الحل: كوكي «تذكُّر» موقّعة (HMAC بسرّ الجلسة) تحمل البريد + البروفايل المختار + انتهاء ٧ أيام؛
+// عند وصول طلب بلا جلسة وكوكي صالحة، تُعاد بناء الجلسة من تخزين المستخدمين (الكلمة السرية لا تُخزَّن).
+const REMEMBER_COOKIE = 'eo_remember';
+const REMEMBER_MS = 7 * 24 * 60 * 60 * 1000;
+const rememberSecret = () => process.env.SESSION_SECRET || 'dev-secret-change-me';
+function signRemember(email, profile) {
+  const payload = Buffer.from(JSON.stringify({ e: String(email || '').toLowerCase(), p: String(profile || ''), x: Date.now() + REMEMBER_MS }), 'utf8').toString('base64url');
+  const sig = crypto.createHmac('sha256', rememberSecret()).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifyRemember(val) {
+  try {
+    const [payload, sig] = String(val || '').split('.');
+    if (!payload || !sig) return null;
+    const expect = crypto.createHmac('sha256', rememberSecret()).update(payload).digest('base64url');
+    if (expect.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(expect), Buffer.from(sig))) return null;
+    const o = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!o || !o.e || !(Number(o.x) > Date.now())) return null;
+    return { email: o.e, profile: o.p || '' };
+  } catch { return null; }
+}
+function readCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i > -1 && part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return part.slice(i + 1).trim(); } }
+  }
+  return null;
+}
+const rememberCookieOpts = () => ({ httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: REMEMBER_MS });
+function setRememberCookie(res, email, profile) { res.cookie(REMEMBER_COOKIE, signRemember(email, profile), rememberCookieOpts()); }
+app.use(async (req, res, next) => {
+  try {
+    if (auth.authEnabled() && req.session && !req.session.user) {
+      const r = verifyRemember(readCookie(req, REMEMBER_COOKIE));
+      if (r) {
+        const u = (await auth.listUsers()).find((x) => String(x.email).toLowerCase() === r.email && x.active !== false);
+        if (u) {
+          req.session.user = { email: u.email, name: u.name, firstName: u.firstName, lastName: u.lastName || '', role: u.role, profiles: u.profiles || [], phone: u.phone || '' };
+          const profiles = await availableProfilesFor(req.session.user);
+          req.session.profile = (r.profile && profiles.some((p) => p.tab === r.profile)) ? r.profile : (profiles[0] ? profiles[0].tab : DEFAULT_TAB);
+        }
+      }
+    }
+  } catch (e) { /* أي فشل ⇒ يسقط الطلب على مسار الدخول الاعتيادي */ }
+  next();
+});
 
 // صفحات عامة لا تتطلب دخولاً
 const PUBLIC_FILES = new Set(['/login.html', '/styles.css']);
@@ -108,6 +160,7 @@ app.post('/api/login', async (req, res) => {
     req.session.user = user;
     const profiles = await availableProfilesFor(user);
     req.session.profile = profiles[0] ? profiles[0].tab : DEFAULT_TAB; // افتراضي (يُغيّره الاختيار)
+    setRememberCookie(res, user.email, req.session.profile); // كوكي الإحياء — تُبقي الدخول بعد نوم/استيقاظ الخادم
     res.json({ ok: true, user, profiles, needProfile: profiles.length > 1 });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -115,6 +168,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
+  res.clearCookie(REMEMBER_COOKIE, rememberCookieOpts()); // إلغاء كوكي الإحياء كي لا تعود الجلسة بعد الخروج
   req.session.destroy(() => res.json({ ok: true }));
 });
 
@@ -148,6 +202,7 @@ app.post('/api/profile', requireAuth, async (req, res) => {
     const profiles = await availableProfilesFor(req.session.user);
     if (!profiles.some((p) => p.tab === tab)) return res.status(400).json({ ok: false, error: 'بروفايل غير متاح' });
     req.session.profile = tab;
+    setRememberCookie(res, req.session.user && req.session.user.email, tab); // تحديث الكوكي ليُستعاد نفس البروفايل بعد الاستيقاظ
     res.json({ ok: true, profile: tab });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -339,6 +394,7 @@ app.post('/api/admin/digest', requireAuth, requireRole('admin'), async (req, res
       if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
       await store.setSetting('digestTime', t);
       await store.broadcastDigestTime(t);
+      scheduleUpcomingRefresh(); // توقيتات اللوحات من مواعيد الإرسال القادمة (للإيقاظ المسبق)
     }
     if (recipients && typeof recipients === 'object') {
       // قيمة كل بروفايل = مصفوفة بُرُد (أو نصّ مفصول بفواصل) → تُخزَّن مفصولة بفواصل
@@ -359,6 +415,7 @@ app.post('/api/admin/digest/user', requireAuth, requireRole('admin'), async (req
     if (!email) return res.status(400).json({ ok: false, error: 'البريد مطلوب' });
     if (t && !/^\d{1,2}:\d{2}$/.test(t)) return res.status(400).json({ ok: false, error: 'صيغة التوقيت غير صحيحة (HH:MM)' });
     await store.setUserDigestTime(email, t);
+    scheduleUpcomingRefresh(); // توقيت المستخدم من مواعيد الإرسال القادمة (للإيقاظ المسبق)
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -376,6 +433,80 @@ app.post('/api/admin/digest/test', requireAuth, requireRole('admin'), async (req
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+
+// ===== جدولة النبضة (فترات عمل الخادم والتذكيرات) — الحزمة 34 =====
+// المدير يحدّد أيام الأسبوع وفترة اليوم (بتوقيت دمشق) التي يعمل فيها زناد Apps Script،
+// مع إمكانية التعطيل الكامل (تُحفظ كل الإعدادات وتعود عند إعادة التفعيل) و«الإيقاظ المسبق»
+// (يوقظ الخادمَ قبل كل موعد إرسال بهذه الدقائق حتى خارج الفترة كي تصل التذكيرات في وقتها).
+// التخزين في settings.trigger؛ السكربت يقرؤه من الشيت مباشرةً فلا يوقظ Render لمعرفة حاله.
+// أيام الأسبوع بترقيم JS: 0=الأحد .. 6=السبت.
+const TRIGGER_DEFAULT = { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59', prewake: 5 };
+function sanitizeTrigger(o) {
+  if (!o || typeof o !== 'object') return null;
+  const validHM = (s) => /^\d{1,2}:\d{2}$/.test(String(s || ''));
+  const days = Array.isArray(o.days)
+    ? [...new Set(o.days.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b)
+    : TRIGGER_DEFAULT.days.slice();
+  const prewake = Math.min(120, Math.max(0, parseInt(o.prewake, 10) || 0));
+  return {
+    enabled: o.enabled !== false,
+    days, // قائمة فارغة = لا فترة عمل (وضع «الإيقاظ المسبق فقط» إن كان مفعّلاً)
+    start: validHM(o.start) ? o.start : TRIGGER_DEFAULT.start,
+    end: validHM(o.end) ? o.end : TRIGGER_DEFAULT.end,
+    prewake,
+  };
+}
+async function getTriggerCfg() {
+  try { const v = await store.getSetting('trigger', ''); const o = v ? sanitizeTrigger(JSON.parse(v)) : null; return o || { ...TRIGGER_DEFAULT, days: TRIGGER_DEFAULT.days.slice() }; }
+  catch { return { ...TRIGGER_DEFAULT, days: TRIGGER_DEFAULT.days.slice() }; }
+}
+app.get('/api/admin/trigger', requireAuth, requireRole('admin'), async (req, res) => {
+  try { res.json({ ok: true, trigger: await getTriggerCfg(), storeEnabled: store.enabled }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/admin/trigger', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    if (!store.enabled) return res.status(400).json({ ok: false, error: 'التخزين الدائم غير مفعّل.' });
+    const t = sanitizeTrigger((req.body || {}).trigger);
+    if (!t) return res.status(400).json({ ok: false, error: 'إعدادات غير صالحة' });
+    await store.setSetting('trigger', JSON.stringify(t));
+    scheduleUpcomingRefresh(); // تحديث «مواعيد الإرسال القادمة» فوراً كي يعمل الإيقاظ المسبق بالجدول الجديد
+    res.json({ ok: true, trigger: t });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ===== «مواعيد الإرسال القادمة» (settings.upcoming_sends) — وقود الإيقاظ المسبق =====
+// يكتبها الخادم ليقرأها سكربت Apps Script من الشيت مباشرةً ويطرق قبل كل موعد بمقدار prewake.
+// تُحدَّث مع كل نبضة (بالبيانات المُحمَّلة أصلاً — بلا قراءات إضافية) وتُكتب فقط عند تغيّر القائمة،
+// وتُجدول (بمهلة 5 ثوانٍ تجمع التعديلات المتتالية) بعد أي تعديل يغيّر مواعيد الإرسال.
+let _lastUpcomingSig = null;
+async function updateUpcomingSends(tasksByRow, reminders) {
+  if (!store.enabled) return;
+  try {
+    const times = (await notify.collectUpcomingSends(tasksByRow, reminders, store)).slice(0, 300);
+    const sig = JSON.stringify(times);
+    if (sig === _lastUpcomingSig) return;
+    await store.setSetting('upcoming_sends', JSON.stringify({ updatedAt: nowStamp(), times }));
+    _lastUpcomingSig = sig;
+  } catch (e) { console.warn('upcoming_sends', e.message); }
+}
+async function refreshUpcomingSends() {
+  if (!store.enabled) return;
+  const reminders = await store.getAllReminders();
+  const profiles = await store.getProfiles();
+  const tasksByRow = {};
+  for (const p of profiles) {
+    try { const tasks = await loadTasks(p.tab); for (const t of tasks) if (!(String(t.row) in tasksByRow)) tasksByRow[String(t.row)] = t; }
+    catch (e) { console.warn('upcoming-refresh tab', p.tab, e.message); }
+  }
+  await updateUpcomingSends(tasksByRow, reminders);
+}
+let _upcomingTimer = null;
+function scheduleUpcomingRefresh() {
+  if (!store.enabled) return;
+  clearTimeout(_upcomingTimer);
+  _upcomingTimer = setTimeout(() => { refreshUpcomingSends().catch((e) => console.warn('upcoming-refresh', e.message)); }, 5000);
+}
 
 // ذاكرة تخزين مؤقتة قصيرة لكل تبويب (بروفايل) لتقليل طلبات Google API
 const DEFAULT_TAB = (store.DEFAULT_PROFILE && store.DEFAULT_PROFILE.tab) || sheets.TAB;
@@ -568,6 +699,7 @@ app.patch('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, a
     }
     const task = await sheets.updateTask(activeTab(req), req.params.row, req.body || {});
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // الموعد/الحالة/المسؤولون يغيّرون مواعيد الإرسال القادمة
     res.json({ ok: true, task });
     // تنبيه المسؤولين المُضافين حديثاً عبر تيليجرام (بعد الردّ، لا يعطّل الاستجابة)
     if (req.body && 'owner' in req.body) {
@@ -590,6 +722,7 @@ app.post('/api/tasks/:row/status', requireAuth, requireRole('editor'), requireWr
     }
     const task = await sheets.updateTask(activeTab(req), req.params.row, { status });
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // إنجاز المهمة يُسقط تذكيراتها من مواعيد الإرسال القادمة
     res.json({ ok: true, task });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -750,6 +883,7 @@ app.post('/api/tasks/:row/deliverable/:idx/toggle', requireAuth, requireRole('ed
     if (dB.length && dB.every((b) => /^✓/.test(b))) patch.status = sheets.DONE_STATUS;
     const task = await sheets.updateTask(activeTab(req), req.params.row, patch);
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // إنجاز/إلغاء إنجاز مخرَج يغيّر أهداف التذكير القادمة
     res.json({ ok: true, task });
   } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -819,6 +953,7 @@ app.post('/api/tasks/:row/deliverable/:idx/date', requireAuth, requireRole('edit
     dD[idx] = date || '-';
     const task = await sheets.updateTask(activeTab(req), req.params.row, { dvdates: dD.join('\n\n') });
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // موعد المخرَج هدف تذكير مستقلّ — يغيّر مواعيد الإرسال القادمة
     res.json({ ok: true, task });
   } catch (err) { console.error('POST deliverable date', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -828,6 +963,7 @@ app.delete('/api/tasks/:row', requireAuth, requireRole('editor'), requireWrite, 
   try {
     await sheets.deleteTask(activeTab(req), req.params.row);
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // حذف المهمة يُسقط تذكيراتها من مواعيد الإرسال القادمة
     res.json({ ok: true });
   } catch (err) { console.error('DELETE /api/tasks', err.message); res.status(400).json({ ok: false, error: err.message }); }
 });
@@ -884,6 +1020,7 @@ app.post('/api/tasks', requireAuth, requireRole('editor'), requireWrite, async (
     }
     await sheets.addTask(activeTab(req), body);
     invalidateCache(activeTab(req));
+    scheduleUpcomingRefresh(); // مهمة جديدة مؤرّخة = تذكير افتراضي جديد ضمن مواعيد الإرسال
     res.json({ ok: true });
     // تنبيه المسؤولين المعيَّنين عند الإنشاء عبر تيليجرام (عدا من أنشأ المهمة)
     const owners = splitOwnerNames(body.owner);
@@ -937,6 +1074,7 @@ app.post('/api/tasks/:row/reminder', requireAuth, async (req, res) => {
     const mi = parseInt(req.body.meeting, 10);
     const meeting = (req.body.meeting != null && req.body.meeting !== '' && Number.isInteger(mi) && mi >= 0) ? String(mi) : '';
     await store.setReminder(email, req.params.row, methods, days, dates, times, meeting);
+    scheduleUpcomingRefresh(); // التذكير الجديد/المعدَّل يغيّر مواعيد الإرسال القادمة
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
@@ -1056,6 +1194,8 @@ async function runReminderTick(req, res) {
     let boards = { skipped: 'n/a' };
     try { boards = await notify.sendDailyBoards(profiles, tasksByProfile, store, appUrl); }
     catch (e) { console.warn('daily-boards', e.message); boards = { error: e.message }; }
+    // تحديث «مواعيد الإرسال القادمة» بالبيانات المُحمَّلة في هذه النبضة (يُكتب فقط عند التغيّر)
+    try { await updateUpcomingSends(tasksByRow, reminders); } catch (e) { console.warn('upcoming_sends tick', e.message); }
     res.json({ ok: true, ...result, boards });
   } catch (e) {
     console.error('reminder-tick', e.message);
@@ -1210,6 +1350,8 @@ app.listen(PORT, async () => {
     }
   }
   console.log(`التخزين الدائم (المستخدمون/التذكيرات): ${store.enabled ? 'مفعّل' : 'معطّل — USERS_JSON فقط'}`);
+  // تحديث «مواعيد الإرسال القادمة» عند كل إقلاع (استيقاظ/نشر) كي يجد سكربت الإيقاظ المسبق جدولاً حديثاً
+  scheduleUpcomingRefresh();
   // تسجيل webhook تيليجرام تلقائياً (لاستقبال ربط الأرقام)
   if (telegram.enabled && process.env.APP_URL) {
     telegram.setWebhook(`${process.env.APP_URL.replace(/\/$/, '')}/api/telegram/webhook`, process.env.TELEGRAM_WEBHOOK_SECRET).catch((e) => console.warn('telegram webhook reg:', e.message));

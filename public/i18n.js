@@ -126,6 +126,22 @@
     'إصدار المنصّة': 'Platform build', 'إصدار التطبيق': 'App version',
     'تم الحفظ': 'Saved', 'تعذّر الحفظ': 'Could not save',
     'نسخة مكوّن عرض الويب (WebView) على هذا الهاتف قديمة وقد تظهر الواجهة بشكل غير سليم — حدّث تطبيق «Android System WebView» من متجر Google Play ثم أعد فتح التطبيق.': 'The WebView component on this phone is outdated and the interface may render incorrectly — update the “Android System WebView” app from Google Play, then reopen the app.',
+    // ===== جدولة النبضة (الحزمة 34) =====
+    '⏱ جدولة النبضة (فترات عمل الخادم والتذكيرات)': '⏱ Tick schedule (server & reminders working hours)',
+    'داخل الفترة المحددة يعمل الزناد كل دقيقة: الخادم مستيقظ، المنصة سريعة، والتذكيرات لحظية. خارجها يتوقف فينام الخادم لتوفير ساعات الاستضافة — وأول فتح للرابط بعد النوم يستغرق نحو دقيقة. «الإيقاظ المسبق» يوقظ الخادم قبل كل موعد إرسال (تذكير أو لوحة يومية) بالدقائق المحددة حتى خارج الفترة، فتصل الرسائل في وقتها.': 'Within the selected window the trigger runs every minute: the server stays awake, the platform is fast, and reminders are instant. Outside it, the trigger stops and the server sleeps to save hosting hours — the first visit after sleep takes about a minute. “Pre-wake” wakes the server the set number of minutes before every scheduled send (reminder or daily board), even outside the window, so messages arrive on time.',
+    'النبضة مفعّلة (إلغاء التحديد = إيقاف كامل مع حفظ الإعدادات)': 'Tick enabled (uncheck = full stop, settings are kept)',
+    'أيام العمل:': 'Working days:',
+    'بداية الفترة (بتوقيت سوريا)': 'Window start (Syria time)',
+    'نهاية الفترة (بتوقيت سوريا)': 'Window end (Syria time)',
+    'الإيقاظ المسبق (دقائق — 0 = معطّل)': 'Pre-wake (minutes — 0 = off)',
+    '💾 حفظ الجدولة': '💾 Save schedule',
+    'نهاية أصغر من البداية = فترة تعبر منتصف الليل. بلا أيام محددة = «الإيقاظ المسبق» فقط.': 'End earlier than start = window crossing midnight. No days selected = “pre-wake” only.',
+    'السبت': 'Saturday', 'الأحد': 'Sunday', 'الاثنين': 'Monday', 'الثلاثاء': 'Tuesday', 'الأربعاء': 'Wednesday', 'الخميس': 'Thursday', 'الجمعة': 'Friday',
+    'سيتوقف الزناد كلياً: لا تذكيرات ولا لوحات يومية ولا إيقاظ للخادم حتى إعادة التفعيل (الإعدادات تبقى محفوظة). متابعة؟': 'The trigger will stop completely: no reminders, no daily boards and no server wake-ups until re-enabled (settings are kept). Continue?',
+    'لا أيام عمل ولا إيقاظ مسبق — لن يعمل الزناد فعلياً ولن تصل التذكيرات. متابعة؟': 'No working days and no pre-wake — the trigger will effectively never run and reminders will not arrive. Continue?',
+    'لم تحدد أي يوم عمل — سيقتصر العمل على «الإيقاظ المسبق» قبيل مواعيد الإرسال فقط. متابعة؟': 'No working day selected — only “pre-wake” will run shortly before scheduled sends. Continue?',
+    'تم حفظ جدولة النبضة ✓': 'Tick schedule saved ✓',
+    'خطأ: ': 'Error: ',
   };
   // ===== الخطوط القابلة للتبديل (٥ عربية + ٥ لاتينية) — الافتراض غير محدَّد = Cairo (الكلاسيكي مطابق) =====
   const FONT_AR = {

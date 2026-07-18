@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=33">
+<link rel="stylesheet" href="/styles.css?v=34">
 <script>
 /* تطبيق التصميم/الوضع/الخط المحفوظ فوراً (قبل الرسم) ليطابق التطبيق */
 (function () { try {
@@ -79,6 +79,25 @@
   </div>
 
   <div class="card">
+    <h2 data-i18n="⏱ جدولة النبضة (فترات عمل الخادم والتذكيرات)">⏱ جدولة النبضة (فترات عمل الخادم والتذكيرات)</h2>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px" data-i18n="داخل الفترة المحددة يعمل الزناد كل دقيقة: الخادم مستيقظ، المنصة سريعة، والتذكيرات لحظية. خارجها يتوقف فينام الخادم لتوفير ساعات الاستضافة — وأول فتح للرابط بعد النوم يستغرق نحو دقيقة. «الإيقاظ المسبق» يوقظ الخادم قبل كل موعد إرسال (تذكير أو لوحة يومية) بالدقائق المحددة حتى خارج الفترة، فتصل الرسائل في وقتها.">داخل الفترة المحددة يعمل الزناد كل دقيقة: الخادم مستيقظ، المنصة سريعة، والتذكيرات لحظية. خارجها يتوقف فينام الخادم لتوفير ساعات الاستضافة — وأول فتح للرابط بعد النوم يستغرق نحو دقيقة. «الإيقاظ المسبق» يوقظ الخادم قبل كل موعد إرسال (تذكير أو لوحة يومية) بالدقائق المحددة حتى خارج الفترة، فتصل الرسائل في وقتها.</p>
+    <div style="margin-bottom:12px">
+      <label class="prof-check" style="font-weight:800"><input type="checkbox" id="trigEnabled"> <span data-i18n="النبضة مفعّلة (إلغاء التحديد = إيقاف كامل مع حفظ الإعدادات)">النبضة مفعّلة (إلغاء التحديد = إيقاف كامل مع حفظ الإعدادات)</span></label>
+    </div>
+    <div class="rep-cols-title" data-i18n="أيام العمل:">أيام العمل:</div>
+    <div id="trigDays" class="prof-checks" style="margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+      <div class="fld"><label data-i18n="بداية الفترة (بتوقيت سوريا)">بداية الفترة (بتوقيت سوريا)</label><input type="time" id="trigStart"></div>
+      <div class="fld"><label data-i18n="نهاية الفترة (بتوقيت سوريا)">نهاية الفترة (بتوقيت سوريا)</label><input type="time" id="trigEnd"></div>
+      <div class="fld"><label data-i18n="الإيقاظ المسبق (دقائق — 0 = معطّل)">الإيقاظ المسبق (دقائق — 0 = معطّل)</label><input type="number" id="trigPrewake" min="0" max="120" step="1" style="width:110px"></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-save" id="saveTriggerBtn" type="button" data-i18n="💾 حفظ الجدولة">💾 حفظ الجدولة</button>
+      <span style="color:var(--muted);font-size:11.5px" data-i18n="نهاية أصغر من البداية = فترة تعبر منتصف الليل. بلا أيام محددة = «الإيقاظ المسبق» فقط.">نهاية أصغر من البداية = فترة تعبر منتصف الليل. بلا أيام محددة = «الإيقاظ المسبق» فقط.</span>
+    </div>
+  </div>
+
+  <div class="card">
     <h2 data-i18n="➕ إضافة مستخدم">➕ إضافة مستخدم</h2>
     <form class="u-form" id="addForm">
       <div class="fld"><label data-i18n="البريد (اسم الدخول)">البريد (اسم الدخول)</label><input type="email" name="email" required placeholder="user@company.com"></div>
@@ -124,7 +143,7 @@
   </div>
 </div>
 
-<script src="/i18n.js?v=33"></script>
+<script src="/i18n.js?v=34"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const TR = (s) => (window.tr ? tr(s) : s);
@@ -133,7 +152,7 @@ const ROLES = { admin: 'مدير', editor: 'محرّر', viewer: 'مشاهد' };
   const lb = $('#langBtn'), db = $('#dirBtn');
   const sync = () => { if (lb) lb.textContent = (window.I18N && I18N.lang === 'en') ? 'ع' : 'EN'; };
   sync();
-  if (lb) lb.onclick = () => { if (!window.I18N) return; I18N.setLang(I18N.lang === 'en' ? 'ar' : 'en'); sync(); I18N.applyStatic(); loadProfiles(); loadUsers(); loadDigest(); };
+  if (lb) lb.onclick = () => { if (!window.I18N) return; I18N.setLang(I18N.lang === 'en' ? 'ar' : 'en'); sync(); I18N.applyStatic(); loadProfiles(); loadUsers(); loadDigest(); loadTrigger(); };
   if (db) db.onclick = () => { if (window.I18N) I18N.setDir(I18N.dir === 'ltr' ? 'rtl' : 'ltr'); };
 })();
 let USERS = [];
@@ -326,9 +345,49 @@ $('#testDigestBtn').onclick = async () => {
   btn.disabled = false; btn.textContent = '📤 إرسال تجريبي الآن';
 };
 
+// ===== جدولة النبضة (فترات عمل الخادم والتذكيرات) =====
+// أيام الأسبوع بترقيم JS (0=الأحد..6=السبت) معروضة من السبت (بداية أسبوع العمل السوري)
+const TRIG_DAYS = [[6, 'السبت'], [0, 'الأحد'], [1, 'الاثنين'], [2, 'الثلاثاء'], [3, 'الأربعاء'], [4, 'الخميس'], [5, 'الجمعة']];
+const hmNorm = (s) => { const m = String(s || '').match(/^(\d{1,2}):(\d{2})$/); return m ? m[1].padStart(2, '0') + ':' + m[2] : ''; };
+async function loadTrigger() {
+  try {
+    const data = await (await fetch('/api/admin/trigger')).json();
+    if (!data.ok) return;
+    const t = data.trigger || {};
+    const days = Array.isArray(t.days) ? t.days : [];
+    $('#trigEnabled').checked = t.enabled !== false;
+    $('#trigDays').innerHTML = TRIG_DAYS.map(([v, name]) => `<label class="prof-check"><input type="checkbox" value="${v}" ${days.includes(v) ? 'checked' : ''}> ${TR(name)}</label>`).join('');
+    $('#trigStart').value = hmNorm(t.start) || '00:00';
+    $('#trigEnd').value = hmNorm(t.end) || '23:59';
+    $('#trigPrewake').value = (t.prewake != null ? t.prewake : 5);
+  } catch { /* تجاهل */ }
+}
+$('#saveTriggerBtn').onclick = async () => {
+  const enabled = $('#trigEnabled').checked;
+  const days = [...document.querySelectorAll('#trigDays input:checked')].map((i) => Number(i.value));
+  const start = $('#trigStart').value || '00:00';
+  const end = $('#trigEnd').value || '23:59';
+  const prewake = Math.max(0, Math.min(120, parseInt($('#trigPrewake').value, 10) || 0));
+  if (!enabled) {
+    if (!confirm(TR('سيتوقف الزناد كلياً: لا تذكيرات ولا لوحات يومية ولا إيقاظ للخادم حتى إعادة التفعيل (الإعدادات تبقى محفوظة). متابعة؟'))) return;
+  } else if (!days.length && !prewake) {
+    if (!confirm(TR('لا أيام عمل ولا إيقاظ مسبق — لن يعمل الزناد فعلياً ولن تصل التذكيرات. متابعة؟'))) return;
+  } else if (!days.length) {
+    if (!confirm(TR('لم تحدد أي يوم عمل — سيقتصر العمل على «الإيقاظ المسبق» قبيل مواعيد الإرسال فقط. متابعة؟'))) return;
+  }
+  const btn = $('#saveTriggerBtn'); btn.disabled = true; btn.textContent = '... حفظ';
+  try {
+    const res = await fetch('/api/admin/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trigger: { enabled, days, start, end, prewake } }) });
+    const data = await res.json();
+    if (data.ok) { notice(TR('تم حفظ جدولة النبضة ✓')); loadTrigger(); } else notice(TR('خطأ: ') + (data.error || ''), true);
+  } catch (e) { notice(TR('خطأ: ') + e.message, true); }
+  btn.disabled = false; btn.textContent = TR('💾 حفظ الجدولة');
+};
+
 loadProfiles();
 loadUsers();
 loadDigest();
+loadTrigger();
 </script>
 </body>
 </html>
